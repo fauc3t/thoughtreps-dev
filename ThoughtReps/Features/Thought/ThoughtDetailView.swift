@@ -11,6 +11,7 @@ struct ThoughtDetailView: View {
 
     @State private var hasRecordedView = false
     @State private var isEditing = false
+    @State private var isPickingInterval = false
     @State private var confirmDelete = false
     @State private var pendingDelete = false
 
@@ -82,18 +83,31 @@ struct ThoughtDetailView: View {
     }
 
     private var intervalMenu: some View {
-        Menu {
-            Button("Default (\(defaultIntervalDays) days)") {
-                store.setInterval(thought, days: nil, now: .now)
-            }
-            ForEach(IntervalOption.choices, id: \.self) { days in
-                Button(IntervalOption.label(days)) {
-                    store.setInterval(thought, days: days, now: .now)
+        let selection = Binding<Int?>(
+            get: { thought.intervalDays },
+            set: { store.setInterval(thought, days: $0, now: .now) }
+        )
+        let current = IntervalDuration(days: thought.effectiveIntervalDays(defaultDays: defaultIntervalDays))
+        return Menu {
+            Picker("Interval", selection: selection) {
+                Text("Default (\(defaultIntervalDays) days)").tag(Int?.none)
+                ForEach(IntervalOption.choices(including: thought.intervalDays), id: \.self) { days in
+                    Text(IntervalDuration(days: days).label).tag(Int?.some(days))
                 }
             }
+            .pickerStyle(.inline)
+            Button("Custom…") { isPickingInterval = true }
         } label: {
-            Text("Every \(IntervalOption.label(thought.effectiveIntervalDays(defaultDays: defaultIntervalDays)).lowercased())")
+            Text("Every \(current.phrase)")
                 .font(.footnote.weight(.semibold))
+        }
+        .sheet(isPresented: $isPickingInterval) {
+            IntervalPickerSheet(
+                initialDays: thought.effectiveIntervalDays(defaultDays: defaultIntervalDays)
+            ) { days in
+                if thought.intervalDays == nil && days == defaultIntervalDays { return }
+                store.setInterval(thought, days: days, now: .now)
+            }
         }
     }
 
@@ -160,20 +174,5 @@ struct ThoughtDetailView: View {
     private func deleteThought() {
         pendingDelete = true
         dismiss()
-    }
-}
-
-/// Interval choices offered in the editor and thought view.
-enum IntervalOption {
-    static let choices = [1, 3, 7, 14, 30, 90]
-
-    static func label(_ days: Int) -> String {
-        switch days {
-        case 1: "Day"
-        case 7: "Week"
-        case 14: "2 weeks"
-        case 30: "Month"
-        default: "\(days) days"
-        }
     }
 }

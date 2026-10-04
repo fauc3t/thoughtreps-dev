@@ -20,6 +20,7 @@ struct EditorView: View {
     @State private var selection: TextSelection?
     @State private var drafts: [BlockDraft] = []
     @State private var intervalDays: Int? = nil
+    @State private var isPickingInterval = false
     @State private var hasLoaded = false
     @FocusState private var isBodyFocused: Bool
 
@@ -56,8 +57,9 @@ struct EditorView: View {
         )
     }
 
-    private var intervalChoices: [Int] {
-        Array(Set(IntervalOption.choices + [intervalDays].compactMap { $0 })).sorted()
+    private var intervalSummary: String {
+        guard let intervalDays else { return "Default (\(defaultIntervalDays) days)" }
+        return IntervalDuration(days: intervalDays).label
     }
 
     var body: some View {
@@ -102,10 +104,18 @@ struct EditorView: View {
                 }
 
                 Section("Schedule") {
-                    Picker("Comes back every", selection: $intervalDays) {
-                        Text("Default (\(defaultIntervalDays) days)").tag(Int?.none)
-                        ForEach(intervalChoices, id: \.self) { days in
-                            Text(IntervalOption.label(days)).tag(Int?.some(days))
+                    LabeledContent("Comes back every") {
+                        Menu {
+                            Picker("Interval", selection: $intervalDays) {
+                                Text("Default (\(defaultIntervalDays) days)").tag(Int?.none)
+                                ForEach(IntervalOption.choices(including: intervalDays), id: \.self) { days in
+                                    Text(IntervalDuration(days: days).label).tag(Int?.some(days))
+                                }
+                            }
+                            .pickerStyle(.inline)
+                            Button("Custom…") { isPickingInterval = true }
+                        } label: {
+                            Text(intervalSummary)
                         }
                     }
                 }
@@ -131,6 +141,12 @@ struct EditorView: View {
                     } else {
                         FormatBar(text: $text, selection: $selection)
                     }
+                }
+            }
+            .sheet(isPresented: $isPickingInterval) {
+                IntervalPickerSheet(initialDays: intervalDays ?? defaultIntervalDays) { days in
+                    if intervalDays == nil && days == defaultIntervalDays { return }
+                    intervalDays = days
                 }
             }
             .onAppear { load() }
