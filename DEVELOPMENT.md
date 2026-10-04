@@ -2,7 +2,7 @@
 
 ## First-time setup
 
-Requires macOS with Xcode 16 or later and a paid Apple Developer account signed in to Xcode (Xcode > Settings > Accounts).
+Requires macOS with Xcode 16 or later (iOS 18+ deployment target) and a paid Apple Developer account signed in to Xcode (Xcode > Settings > Accounts).
 
 ```sh
 cd ~/dev/thoughtreps-dev

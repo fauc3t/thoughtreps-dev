@@ -6,7 +6,7 @@ Design: [`designs/`](designs/) holds the spec and the screen mockups.
 
 ## Requirements
 
-- macOS with **Xcode 16** or later (for iOS 17+ SDK and Swift Testing)
+- macOS with **Xcode 16** or later (for iOS 18+ SDK and Swift Testing)
 - [XcodeGen](https://github.com/yonaskolb/XcodeGen), which generates the Xcode project from `project.yml`
 - A paid Apple Developer account signed in to Xcode (installs last a year; TestFlight and iCloud are available)
 

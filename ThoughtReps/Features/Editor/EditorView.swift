@@ -14,7 +14,10 @@ struct EditorView: View {
     @Environment(\.dismiss) private var dismiss
     @AppStorage(AppSettings.Key.defaultIntervalDays) private var defaultIntervalDays = Scheduler.defaultIntervalDays
 
+    @Query(sort: \Tag.name) private var allTags: [Tag]
+
     @State private var text = ""
+    @State private var selection: TextSelection?
     @State private var drafts: [BlockDraft] = []
     @State private var intervalDays: Int? = nil
     @State private var hasLoaded = false
@@ -33,6 +36,26 @@ struct EditorView: View {
         TagParser.parse(text)
     }
 
+    /// The `#partial` at the cursor, when the selection is a plain insertion point.
+    private var activeToken: (range: Range<String.Index>, partial: String)? {
+        guard let selection, case let .selection(range) = selection.indices, range.isEmpty else { return nil }
+        return TagSuggester.activeToken(in: text, cursor: range.upperBound)
+    }
+
+    private func suggestions(for token: (range: Range<String.Index>, partial: String)) -> [TagSuggester.Candidate] {
+        var rest = text
+        rest.removeSubrange(token.range)
+        let candidates = allTags.compactMap { tag -> TagSuggester.Candidate? in
+            let count = tag.thoughts?.count ?? 0
+            return count > 0 ? TagSuggester.Candidate(key: tag.name, display: tag.displayName, count: count) : nil
+        }
+        return TagSuggester.suggestions(
+            for: token.partial,
+            from: candidates,
+            excluding: Set(TagParser.parse(rest).map(\.key))
+        )
+    }
+
     private var intervalChoices: [Int] {
         Array(Set(IntervalOption.choices + [intervalDays].compactMap { $0 })).sorted()
     }
@@ -41,7 +64,7 @@ struct EditorView: View {
         NavigationStack {
             Form {
                 Section {
-                    TextEditor(text: $text)
+                    TextEditor(text: $text, selection: $selection)
                         .font(.system(.body, design: .monospaced))
                         .frame(minHeight: 220)
                         .focused($isBodyFocused)
@@ -99,7 +122,15 @@ struct EditorView: View {
                         .disabled(trimmedText.isEmpty)
                 }
                 ToolbarItemGroup(placement: .keyboard) {
-                    FormatBar(text: $text)
+                    if let token = activeToken, case let found = suggestions(for: token), !found.isEmpty {
+                        SuggestionBar(suggestions: found, tags: allTags) { candidate in
+                            let applied = TagSuggester.apply(candidate, replacing: token.range, in: text)
+                            text = applied.text
+                            selection = TextSelection(insertionPoint: applied.cursor)
+                        }
+                    } else {
+                        FormatBar(text: $text, selection: $selection)
+                    }
                 }
             }
             .onAppear { load() }
@@ -144,6 +175,7 @@ struct EditorView: View {
 /// (Selection-aware formatting comes with the Milestone 3 editor work.)
 struct FormatBar: View {
     @Binding var text: String
+    @Binding var selection: TextSelection?
 
     var body: some View {
         HStack(spacing: 0) {
@@ -153,7 +185,7 @@ struct FormatBar: View {
             button("List", systemImage: "list.bullet") { appendLine("- ") }
             button("Task", systemImage: "checklist") { appendLine("- [ ] ") }
             button("Code", systemImage: "chevron.left.forwardslash.chevron.right") { append("`code`") }
-            button("Tag", systemImage: "tag") { append("#") }
+            button("Tag", systemImage: "tag") { insertHash() }
         }
     }
 
@@ -163,6 +195,17 @@ struct FormatBar: View {
                 .frame(maxWidth: .infinity, minHeight: 44)
         }
         .accessibilityLabel(label)
+    }
+
+    /// Inserts `#` at the cursor (end of text if there is none) so suggestions appear right away.
+    private func insertHash() {
+        var cursor = text.endIndex
+        if let selection, case let .selection(range) = selection.indices {
+            cursor = range.upperBound
+        }
+        let inserted = TagSuggester.insertHash(in: text, at: cursor)
+        text = inserted.text
+        selection = TextSelection(insertionPoint: inserted.cursor)
     }
 
     /// Appends inline, adding a space if the text doesn't already end in whitespace.
@@ -179,6 +222,43 @@ struct FormatBar: View {
             text += "\n"
         }
         text += prefix
+    }
+}
+
+/// Keyboard toolbar row of existing tags that complete the `#partial` being typed.
+struct SuggestionBar: View {
+    let suggestions: [TagSuggester.Candidate]
+    let tags: [Tag]
+    let onSelect: (TagSuggester.Candidate) -> Void
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(suggestions, id: \.key) { candidate in
+                    Button { onSelect(candidate) } label: { chip(candidate) }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Tag \(candidate.display), \(candidate.count) \(candidate.count == 1 ? "thought" : "thoughts")")
+                }
+            }
+        }
+    }
+
+    private func chip(_ candidate: TagSuggester.Candidate) -> some View {
+        let color = tags.first { $0.name == candidate.key }.map(TagColor.color(for:)) ?? .secondary
+        return HStack(spacing: 4) {
+            Text("#\(candidate.display)")
+                .font(.caption.weight(.medium))
+            Text("\(candidate.count)")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .lineLimit(1)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(RoundedRectangle(cornerRadius: 8).fill(color.opacity(0.15)))
+        .foregroundStyle(.primary)
+        .frame(minHeight: 44)
+        .contentShape(Rectangle())
     }
 }
 

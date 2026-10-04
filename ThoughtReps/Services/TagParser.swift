@@ -51,13 +51,56 @@ enum TagParser {
         }
     }
 
-    /// Replaces code spans and fenced blocks with spaces so their contents are never tags.
+    /// Replaces code spans and fenced blocks with spaces of the same UTF-16 length, so contents
+    /// are never tags and offsets into the result still match the original text.
     static func stripCode(_ text: String) -> String {
-        var s = text
+        let s = NSMutableString(string: text)
         for regex in [fencedCode, inlineCode] {
-            let range = NSRange(location: 0, length: (s as NSString).length)
-            s = regex.stringByReplacingMatches(in: s, range: range, withTemplate: " ")
+            let matches = regex.matches(in: s as String, range: NSRange(location: 0, length: s.length))
+            for match in matches.reversed() {
+                s.replaceCharacters(in: match.range, with: String(repeating: " ", count: match.range.length))
+            }
         }
-        return s
+        return s as String
+    }
+
+    // These mirror `tagRegex` scalar by scalar (\p{L}, \p{M}, \p{N}); keep them in sync.
+
+    /// Characters that can continue a tag: letters, combining marks, digits, `_` and `-`.
+    static func isTagCharacter(_ c: Character) -> Bool {
+        c.unicodeScalars.allSatisfy { $0 == "_" || $0 == "-" || isLetter($0) || isNumber($0) || isMark($0) }
+    }
+
+    /// Characters a tag may start with (not `-` or a combining mark).
+    static func isTagStart(_ c: Character) -> Bool {
+        guard let first = c.unicodeScalars.first else { return false }
+        return first == "_" || isLetter(first) || isNumber(first)
+    }
+
+    /// Characters that make a following `#` something other than a tag (`C#`, `/#x`, `&#39;`).
+    static func blocksTagStart(_ c: Character) -> Bool {
+        guard let last = c.unicodeScalars.last else { return false }
+        return last == "_" || last == "#" || last == "/" || last == "&" || isLetter(last) || isNumber(last)
+    }
+
+    private static func isLetter(_ s: Unicode.Scalar) -> Bool {
+        switch s.properties.generalCategory {
+        case .uppercaseLetter, .lowercaseLetter, .titlecaseLetter, .modifierLetter, .otherLetter: return true
+        default: return false
+        }
+    }
+
+    private static func isNumber(_ s: Unicode.Scalar) -> Bool {
+        switch s.properties.generalCategory {
+        case .decimalNumber, .letterNumber, .otherNumber: return true
+        default: return false
+        }
+    }
+
+    private static func isMark(_ s: Unicode.Scalar) -> Bool {
+        switch s.properties.generalCategory {
+        case .nonspacingMark, .spacingMark, .enclosingMark: return true
+        default: return false
+        }
     }
 }

@@ -4,7 +4,7 @@ Local-first iPhone app: write a Markdown thought, and it resurfaces on the timel
 
 ## Stack
 
-Swift, SwiftUI, SwiftData, iOS 17+, Swift Testing. No third-party dependencies yet (Markdown renderer is a pending spike). Paid Apple Developer account.
+Swift, SwiftUI, SwiftData, iOS 18+, Swift Testing. No third-party dependencies yet (Markdown renderer is a pending spike). Paid Apple Developer account.
 
 ## Workflow
 
