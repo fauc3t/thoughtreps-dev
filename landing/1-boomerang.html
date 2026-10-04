@@ -1,0 +1,587 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Thought Reps — Boomerang</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: one orchestrated hero (a thought card that loops out and back on an elliptical path), then quiet, airy sections with small real-app UI tiles. */
+:root {
+  --bg: #F5F6F8;
+  --surface: #FFFFFF;
+  --ink: #15171C;
+  --muted: #5B6170;
+  --line: #E3E5EA;
+  --accent: #3451D1;
+  --accent-ink: #26399A;
+  --accent-soft: #E8ECFB;
+  --due: #A8430E;
+  --chip: #EEF0F4;
+  --chip-ink: #3A3F4B;
+  --sun: #FFD866;
+  --on-sun: #3A2E00;
+  --trail: #C3CBEF;
+  --shadow: 0 1px 2px rgba(21,23,28,.06), 0 10px 28px rgba(52,81,209,.10);
+  --f-display: "Bricolage Grotesque", "IBM Plex Sans", system-ui, sans-serif;
+  --f-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0F1116; --surface: #181B22; --ink: #ECEEF3; --muted: #9AA1B2; --line: #2A2F3A;
+    --accent: #7D93FF; --accent-ink: #A9B6FF; --accent-soft: #232A4A; --due: #F0915A;
+    --chip: #22262F; --chip-ink: #C9CEDA; --sun: #E8C25A; --on-sun: #2A2000; --trail: #36406B;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 12px 30px rgba(0,0,0,.35);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0F1116; --surface: #181B22; --ink: #ECEEF3; --muted: #9AA1B2; --line: #2A2F3A;
+  --accent: #7D93FF; --accent-ink: #A9B6FF; --accent-soft: #232A4A; --due: #F0915A;
+  --chip: #22262F; --chip-ink: #C9CEDA; --sun: #E8C25A; --on-sun: #2A2000; --trail: #36406B;
+  --shadow: 0 1px 2px rgba(0,0,0,.4), 0 12px 30px rgba(0,0,0,.35);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 400 1rem/1.6 var(--f-body);
+  -webkit-font-smoothing: antialiased;
+}
+img, svg { max-width: 100%; }
+a { color: var(--accent); }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2.5px solid var(--accent); outline-offset: 3px; border-radius: 8px; }
+
+.wrap { max-width: 1120px; margin-inline: auto; padding-inline: clamp(16px, 4vw, 32px); }
+
+/* Nav */
+.nav { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-block: 20px; }
+.brand { display: inline-flex; align-items: center; gap: 10px; font: 700 1.125rem/1 var(--f-display); color: var(--ink); text-decoration: none; letter-spacing: -.01em; }
+.brand-mark { width: 30px; height: 30px; border-radius: 9px; background: var(--accent); display: grid; place-items: center; }
+.brand-mark svg { width: 18px; height: 18px; }
+.nav-links { display: flex; gap: 4px; }
+.nav-links a { color: var(--muted); text-decoration: none; font-size: .9375rem; padding: 8px 12px; border-radius: 10px; transition: background .15s, color .15s; }
+.nav-links a:hover { background: var(--surface); color: var(--ink); }
+@media (max-width: 640px) { .nav-links { display: none; } }
+
+/* Buttons */
+.btn { display: inline-flex; align-items: center; gap: 10px; min-height: 52px; padding: 0 22px; border-radius: 14px; font-weight: 600; font-size: 1rem; text-decoration: none; border: 1px solid transparent; transition: transform .15s ease, background .15s, box-shadow .15s, border-color .15s; cursor: pointer; }
+.btn:active { transform: translateY(1px) scale(.98); }
+.btn-primary { background: var(--ink); color: var(--bg); box-shadow: var(--shadow); }
+.btn-primary:hover { background: var(--accent); color: #fff; transform: translateY(-1px); }
+.btn-primary small { display: block; font-size: .6875rem; font-weight: 500; opacity: .75; line-height: 1.1; }
+.btn-primary span { display: block; line-height: 1.15; }
+.btn-ghost { color: var(--ink); border-color: var(--line); background: transparent; }
+.btn-ghost:hover { background: var(--surface); border-color: var(--trail); }
+
+/* Hero */
+.hero { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr); gap: clamp(24px, 4vw, 56px); align-items: center; padding-block: clamp(24px, 5vw, 64px) clamp(40px, 6vw, 88px); }
+@media (max-width: 880px) { .hero { grid-template-columns: minmax(0, 1fr); } }
+.eyebrow { display: inline-flex; align-items: center; gap: 8px; font: 500 .8125rem/1 var(--f-mono); color: var(--accent-ink); background: var(--accent-soft); padding: 7px 12px; border-radius: 999px; letter-spacing: .02em; }
+.eyebrow i { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); display: block; }
+h1 { font: 800 clamp(2.6rem, 6.2vw, 4.75rem)/0.98 var(--f-display); letter-spacing: -.035em; margin: 20px 0 0; text-wrap: balance; }
+h1 .back { position: relative; white-space: nowrap; color: var(--accent); }
+h1 .back svg { position: absolute; left: -2%; bottom: -.22em; width: 104%; height: .4em; overflow: visible; }
+.lede { font-size: clamp(1.0625rem, 1.6vw, 1.1875rem); color: var(--muted); max-width: 34em; margin: 24px 0 0; text-wrap: pretty; }
+.cta-row { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 32px; }
+.meta { margin-top: 20px; font: 400 .8125rem/1.4 var(--f-mono); color: var(--muted); }
+
+.stage { position: relative; height: clamp(380px, 46vw, 470px); border-radius: 28px; background:
+  radial-gradient(120% 80% at 50% 110%, var(--accent-soft), transparent 60%), var(--surface);
+  border: 1px solid var(--line); overflow: hidden; }
+.stage svg.trail { position: absolute; inset: 0; width: 100%; height: 100%; }
+.trail ellipse { fill: none; stroke: var(--trail); stroke-width: 2; stroke-dasharray: 2 9; stroke-linecap: round; }
+.counter { position: absolute; left: 50%; transform: translateX(-50%); font: 500 .8125rem/1 var(--f-mono); color: var(--muted); letter-spacing: .04em; text-transform: uppercase; display: flex; flex-direction: column; align-items: center; gap: 10px; pointer-events: none; }
+.days { display: flex; gap: 6px; }
+.days b { width: 8px; height: 8px; border-radius: 50%; background: var(--line); transition: background .25s, transform .25s; }
+.days b.on { background: var(--accent); transform: scale(1.15); }
+.later { position: absolute; left: 50%; transform: translate(-50%, 0) rotate(-3deg) scale(.6); opacity: 0; background: var(--sun); color: var(--on-sun); font: 800 1.125rem/1 var(--f-display); padding: 10px 16px; border-radius: 12px; letter-spacing: -.01em; transition: opacity .25s, transform .45s cubic-bezier(.3,1.6,.5,1); pointer-events: none; white-space: nowrap; }
+.stage.landed .later { opacity: 1; transform: translate(-50%, 0) rotate(-3deg) scale(1); }
+.pause { position: absolute; right: 12px; top: 12px; width: 36px; height: 36px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); color: var(--muted); display: grid; place-items: center; cursor: pointer; transition: color .15s, border-color .15s; z-index: 3; }
+.pause:hover { color: var(--ink); border-color: var(--trail); }
+.pause svg { width: 14px; height: 14px; }
+
+/* Thought card (in-app UI) */
+.tcard { font-family: var(--f-body); background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; display: flex; flex-direction: column; gap: 6px; color: var(--ink); text-align: left; }
+.tcard .t { font-size: 16px; font-weight: 600; line-height: 1.3; }
+.tcard .b { font-size: 14px; line-height: 20px; color: var(--muted); }
+.tcard .row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip { font: 500 12px/1 var(--f-body); padding: 5px 8px; border-radius: 8px; background: var(--chip); color: var(--chip-ink); }
+.chip.accent { background: var(--accent-soft); color: var(--accent-ink); }
+.status { font: 500 12px/1 var(--f-body); color: var(--muted); white-space: nowrap; }
+.status.due { color: var(--due); }
+.status.today { color: var(--accent); font-weight: 600; }
+
+#flyer { position: absolute; left: 0; top: 0; width: min(300px, calc(100% - 40px)); box-shadow: var(--shadow); transform-origin: 50% 50%; will-change: transform; z-index: 2; transition: opacity .3s; }
+#flyer.away { opacity: .9; }
+
+/* Sections */
+section.block { padding-block: clamp(56px, 8vw, 104px); }
+.sec-head { max-width: 40rem; }
+.kicker { font: 500 .8125rem/1 var(--f-mono); color: var(--accent-ink); text-transform: uppercase; letter-spacing: .08em; }
+h2 { font: 800 clamp(1.9rem, 4vw, 2.9rem)/1.04 var(--f-display); letter-spacing: -.03em; margin: 14px 0 0; text-wrap: balance; }
+.sec-head p { color: var(--muted); font-size: 1.0625rem; margin: 16px 0 0; text-wrap: pretty; }
+
+/* How it works */
+.steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; margin-top: 48px; counter-reset: s; position: relative; }
+@media (max-width: 820px) { .steps { grid-template-columns: minmax(0, 1fr); } }
+.step { position: relative; display: flex; flex-direction: column; gap: 10px; padding: 24px; border-radius: 20px; background: var(--surface); border: 1px solid var(--line); transition: transform .2s ease, box-shadow .2s ease; }
+.step:hover { transform: translateY(-3px); box-shadow: var(--shadow); }
+.step-n { font: 500 .8125rem/1 var(--f-mono); color: var(--muted); display: flex; align-items: center; gap: 10px; }
+.step-n b { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent-ink); font-weight: 500; }
+.step h3 { font: 700 1.375rem/1.15 var(--f-display); margin: 6px 0 0; letter-spacing: -.02em; }
+.step p { margin: 0; color: var(--muted); font-size: .9875rem; }
+.step .demo { margin-top: 10px; padding-top: 16px; border-top: 1px dashed var(--line); font: 400 .8125rem/1.5 var(--f-mono); color: var(--muted); }
+.step .demo code { font-family: var(--f-mono); color: var(--ink); }
+.loopback { margin-top: 28px; display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: .9375rem; }
+.loopback svg { flex: none; width: 44px; height: 24px; color: var(--accent); }
+
+/* Features bento */
+.bento { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 16px; margin-top: 48px; }
+.tile { grid-column: span 2; background: var(--surface); border: 1px solid var(--line); border-radius: 22px; padding: 24px; display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+.tile.wide { grid-column: span 3; }
+@media (max-width: 980px) { .tile, .tile.wide { grid-column: span 3; } }
+@media (max-width: 640px) { .bento { grid-template-columns: minmax(0, 1fr); } .tile, .tile.wide { grid-column: auto; } }
+.tile h3 { font: 700 1.25rem/1.2 var(--f-display); letter-spacing: -.02em; margin: 0; }
+.tile p { margin: 6px 0 0; color: var(--muted); font-size: .9375rem; }
+.tile .ui { margin-top: auto; background: var(--bg); border-radius: 16px; padding: 16px; font-family: var(--f-body); min-width: 0; }
+
+.md { font-size: 14px; line-height: 1.55; color: var(--ink); }
+.md h4 { margin: 0 0 6px; font-size: 16px; font-weight: 700; }
+.md ul { margin: 0; padding-left: 18px; }
+.md code { font: 13px var(--f-mono); background: var(--chip); padding: 1px 5px; border-radius: 5px; }
+.md .img { margin-top: 10px; height: 64px; border-radius: 10px; border: 1px dashed var(--trail); background:
+  repeating-linear-gradient(135deg, transparent 0 10px, var(--accent-soft) 10px 11px), var(--surface);
+  display: grid; place-items: center; font: 12px var(--f-mono); color: var(--muted); }
+
+.taglist { display: flex; flex-direction: column; gap: 2px; }
+.tagrow { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 9px 10px; border-radius: 10px; text-decoration: none; color: var(--ink); transition: background .15s; font-size: 14px; }
+.tagrow:hover { background: var(--surface); }
+.tagrow .n { font: 12px var(--f-mono); color: var(--muted); }
+.tagrow .n b { color: var(--accent); font-weight: 500; }
+
+.pin svg { flex: none; }
+
+.blurblock { border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; background: var(--surface); display: flex; flex-direction: column; gap: 8px; }
+.blurblock .row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.blurblock .lbl { font-size: 13px; font-weight: 600; color: var(--muted); }
+.reveal { min-height: 32px; border: 0; background: transparent; color: var(--accent); font-weight: 600; font-size: 14px; padding: 0 6px; border-radius: 8px; cursor: pointer; transition: background .15s; }
+.reveal:hover { background: var(--accent-soft); }
+.answer { margin: 0; font-size: 15px; line-height: 22px; filter: blur(7px); transition: filter .25s ease; user-select: none; }
+.blurblock.shown .answer { filter: none; user-select: auto; }
+
+.swipe { position: relative; border-radius: 14px; overflow: hidden; }
+.swipe .actions { position: absolute; inset: 0; display: flex; justify-content: flex-end; }
+.swipe .actions span { width: 84px; display: grid; place-items: center; font: 600 13px var(--f-body); color: #fff; }
+.swipe .actions .snz { background: #8A5CF6; }
+.swipe .actions .arc { background: var(--due); }
+.swipe .tcard { position: relative; width: 100%; border-radius: 14px; cursor: pointer; transition: transform .35s cubic-bezier(.3,1.3,.5,1); }
+.swipe:hover .tcard, .swipe .tcard[aria-pressed="true"] { transform: translateX(-168px); }
+.hint { font: 12px var(--f-mono); color: var(--muted); margin-top: 10px; }
+
+.notif { display: flex; gap: 12px; align-items: flex-start; background: var(--surface); border-radius: 16px; padding: 12px 14px; box-shadow: var(--shadow); }
+.notif .ico { flex: none; width: 34px; height: 34px; border-radius: 9px; background: var(--accent); display: grid; place-items: center; }
+.notif .ico svg { width: 18px; height: 18px; }
+.notif .top { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--muted); }
+.notif strong { font-size: 14px; display: block; color: var(--ink); }
+.notif .msg { font-size: 14px; color: var(--ink); }
+
+/* Privacy */
+.privacy { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: clamp(24px, 5vw, 64px); align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: 28px; padding: clamp(24px, 5vw, 56px); }
+@media (max-width: 820px) { .privacy { grid-template-columns: minmax(0, 1fr); } }
+.facts { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.facts li { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 12px; padding: 16px 0; border-top: 1px solid var(--line); }
+.facts li:first-child { border-top: 0; }
+.facts svg { width: 22px; height: 22px; color: var(--accent); margin-top: 2px; }
+.facts strong { display: block; font-weight: 600; }
+.facts span { color: var(--muted); font-size: .9375rem; }
+.facts .soon { display: inline-block; margin-left: 6px; font: 500 11px/1 var(--f-mono); background: var(--sun); color: var(--on-sun); padding: 4px 6px; border-radius: 6px; vertical-align: 2px; }
+.zip { font: 13px/1.7 var(--f-mono); color: var(--muted); background: var(--bg); border-radius: 14px; padding: 16px 18px; margin-top: 24px; overflow-x: auto; white-space: pre; }
+.zip b { color: var(--ink); font-weight: 500; }
+
+/* Final CTA + footer */
+.final { text-align: center; display: flex; flex-direction: column; align-items: center; gap: 20px; padding-block: clamp(64px, 9vw, 112px); }
+.final h2 { max-width: 16ch; }
+.final .loop-ico { width: 64px; height: 40px; color: var(--accent); }
+footer { border-top: 1px solid var(--line); padding-block: 28px; }
+footer .wrap { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; color: var(--muted); font-size: .875rem; }
+footer a { color: var(--muted); text-decoration: none; }
+footer a:hover { color: var(--ink); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: .01ms !important; animation: none !important; }
+  .pause { display: none; }
+}
+</style>
+</head>
+<body>
+
+<header class="wrap nav">
+  <a class="brand" href="#top" aria-label="Thought Reps home">
+    <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.3-5.6"/><path d="M20 4v4h-4"/></svg></span>
+    Thought Reps
+  </a>
+  <nav class="nav-links" aria-label="Sections">
+    <a href="#how">How it works</a>
+    <a href="#features">Features</a>
+    <a href="#privacy">Privacy</a>
+  </nav>
+</header>
+
+<main id="top">
+  <section class="wrap hero">
+    <div>
+      <span class="eyebrow"><i></i>For iPhone · iOS 17+</span>
+      <h1>Write it down. It comes <span class="back">back.<svg viewBox="0 0 200 30" preserveAspectRatio="none" aria-hidden="true"><path d="M4 18 C 50 4, 120 4, 160 14 S 196 28, 170 26 S 150 10, 196 8" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round"/></svg></span></h1>
+      <p class="lede">Thought Reps brings your notes back on a schedule, so ideas get revisited instead of forgotten. Every thought returns after 7 days, or whatever interval you choose.</p>
+      <div class="cta-row">
+        <a class="btn btn-primary" href="#">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="2.5" width="12" height="19" rx="3"/><path d="M10.5 18.5h3"/></svg>
+          <span><small>Download on the</small>App Store</span>
+        </a>
+        <a class="btn btn-ghost" href="#how">See how it works</a>
+      </div>
+      <p class="meta">Free · No account · Everything stays on your phone</p>
+    </div>
+
+    <div class="stage" id="stage" role="img" aria-label="A thought card loops away and returns seven days later, marked due today.">
+      <svg class="trail" aria-hidden="true"><ellipse id="trail" cx="0" cy="0" rx="0" ry="0"/></svg>
+      <div class="counter" id="counter" aria-hidden="true">
+        <span id="dayLabel">Day 7</span>
+        <div class="days" id="dots"><b class="on"></b><b class="on"></b><b class="on"></b><b class="on"></b><b class="on"></b><b class="on"></b><b class="on"></b></div>
+      </div>
+      <div class="later" id="later" aria-hidden="true">7 days later</div>
+      <div class="tcard" id="flyer" aria-hidden="true">
+        <span class="t" id="fT">Big-O of Swift collections</span>
+        <span class="b" id="fB">Array append is amortized O(1). Set and Dictionary lookups are O(1) on average…</span>
+        <div class="row">
+          <div class="chips" id="fC"><span class="chip">#swift</span><span class="chip">#study</span></div>
+          <span class="status today" id="fS">due today</span>
+        </div>
+      </div>
+      <button class="pause" id="pause" type="button" aria-label="Pause animation" aria-pressed="false">
+        <svg viewBox="0 0 14 14" fill="currentColor" aria-hidden="true"><rect x="2" y="1" width="3.5" height="12" rx="1"/><rect x="8.5" y="1" width="3.5" height="12" rx="1"/></svg>
+      </button>
+    </div>
+  </section>
+
+  <section class="block" id="how" style="padding-top: 0">
+    <div class="wrap">
+      <div class="sec-head">
+        <span class="kicker">How it works</span>
+        <h2>Three steps, and then it loops.</h2>
+        <p>Most notes apps are where ideas go to sit. Thought Reps keeps them moving: you write, it waits, it brings them back.</p>
+      </div>
+      <ol class="steps" role="list" style="list-style: none; padding: 0;">
+        <li class="step">
+          <span class="step-n"><b>1</b>Capture</span>
+          <h3>Write it in under 5 seconds</h3>
+          <p>Tap the + from any tab. The editor opens with the keyboard up. Markdown, images and #tags all work.</p>
+          <div class="demo"><code>## Rubber-duck before asking</code><br>Explain the bug out loud first. <code>#work</code></div>
+        </li>
+        <li class="step">
+          <span class="step-n"><b>2</b>Wait</span>
+          <h3>It steps out of the way</h3>
+          <p>New thoughts stay off your timeline until they come due. No pile of unread notes staring at you.</p>
+          <div class="demo">nextDueAt = createdAt + <code>7 days</code></div>
+        </li>
+        <li class="step">
+          <span class="step-n"><b>3</b>Comes back</span>
+          <h3>Read it, and it goes again</h3>
+          <p>Due thoughts show up on your Timeline, oldest first. Open one and it heads back out for another round.</p>
+          <div class="demo">viewed · back on <code>Oct 11</code></div>
+        </li>
+      </ol>
+      <p class="loopback">
+        <svg viewBox="0 0 44 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M40 12a10 10 0 0 1-10 10H14A10 10 0 0 1 14 2h14"/><path d="M24 -2l4 4-4 4" transform="translate(0 0)"/></svg>
+        Not ready for it yet? Swipe to snooze for a day or a week. That doesn't count as a view.
+      </p>
+    </div>
+  </section>
+
+  <section class="block" id="features" style="padding-top: 0">
+    <div class="wrap">
+      <div class="sec-head">
+        <span class="kicker">Features</span>
+        <h2>Small app, the right pieces.</h2>
+      </div>
+      <div class="bento">
+        <article class="tile wide">
+          <div>
+            <h3>Markdown and images</h3>
+            <p>Headings, lists, code, tables and photos. Paste a whiteboard shot right into the note.</p>
+          </div>
+          <div class="ui md">
+            <h4>Big-O of Swift collections</h4>
+            <ul>
+              <li><strong>Array</strong> append: amortized O(1)</li>
+              <li><strong>Array</strong> insert at front: O(n)</li>
+              <li><code>contains</code> on an Array: O(n)</li>
+            </ul>
+            <div class="img">whiteboard-sketch.heic</div>
+          </div>
+        </article>
+
+        <article class="tile wide">
+          <div>
+            <h3>#tags with their own timelines</h3>
+            <p>Type a #word anywhere and it becomes a tag. Each tag gets a timeline of what's due.</p>
+          </div>
+          <div class="ui taglist">
+            <a class="tagrow" href="#features"><span class="chip">#swift</span><span class="n"><b>3 due</b> · 12</span></a>
+            <a class="tagrow" href="#features"><span class="chip">#habits</span><span class="n"><b>1 due</b> · 8</span></a>
+            <a class="tagrow" href="#features"><span class="chip">#work</span><span class="n"><b>2 due</b> · 21</span></a>
+            <a class="tagrow" href="#features"><span class="chip">#study</span><span class="n">0 due · 5</span></a>
+          </div>
+        </article>
+
+        <article class="tile">
+          <div>
+            <h3>Blurred answers</h3>
+            <p>Hide part of a thought behind a blur. Quiz yourself, then tap to check.</p>
+          </div>
+          <div class="ui">
+            <div class="blurblock" id="blur">
+              <div class="row">
+                <span class="lbl">Quiz: Set lookup?</span>
+                <button class="reveal" id="revealBtn" type="button" aria-expanded="false" aria-controls="answer">Tap to reveal</button>
+              </div>
+              <p class="answer" id="answer">O(1) on average, because elements are hashed. Worst case O(n) with heavy collisions.</p>
+            </div>
+          </div>
+        </article>
+
+        <article class="tile">
+          <div>
+            <h3>Pin what matters</h3>
+            <p>Pinned thoughts stay at the top of your Timeline, every day.</p>
+          </div>
+          <div class="ui">
+            <div class="tcard pin">
+              <div class="row">
+                <span class="t">Weekly review questions</span>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="var(--accent)" stroke="var(--accent)" stroke-width="1.6" stroke-linejoin="round" aria-label="Pinned" role="img"><path d="M9 3h6l-1 6 4 4H6l4-4z"/><path d="M12 13v8" fill="none"/></svg>
+              </div>
+              <span class="b">What moved forward? What stalled? What do I want to stop doing?</span>
+              <div class="chips"><span class="chip accent">#habits</span></div>
+            </div>
+          </div>
+        </article>
+
+        <article class="tile">
+          <div>
+            <h3>Snooze or archive</h3>
+            <p>Swipe to push it back a day or a week, or retire it to the Archive.</p>
+          </div>
+          <div class="ui">
+            <div class="swipe">
+              <div class="actions" aria-hidden="true"><span class="snz">Snooze</span><span class="arc">Archive</span></div>
+              <button type="button" class="tcard" id="swipeCard" aria-pressed="false" aria-label="Show swipe actions">
+                <span class="t">Rubber-duck before asking</span>
+                <span class="row"><span class="chips"><span class="chip">#work</span></span><span class="status due">due 2d ago</span></span>
+              </button>
+            </div>
+            <div class="hint">Hover or tap the card</div>
+          </div>
+        </article>
+
+        <article class="tile wide" style="grid-column: 1 / -1;">
+          <div>
+            <h3>One gentle reminder a day</h3>
+            <p>Pick a time. If nothing is due, you won't hear from it.</p>
+          </div>
+          <div class="ui" style="max-width: 420px;">
+            <div class="notif">
+              <span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.3-5.6"/><path d="M20 4v4h-4"/></svg></span>
+              <div style="flex: 1; min-width: 0;">
+                <div class="top"><span>THOUGHT REPS</span><span>8:00 AM</span></div>
+                <strong>Good morning</strong>
+                <span class="msg">4 thoughts are back today.</span>
+              </div>
+            </div>
+          </div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="block" id="privacy" style="padding-top: 0">
+    <div class="wrap">
+      <div class="privacy">
+        <div class="sec-head">
+          <span class="kicker">Privacy</span>
+          <h2>Your thoughts live on your iPhone.</h2>
+          <p>There's no server and no sign-up. Back it up whenever you like, as a file you own.</p>
+          <div class="zip" aria-label="Export contents"><b>ThoughtReps-2026-10-04.zip</b>
+├── thoughts.json
+└── Images/
+    └── 7F3A…/whiteboard.heic</div>
+        </div>
+        <ul class="facts">
+          <li>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="2.5" width="12" height="19" rx="3"/><path d="M10.5 18.5h3"/></svg>
+            <div><strong>Stored on device</strong><span>Notes and images stay in the app's own storage.</span></div>
+          </li>
+          <li>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/><path d="M3 3l18 18"/></svg>
+            <div><strong>No account</strong><span>Open the app and start writing.</span></div>
+          </li>
+          <li>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 19h16"/></svg>
+            <div><strong>Export anytime</strong><span>JSON plus images to Files or AirDrop, or one Markdown file per thought.</span></div>
+          </li>
+          <li>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 18a5 5 0 0 1-.6-10A6 6 0 0 1 18 9a4.5 4.5 0 0 1-.5 9z"/></svg>
+            <div><strong>iCloud sync<span class="soon">LATER</span></strong><span>Optional sync across your devices is on the roadmap.</span></div>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="wrap final">
+    <svg class="loop-ico" viewBox="0 0 64 40" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 30 C 6 8, 40 2, 50 14 S 44 38, 28 30 S 30 10, 58 8"/><path d="M52 4l6 4-5 5"/></svg>
+    <h2>See you again in 7 days.</h2>
+    <p class="lede" style="margin: 0; text-align: center;">Write your first thought today. It'll be back next week.</p>
+    <a class="btn btn-primary" href="#">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="2.5" width="12" height="19" rx="3"/><path d="M10.5 18.5h3"/></svg>
+      <span><small>Download on the</small>App Store</span>
+    </a>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>Thought Reps · Made for iPhone</span>
+    <span><a href="#privacy">Privacy</a> · <a href="#how">How it works</a></span>
+  </div>
+</footer>
+
+<script>
+(function () {
+  // Blurred block
+  var blur = document.getElementById('blur'), rb = document.getElementById('revealBtn');
+  rb.addEventListener('click', function () {
+    var on = blur.classList.toggle('shown');
+    rb.textContent = on ? 'Hide' : 'Tap to reveal';
+    rb.setAttribute('aria-expanded', String(on));
+  });
+
+  // Swipe demo
+  var sc = document.getElementById('swipeCard');
+  sc.addEventListener('click', function () {
+    sc.setAttribute('aria-pressed', sc.getAttribute('aria-pressed') === 'true' ? 'false' : 'true');
+  });
+
+  // Boomerang hero
+  var stage = document.getElementById('stage'), flyer = document.getElementById('flyer');
+  var trail = document.getElementById('trail'), counter = document.getElementById('counter');
+  var later = document.getElementById('later'), dayLabel = document.getElementById('dayLabel');
+  var dots = document.getElementById('dots').children, pauseBtn = document.getElementById('pause');
+  var fT = document.getElementById('fT'), fB = document.getElementById('fB'), fC = document.getElementById('fC'), fS = document.getElementById('fS');
+
+  var thoughts = [
+    { t: 'Big-O of Swift collections', b: 'Array append is amortized O(1). Set and Dictionary lookups are O(1) on average…', c: ['#swift', '#study'] },
+    { t: 'Rubber-duck before asking', b: 'Explain the bug out loud in full sentences first. Half the time the answer shows up.', c: ['#work'] },
+    { t: 'Weekly review questions', b: 'What moved forward? What stalled? What do I want to stop doing?', c: ['#habits'] }
+  ];
+  var idx = 0, G = {}, theta = 0;
+
+  function layout() {
+    var w = stage.clientWidth, h = stage.clientHeight;
+    G.cw = flyer.offsetWidth; G.ch = flyer.offsetHeight;
+    G.cx = w / 2;
+    G.baseY = h - G.ch / 2 - 22;
+    G.ry = Math.max(80, (G.baseY - G.ch * 0.3 - 26) / 2);
+    G.rx = Math.min(w * 0.34, 230);
+    var cy = G.baseY - G.ry;
+    trail.setAttribute('cx', G.cx); trail.setAttribute('cy', cy);
+    trail.setAttribute('rx', G.rx); trail.setAttribute('ry', G.ry);
+    counter.style.top = (cy - 22) + 'px';
+    later.style.top = Math.max(16, G.baseY - G.ch / 2 - 54) + 'px';
+    place(theta);
+  }
+  function place(th) {
+    var x = G.cx + G.rx * Math.sin(th);
+    var y = G.baseY - G.ry + G.ry * Math.cos(th);
+    var lift = (1 - Math.cos(th)) / 2;           // 0 at rest, 1 at the far point
+    var s = 1 - 0.45 * lift;
+    var r = -14 * Math.sin(th) + 6 * Math.sin(th * 2);
+    flyer.style.transform = 'translate(' + (x - G.cw / 2) + 'px,' + (y - G.ch / 2) + 'px) rotate(' + r + 'deg) scale(' + s + ')';
+  }
+  function setDays(n) {
+    dayLabel.textContent = n >= 7 ? 'Day 7 · back' : 'Day ' + n;
+    for (var i = 0; i < dots.length; i++) dots[i].classList.toggle('on', i < n);
+  }
+  function setThought(o) {
+    fT.textContent = o.t; fB.textContent = o.b;
+    fC.innerHTML = o.c.map(function (c) { return '<span class="chip">' + c + '</span>'; }).join('');
+  }
+  function ease(t) { return -(Math.cos(Math.PI * t) - 1) / 2; }
+
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)');
+  var FLY = 5200, HOLD = 3000, phase = 'hold', start = 0, paused = false, pausedAt = 0;
+
+  // Resting state: card landed, 7 days later.
+  stage.classList.add('landed');
+  setDays(7);
+  layout();
+  window.addEventListener('resize', layout);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(layout);
+
+  function tick(now) {
+    if (paused || reduce.matches) { requestAnimationFrame(tick); return; }
+    if (!start) start = now;
+    var el = now - start;
+    if (phase === 'hold' && el > HOLD) {
+      phase = 'fly'; start = now; el = 0;
+      stage.classList.remove('landed');
+      flyer.classList.add('away');
+      idx = (idx + 1) % thoughts.length;
+    }
+    if (phase === 'fly') {
+      var t = Math.min(1, el / FLY), e = ease(t);
+      theta = e * Math.PI * 2;
+      if (t > 0.5 && fT.textContent !== thoughts[idx].t) setThought(thoughts[idx]); // swap while far away
+      var day = Math.min(7, Math.max(1, Math.ceil(e * 7)));
+      setDays(day);
+      var left = 7 - day;
+      fS.className = 'status';
+      fS.textContent = left > 0 ? 'back in ' + left + 'd' : 'due today';
+      place(theta);
+      if (t >= 1) {
+        theta = 0; place(0);
+        phase = 'hold'; start = now;
+        flyer.classList.remove('away');
+        fS.className = 'status today'; fS.textContent = 'due today';
+        setDays(7);
+        stage.classList.add('landed');
+      }
+    }
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+
+  pauseBtn.addEventListener('click', function () {
+    paused = !paused;
+    if (paused) pausedAt = performance.now(); else start += performance.now() - pausedAt;
+    pauseBtn.setAttribute('aria-pressed', String(paused));
+    pauseBtn.setAttribute('aria-label', paused ? 'Play animation' : 'Pause animation');
+    pauseBtn.innerHTML = paused
+      ? '<svg viewBox="0 0 14 14" fill="currentColor" aria-hidden="true"><path d="M3 1.5v11l9-5.5z"/></svg>'
+      : '<svg viewBox="0 0 14 14" fill="currentColor" aria-hidden="true"><rect x="2" y="1" width="3.5" height="12" rx="1"/><rect x="8.5" y="1" width="3.5" height="12" rx="1"/></svg>';
+  });
+})();
+</script>
+</body>
+</html>

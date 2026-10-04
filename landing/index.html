@@ -1,0 +1,52 @@
+<title>Thought Reps Landing Directions</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: a single narrow column of five option rows, each linking to a full page */
+:root {
+  --bg: #F5F6F8; --card: #FFFFFF; --ink: #15171C; --muted: #5B6170;
+  --line: #E3E5EA; --accent: #3451D1; --accent-soft: #E8ECFB;
+  --sans: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+  --mono: 'IBM Plex Mono', ui-monospace, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #111318; --card: #1A1D24; --ink: #ECEEF3; --muted: #9AA0AE;
+  --line: #2A2E38; --accent: #8EA2FF; --accent-soft: #232A4A; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #111318; --card: #1A1D24; --ink: #ECEEF3; --muted: #9AA0AE;
+  --line: #2A2E38; --accent: #8EA2FF; --accent-soft: #232A4A; color-scheme: dark }
+body { background: var(--bg); color: var(--ink); font: 16px/1.5 var(--sans); }
+.wrap { max-width: 720px; margin: 0 auto; padding-inline: 16px; padding-block: 56px 72px; display: flex; flex-direction: column; gap: 32px; }
+header { display: flex; flex-direction: column; gap: 8px; }
+.eyebrow { font: 500 12px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
+h1 { margin: 0; font-size: clamp(28px, 5vw, 40px); line-height: 1.1; letter-spacing: -.02em; text-wrap: balance; }
+header p { margin: 0; color: var(--muted); max-width: 60ch; }
+ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+a.opt { display: grid; grid-template-columns: auto 1fr auto; gap: 16px; align-items: center; padding: 18px 20px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; color: var(--ink); text-decoration: none; transition: border-color .15s, transform .15s; }
+a.opt:hover { border-color: var(--accent); transform: translateY(-1px); }
+a.opt:active { transform: translateY(0); }
+a.opt:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.num { font: 500 13px/1 var(--mono); color: var(--accent); background: var(--accent-soft); border-radius: 8px; padding: 6px 8px; }
+.txt { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.txt strong { font-size: 17px; font-weight: 600; }
+.txt span { color: var(--muted); font-size: 14px; }
+.go { color: var(--muted); transition: color .15s, transform .15s; }
+a.opt:hover .go { color: var(--accent); transform: translateX(3px); }
+footer { color: var(--muted); font-size: 13px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+<div class="wrap">
+  <header>
+    <span class="eyebrow">Thought Reps · iPhone</span>
+    <h1>Five landing page directions</h1>
+    <p>Same product, same sections, five different personalities. Open each one and pick the one that feels right, or mix parts from several.</p>
+  </header>
+  <ol>
+    <li><a class="opt" href="1-boomerang.html"><span class="num">1</span><span class="txt"><strong>Boomerang</strong><span>Calm hero with cards that drift away and loop back a week later.</span></span><span class="go" aria-hidden="true">→</span></a></li>
+    <li><a class="opt" href="2-notebook.html"><span class="num">2</span><span class="txt"><strong>Notebook</strong><span>Paper and margin doodles. Thoughts come back like sticky notes.</span></span><span class="go" aria-hidden="true">→</span></a></li>
+    <li><a class="opt" href="3-live-demo.html"><span class="num">3</span><span class="txt"><strong>Live demo</strong><span>A working phone in the hero. Tap, reveal, snooze, and capture.</span></span><span class="go" aria-hidden="true">→</span></a></li>
+    <li><a class="opt" href="4-calendar.html"><span class="num">4</span><span class="txt"><strong>Calendar</strong><span>Scroll through one week and watch a thought come back on day 7.</span></span><span class="go" aria-hidden="true">→</span></a></li>
+    <li><a class="opt" href="5-playful-type.html"><span class="num">5</span><span class="txt"><strong>Playful type</strong><span>Big bold headlines, colorful tag chips, and a bento grid of features.</span></span><span class="go" aria-hidden="true">→</span></a></li>
+  </ol>
+  <footer>Use your browser's back button to return here.</footer>
+</div>

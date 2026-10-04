@@ -1,0 +1,70 @@
+# XcodeGen spec — the source of truth for ThoughtReps.xcodeproj.
+# Regenerate the project after pulling or adding files:  xcodegen
+name: ThoughtReps
+
+options:
+  bundleIdPrefix: com.thoughtreps
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+  developmentLanguage: en
+
+configFiles:
+  Debug: Config/Base.xcconfig
+  Release: Config/Base.xcconfig
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    CODE_SIGN_STYLE: Automatic
+
+targets:
+  ThoughtReps:
+    type: application
+    platform: iOS
+    sources:
+      - path: ThoughtReps
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(TR_BUNDLE_ID)
+        PRODUCT_NAME: ThoughtReps
+        TARGETED_DEVICE_FAMILY: "1"
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Thought Reps
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: UIInterfaceOrientationPortrait
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        ENABLE_PREVIEWS: YES
+
+  ThoughtRepsTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: ThoughtRepsTests
+    dependencies:
+      - target: ThoughtReps
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(TR_BUNDLE_ID).tests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/ThoughtReps.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/ThoughtReps"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+
+schemes:
+  ThoughtReps:
+    build:
+      targets:
+        ThoughtReps: all
+        ThoughtRepsTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - ThoughtRepsTests
+    archive:
+      config: Release

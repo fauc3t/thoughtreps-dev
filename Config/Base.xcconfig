@@ -1,0 +1,10 @@
+// Shared build settings for every configuration.
+//
+// Your signing team lives in Config/Local.xcconfig, which is gitignored so
+// regenerating the project (or another machine) never loses or leaks it.
+// Copy Config/Local.xcconfig.example to Config/Local.xcconfig and fill it in.
+
+// Bundle ID for the app; the test bundle appends ".tests".
+TR_BUNDLE_ID = com.thoughtreps.app
+
+#include? "Local.xcconfig"

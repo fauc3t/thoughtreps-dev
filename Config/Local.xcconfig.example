@@ -1,0 +1,12 @@
+// Copy this file to Config/Local.xcconfig (gitignored) and set your team.
+//
+// Find your Team ID: Xcode > Settings > Accounts > select your Apple ID >
+// your developer team, or developer.apple.com > Account > Membership details.
+// You can also open the generated project once, pick the team under Signing &
+// Capabilities, and copy the DEVELOPMENT_TEAM value from the build settings.
+
+DEVELOPMENT_TEAM = YOURTEAMID
+
+// The bundle ID must be unique across the App Store. If Xcode says it is
+// already registered to another team, uncomment and change this:
+// TR_BUNDLE_ID = com.yourname.thoughtreps
