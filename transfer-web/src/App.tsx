@@ -304,49 +304,63 @@ export function App({ link }: { link: ParsedLink }) {
   const retryClaim = state.kind === 'failed' ? state.retryClaim : null;
 
   return (
-    <main className="mx-auto flex min-h-dvh max-w-xl flex-col justify-center py-10">
-      <p className="label mb-4">Thought Reps</p>
-      <h1 className="mb-6 text-4xl leading-none font-extrabold [font-variation-settings:'wdth'_110]">
-        Your Thought Reps export
-      </h1>
-      <section className="stk flex flex-col gap-4 p-6">
-        <div aria-live="polite" className="flex flex-col gap-3">
-          {renderStatus(link, state, headingRef)}
-        </div>
-        {(state.kind === 'ready' || state.kind === 'working') && (
-          <button
-            type="button"
-            className={BUTTON}
-            disabled={state.kind === 'working'}
-            onClick={() => void download()}
-          >
-            Download
-          </button>
-        )}
-        {retryClaim && (
-          <button
-            type="button"
-            className={BUTTON}
-            onClick={() => retryDownload(retryClaim)}
-          >
-            Try again
-          </button>
-        )}
-        {state.kind === 'load_error' && (
-          <button type="button" className={BUTTON} onClick={retryLoad}>
-            Try again
-          </button>
-        )}
-        {state.kind === 'working' && state.work.phase === 'downloading' && (
-          <progress
-            className="progress"
-            max={state.work.total}
-            value={state.work.loaded}
-            aria-label="Download progress"
+    <div className="flex min-h-dvh flex-col">
+      <header className="mx-auto flex w-full max-w-xl items-center py-[18px]">
+        <a
+          className="-mx-2 flex items-center gap-2.5 rounded-[12px] border-2 border-transparent px-2 py-1.5 text-[19px] leading-none font-extrabold tracking-[-0.01em] no-underline transition-[border-color,background] duration-[120ms] [font-family:var(--font-display)] [font-variation-settings:'wdth'_108] hover:border-ink hover:bg-soft focus-visible:border-ink"
+          href="https://thoughtreps.com"
+        >
+          <img
+            src="/favicon.svg"
+            alt=""
+            className="size-[38px] rounded-[10px] border-2 border-ink shadow-[2px_2px_0_var(--ink)]"
           />
-        )}
-      </section>
-    </main>
+          Thought Reps
+        </a>
+      </header>
+      <main className="mx-auto flex w-full max-w-xl flex-1 flex-col justify-center pb-10">
+        <h1 className="mb-6 text-4xl leading-none font-extrabold [font-variation-settings:'wdth'_110]">
+          Your Thought Reps export
+        </h1>
+        <section className="stk flex flex-col gap-4 p-6">
+          <div aria-live="polite" className="flex flex-col gap-3">
+            {renderStatus(link, state, headingRef)}
+          </div>
+          {(state.kind === 'ready' || state.kind === 'working') && (
+            <button
+              type="button"
+              className={BUTTON}
+              disabled={state.kind === 'working'}
+              onClick={() => void download()}
+            >
+              Download
+            </button>
+          )}
+          {retryClaim && (
+            <button
+              type="button"
+              className={BUTTON}
+              onClick={() => retryDownload(retryClaim)}
+            >
+              Try again
+            </button>
+          )}
+          {state.kind === 'load_error' && (
+            <button type="button" className={BUTTON} onClick={retryLoad}>
+              Try again
+            </button>
+          )}
+          {state.kind === 'working' && state.work.phase === 'downloading' && (
+            <progress
+              className="progress"
+              max={state.work.total}
+              value={state.work.loaded}
+              aria-label="Download progress"
+            />
+          )}
+        </section>
+      </main>
+    </div>
   );
 }
 
