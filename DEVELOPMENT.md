@@ -29,11 +29,15 @@ xcodegen && open ThoughtReps.xcodeproj
 
 The share extension (`ThoughtRepsShare`) hands thoughts to the app through an `Inbox/` folder in the App Group; `InboxImporter` imports it at launch and on foreground. Info.plists and entitlements are generated from `project.yml` and gitignored, so run `xcodegen` before building a fresh clone. After the first install, "Thought Reps" may not appear in the share sheet until the app has been launched once, or enabled under the share sheet's More / Edit Actions.
 
+Take Photo needs a real device; the simulator has no camera. Photo Library and Paste Image work in the simulator.
+
 Debug builds seed sample thoughts on first launch. Settings > Developer can add more or delete everything.
 
 To try the daily reminder, enable it in Settings and set the time a minute or two ahead, then background the app (the simulator shows banners too). Reminders are rescheduled on foreground and background, so they only reflect due thoughts as of the last time the app was active.
 
 Debug builds also run `IntegrityChecker` over the whole store at launch and log any violations via `os.Logger` (subsystem `com.thoughtreps`). It never repairs or crashes, so a logged violation means a bug in a store write; fix the write rather than the data.
+
+Before launch, a schema change means regenerating `ThoughtRepsTests/Fixtures/default.store`; the steps are in `ThoughtRepsTests/Fixtures/README.md` (`FixtureGenerator` runs only when `TEST_RUNNER_GENERATE_FIXTURE_TO` is set).
 
 ## Running on an iPhone
 

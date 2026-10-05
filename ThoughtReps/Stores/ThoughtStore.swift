@@ -2,12 +2,32 @@ import Foundation
 import SwiftData
 import os
 
+/// An image the user added in the editor. The id is assigned up front so the editor can insert
+/// `ImageToken.token(for:)` into the body immediately.
+struct ImageDraft: Identifiable, Equatable {
+    let id: UUID
+    /// The processed pixels for an image not saved yet; nil for an image already in the store.
+    var processed: ProcessedImage?
+
+    init(id: UUID = UUID(), processed: ProcessedImage? = nil) {
+        self.id = id
+        self.processed = processed
+    }
+
+    /// A reference to an image already in the store.
+    init(existing image: ImageAsset) {
+        self.init(id: image.id)
+    }
+}
+
 /// Draft of a block being edited, before it is written to the store.
 struct BlockDraft: Identifiable, Equatable {
     var id = UUID()
     var kind: BlockKind = .blurred
     var title: String = ""
     var content: String = ""
+    /// Gallery blocks only: the images in display order, new or already stored.
+    var images: [ImageDraft] = []
 }
 
 /// All writes go through here so tag syncing and scheduling rules are applied in one place.
@@ -19,13 +39,20 @@ struct ThoughtStore {
     var saveErrors: SaveErrorCenter = .shared
     /// Seam so tests can force a save failure.
     var save: (ModelContext) throws -> Void = { try $0.save() }
+    var pendingImageSaves = PendingImageSaves()
 
     // MARK: Create & edit
 
+    /// `images` are the new inline images; one is saved only if its token is in `body`. Existing
+    /// inline images are kept while their token stays in the body. Gallery images travel in the
+    /// gallery's `BlockDraft`.
+    ///
     /// If the save fails, the change is rolled back and the returned thought is detached
     /// (`modelContext == nil`). That is how callers tell a save failed; the other writers return a Bool.
     @discardableResult
-    func create(body: String, blocks: [BlockDraft] = [], intervalDays: Int? = nil, now: Date) -> Thought {
+    func create(
+        body: String, blocks: [BlockDraft] = [], images: [ImageDraft] = [], intervalDays: Int? = nil, now: Date
+    ) -> Thought {
         let interval = intervalDays ?? defaultIntervalDays
         let thought = Thought(
             body: body,
@@ -35,14 +62,33 @@ struct ThoughtStore {
         )
         context.insert(thought)
         syncTags(for: thought)
-        insert(reuseBlocks(of: thought, for: blocks).additions, into: thought)
+        let plan = plan(for: thought, body: body, blocks: blocks, images: images)
+        insertNewBlocks(of: plan, into: thought, firstOrder: 0)
+        insertNewInlineImages(of: plan, into: thought)
+        removeStaleInlineImages(of: plan)
         persist()
         return thought
     }
 
+    /// Edits the thought to match the drafts. Saves in steps; see `persist()`.
     @discardableResult
-    func update(_ thought: Thought, body: String, blocks: [BlockDraft], intervalDays: Int?, now: Date) -> Bool {
+    func update(
+        _ thought: Thought, body: String, blocks: [BlockDraft], images: [ImageDraft] = [], intervalDays: Int?, now: Date
+    ) -> Bool {
+        if pendingImageSaves.ids.contains(thought.id), !removeTokenlessInlineImages(of: thought) {
+            return false
+        }
         guard saveNewTags(for: body) else { return false }
+        let plan = plan(for: thought, body: body, blocks: blocks, images: images)
+        let addedInline = insertNewInlineImages(of: plan, into: thought)
+        let hasPendingImages = !addedInline.isEmpty
+        if hasPendingImages {
+            pendingImageSaves.insert(thought.id)
+            guard persist() else {
+                pendingImageSaves.remove(thought.id)
+                return false
+            }
+        }
         let intervalChanged = thought.intervalDays != intervalDays
         thought.body = body
         thought.intervalDays = intervalDays
@@ -51,60 +97,278 @@ struct ThoughtStore {
         }
         thought.updatedAt = now
         syncTags(for: thought)
-        let plan = reuseBlocks(of: thought, for: blocks)
-        guard persist() else { return false }
-        if !plan.surplus.isEmpty {
-            for block in plan.surplus {
-                block.thought = nil
-                context.delete(block)
+        editKeptBlocks(of: plan)
+        removeStaleInlineImages(of: plan)
+        guard persist() else {
+            if discardAfterFailure(addedInline) {
+                pendingImageSaves.remove(thought.id)
             }
+            return false
+        }
+        if hasPendingImages {
+            pendingImageSaves.remove(thought.id)
+        }
+
+        removeStale(plan)
+        if context.hasChanges {
             guard persist() else { return false }
         }
-        if !plan.additions.isEmpty {
-            insert(plan.additions, into: thought)
-            return persist()
+        insertNewBlocks(of: plan, into: thought, firstOrder: plan.blocks.filter { $0.existing != nil }.count)
+        if context.hasChanges {
+            guard persist() else { return false }
         }
+        applyFinalOrders(of: plan, in: thought)
+        return !context.hasChanges || persist()
+    }
+
+    private struct PlannedBlock {
+        let id: UUID
+        let kind: BlockKind
+        let title: String?
+        let content: String
+        /// Gallery blocks: the images wanted, in display order.
+        var images: [ImageDraft] = []
+        var existing: Block?
+    }
+
+    private struct Plan {
+        var blocks: [PlannedBlock] = []
+        var surplusBlocks: [Block] = []
+        var staleGalleryImages: [ImageAsset] = []
+        var staleInlineImages: [ImageAsset] = []
+        var newInlineImages: [ImageDraft] = []
+    }
+
+    /// Works out what the drafts mean for the thought's current blocks and images, without
+    /// changing anything: which blocks to edit in place, delete or add (blank blurred blocks and
+    /// empty galleries are dropped), and which images to delete or add. Blurred drafts reuse the
+    /// existing blurred blocks by position; a gallery draft matches the existing gallery with its id.
+    ///
+    /// Ids stay unique: a draft block repeating an earlier draft's id is dropped, a draft image
+    /// whose id is already taken is skipped, and a new block colliding with an existing block's id
+    /// gets a fresh one. An existing image listed under a different gallery than the one holding it
+    /// is not moved; it stays at the end of its own gallery, which survives even if its own draft
+    /// is empty.
+    private func plan(for thought: Thought, body: String, blocks drafts: [BlockDraft], images inline: [ImageDraft]) -> Plan {
+        var plan = Plan()
+        var reusableBlurred = thought.sortedBlocks.filter { $0.kind == .blurred }[...]
+        var reusableGalleries = Dictionary(
+            (thought.blocks ?? []).filter { $0.kind == .gallery }.map { ($0.id, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        let existingBlockIDs = Set((thought.blocks ?? []).map(\.id))
+        var claimedBlockIDs = Set<UUID>()
+        let storedImageIDs = Set((thought.images ?? []).map(\.id))
+        let listedElsewhere = Set(drafts.filter { $0.kind == .gallery }.flatMap(\.images).filter { $0.processed == nil }.map(\.id))
+        var claimedImageIDs = Set<UUID>()
+
+        for draft in drafts where claimedBlockIDs.insert(draft.id).inserted {
+            let trimmedTitle = draft.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            let title = trimmedTitle.isEmpty ? nil : trimmedTitle
+            switch draft.kind {
+            case .blurred:
+                let content = draft.content.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !content.isEmpty else { continue }
+                let reused = reusableBlurred.popFirst()
+                let id = reused?.id == draft.id || !existingBlockIDs.contains(draft.id) ? draft.id : UUID()
+                plan.blocks.append(PlannedBlock(id: id, kind: .blurred, title: title, content: content, existing: reused))
+            case .gallery:
+                let existing = reusableGalleries[draft.id]
+                let stored = Dictionary(
+                    (existing?.images ?? []).map { ($0.id, $0) },
+                    uniquingKeysWith: { first, _ in first }
+                )
+                var wanted = draft.images.filter { image in
+                    let usable = stored[image.id] != nil || (image.processed != nil && !storedImageIDs.contains(image.id))
+                    return usable && claimedImageIDs.insert(image.id).inserted
+                }
+                var dropped: [ImageAsset] = []
+                for image in (existing?.sortedImages ?? []) where !claimedImageIDs.contains(image.id) {
+                    if listedElsewhere.contains(image.id) {
+                        claimedImageIDs.insert(image.id)
+                        wanted.append(ImageDraft(existing: image))
+                    } else {
+                        dropped.append(image)
+                    }
+                }
+                guard !wanted.isEmpty else { continue }
+                plan.staleGalleryImages += dropped
+                reusableGalleries[draft.id] = nil
+                let id = existing != nil || !existingBlockIDs.contains(draft.id) ? draft.id : UUID()
+                plan.blocks.append(PlannedBlock(id: id, kind: .gallery, title: title, content: "", images: wanted, existing: existing))
+            }
+        }
+        plan.surplusBlocks = Array(reusableBlurred) + Array(reusableGalleries.values)
+
+        let tokens = Set(ImageToken.references(in: body))
+        plan.staleInlineImages = (thought.images ?? []).filter { $0.block == nil && !tokens.contains($0.id) }
+        plan.newInlineImages = inline.filter {
+            $0.processed != nil && tokens.contains($0.id) && !storedImageIDs.contains($0.id) && claimedImageIDs.insert($0.id).inserted
+        }
+        return plan
+    }
+
+    private func editKeptBlocks(of plan: Plan) {
+        for planned in plan.blocks {
+            guard let block = planned.existing else { continue }
+            block.id = planned.id
+            block.title = planned.title
+            block.content = planned.content
+        }
+    }
+
+    /// Deletes stale images and surplus blocks (with their images) explicitly, then renumbers the
+    /// survivors so orders stay contiguous.
+    private func removeStale(_ plan: Plan) {
+        for image in plan.staleGalleryImages {
+            remove(image)
+        }
+        for block in plan.surplusBlocks {
+            for image in block.images ?? [] {
+                remove(image)
+            }
+            block.thought = nil
+            context.delete(block)
+        }
+        let kept = plan.blocks.compactMap(\.existing).sorted { $0.order < $1.order }
+        for (index, block) in kept.enumerated() {
+            setOrder(of: block, to: index)
+            for (position, image) in block.sortedImages.enumerated() {
+                setOrder(of: image, to: position)
+            }
+        }
+    }
+
+    /// Adds the blocks that are new (ordered from `firstOrder`) and the new images of kept galleries,
+    /// after the images already there.
+    private func insertNewBlocks(of plan: Plan, into thought: Thought, firstOrder: Int) {
+        var order = firstOrder
+        for planned in plan.blocks {
+            if let block = planned.existing {
+                var position = block.images?.count ?? 0
+                for draft in planned.images where !(block.images ?? []).contains(where: { $0.id == draft.id }) {
+                    insertImage(draft, order: position, into: thought, block: block)
+                    position += 1
+                }
+            } else {
+                let block = Block(id: planned.id, kind: planned.kind, content: planned.content, title: planned.title, order: order)
+                order += 1
+                context.insert(block)
+                block.thought = thought
+                for (position, draft) in planned.images.enumerated() {
+                    insertImage(draft, order: position, into: thought, block: block)
+                }
+            }
+        }
+    }
+
+    /// Removed in the same save as the body edit that drops their tokens.
+    private func removeStaleInlineImages(of plan: Plan) {
+        for image in plan.staleInlineImages {
+            remove(image)
+        }
+    }
+
+    /// `update` saves these before the body edit: inserting an image into a stored thought alongside
+    /// edits to its fields crashes after a rollback.
+    @discardableResult
+    private func insertNewInlineImages(of plan: Plan, into thought: Thought) -> [ImageAsset] {
+        plan.newInlineImages.compactMap { insertImage($0, order: 0, into: thought, block: nil) }
+    }
+
+    /// Takes back images saved ahead of a body edit that then failed, so none is left without its
+    /// token. Returns false if that save failed too; the thought then stays in `pendingImageSaves`.
+    private func discardAfterFailure(_ images: [ImageAsset]) -> Bool {
+        for image in images {
+            remove(image)
+        }
+        return persist()
+    }
+
+    /// Run at launch. For each thought left in `pendingImageSaves`, deletes inline images whose
+    /// token is not in the body, and clears the marker only once that is saved. Does nothing, and
+    /// reads nothing from the store, when no thought is marked.
+    @discardableResult
+    func cleanUpPendingImageSaves() -> Bool {
+        var allSucceeded = true
+        for id in pendingImageSaves.ids {
+            var descriptor = FetchDescriptor<Thought>(predicate: #Predicate { $0.id == id })
+            descriptor.fetchLimit = 1
+            let found: [Thought]
+            do {
+                found = try context.fetch(descriptor)
+            } catch {
+                Self.logger.error("Pending image cleanup fetch failed: \(error)")
+                allSucceeded = false
+                continue
+            }
+            guard let thought = found.first else {
+                pendingImageSaves.remove(id)
+                continue
+            }
+            if !removeTokenlessInlineImages(of: thought) {
+                allSucceeded = false
+            }
+        }
+        return allSucceeded
+    }
+
+    /// Deletes the thought's inline images whose token is not in its body and, once that is
+    /// saved, clears its marker. `update` runs this first on a marked thought: editing a thought
+    /// that still holds such images crashes after a later rollback.
+    private func removeTokenlessInlineImages(of thought: Thought) -> Bool {
+        let tokens = Set(ImageToken.references(in: thought.body))
+        let orphans = (thought.images ?? []).filter { $0.block == nil && !tokens.contains($0.id) }
+        for image in orphans {
+            remove(image)
+        }
+        if !orphans.isEmpty, !persist() {
+            return false
+        }
+        pendingImageSaves.remove(thought.id)
         return true
     }
 
-    private struct BlockContent {
-        let id: UUID
-        let kind: BlockKind
-        let content: String
-        let title: String?
-        var order = 0
+    @discardableResult
+    private func insertImage(_ draft: ImageDraft, order: Int, into thought: Thought, block: Block?) -> ImageAsset? {
+        guard let processed = draft.processed else { return nil }
+        let image = ImageAsset(
+            id: draft.id, data: processed.data, thumbnailData: processed.thumbnailData,
+            width: processed.width, height: processed.height, order: order
+        )
+        context.insert(image)
+        image.thought = thought
+        image.block = block
+        return image
     }
 
-    /// Edits the thought's existing blocks in place and returns the blocks to delete and to add
-    /// (blank drafts are dropped). The caller saves those separately; see `persist()`.
-    private func reuseBlocks(of thought: Thought, for drafts: [BlockDraft]) -> (surplus: [Block], additions: [BlockContent]) {
-        let existing = thought.sortedBlocks
-        var kept = drafts.compactMap { draft -> BlockContent? in
-            let content = draft.content.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !content.isEmpty else { return nil }
-            let title = draft.title.trimmingCharacters(in: .whitespacesAndNewlines)
-            return BlockContent(id: draft.id, kind: draft.kind, content: content, title: title.isEmpty ? nil : title)
-        }
-        for index in kept.indices {
-            kept[index].order = index
-        }
-        for (index, item) in kept.prefix(existing.count).enumerated() {
-            let block = existing[index]
-            block.id = item.id
-            block.kindRaw = item.kind.rawValue
-            block.content = item.content
-            block.title = item.title
-            block.order = index
-        }
-        return (Array(existing.dropFirst(kept.count)), Array(kept.dropFirst(existing.count)))
+    private func remove(_ image: ImageAsset) {
+        image.thought = nil
+        image.block = nil
+        context.delete(image)
     }
 
-    private func insert(_ items: [BlockContent], into thought: Thought) {
-        for item in items {
-            let block = Block(id: item.id, kind: item.kind, content: item.content, title: item.title, order: item.order)
-            context.insert(block)
-            block.thought = thought
+    /// Puts blocks and gallery images in their drafted order.
+    private func applyFinalOrders(of plan: Plan, in thought: Thought) {
+        let blocks = Dictionary((thought.blocks ?? []).map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        for (index, planned) in plan.blocks.enumerated() {
+            guard let block = blocks[planned.id] else { continue }
+            setOrder(of: block, to: index)
+            let images = Dictionary((block.images ?? []).map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+            for (position, draft) in planned.images.enumerated() {
+                if let image = images[draft.id] {
+                    setOrder(of: image, to: position)
+                }
+            }
         }
+    }
+
+    private func setOrder(of block: Block, to order: Int) {
+        if block.order != order { block.order = order }
+    }
+
+    private func setOrder(of image: ImageAsset, to order: Int) {
+        if image.order != order { image.order = order }
     }
 
     /// Rebuilds the thought's tags from its body, creating `Tag`s as needed.
@@ -204,12 +468,14 @@ struct ThoughtStore {
     /// Deletes blocks and images explicitly rather than by cascade; see `persist()`.
     private func deleteWithChildren(_ thought: Thought) {
         for block in thought.blocks ?? [] {
+            for image in block.images ?? [] {
+                remove(image)
+            }
             block.thought = nil
             context.delete(block)
         }
         for image in thought.images ?? [] {
-            image.thought = nil
-            context.delete(image)
+            remove(image)
         }
         context.delete(thought)
     }
@@ -256,13 +522,21 @@ struct ThoughtStore {
 
     /// Saves, and on failure rolls back so memory matches disk.
     ///
-    /// SwiftData crashes ("Could not cast DefaultStoreSnapshotValueFuture to Array<Block>") when
-    /// a thought is read after rolling back a failed save that, on a stored thought, did any of:
-    /// inserted a Tag linked to it, inserted a Block into it alongside changes to its own fields,
-    /// or deleted blocks by cascade or alongside other edits. So `update` saves in steps (new tags,
-    /// then field edits and in-place block edits, then block deletions, then block additions) and
+    /// SwiftData crashes ("Could not cast DefaultStoreSnapshotValueFuture to Array<Block>", or
+    /// `Array<ImageAsset>`) when a model is read after rolling back a failed save that, on a stored
+    /// thought, did any of: inserted a Tag linked to it, inserted a Block or an ImageAsset into it
+    /// alongside changes to its own fields, deleted blocks by cascade or alongside other edits, or
+    /// deleted a block whose `images` had not been read yet. So `update` saves in steps (new tags;
+    /// new inline images; field edits, in-place block edits and removal of inline images, which
+    /// land together so the body and its images agree; deletions; additions; final ordering) and
     /// deletes children explicitly. A failure part-way leaves consistent data and a retry finishes
-    /// the job. Keep any new write on a stored thought within those shapes.
+    /// the job. The one exception: new inline images are saved before the body edit, so `update`
+    /// marks the thought in `pendingImageSaves` first and clears it when the edit saves or the
+    /// images are taken back; if both saves fail, or the app dies between them, the marker stays
+    /// and `cleanUpPendingImageSaves` (at launch) deletes the token-less images. `update` also
+    /// does that first for a marked thought (stacking failed saves on a thought that still holds
+    /// them crashes), and refuses to edit it if that fails. Keep any new write on a stored
+    /// thought within those shapes.
     @discardableResult
     private func persist() -> Bool {
         do {

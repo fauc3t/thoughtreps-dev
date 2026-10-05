@@ -51,6 +51,15 @@ enum IntegrityChecker {
             }
         }
 
+        var seenBlockIDs = Set<UUID>()
+        for block in blocks where !seenBlockIDs.insert(block.id).inserted {
+            add("Duplicate block id \(block.id)", block.id.uuidString)
+        }
+        var seenImageIDs = Set<UUID>()
+        for image in images where !seenImageIDs.insert(image.id).inserted {
+            add("Duplicate image id \(image.id)", image.id.uuidString)
+        }
+
         for block in blocks {
             guard let owner = block.thought else {
                 add("Block \(block.id) has no thought", block.id.uuidString)
@@ -67,6 +76,22 @@ enum IntegrityChecker {
             }
             if !(owner.images ?? []).contains(where: { $0 === image }) {
                 add("Image \(image.id) points to thought \(owner.id) which does not list it", image.id.uuidString)
+            }
+            if image.data == nil || image.thumbnailData == nil {
+                add("Image \(image.id) is missing its data or thumbnail", image.id.uuidString)
+            }
+            if let gallery = image.block {
+                if gallery.thought !== owner {
+                    add("Image \(image.id) belongs to a gallery of a different thought", image.id.uuidString)
+                }
+                if gallery.kind != .gallery {
+                    add("Image \(image.id) is in block \(gallery.id) which is not a gallery", image.id.uuidString)
+                }
+                if !(gallery.images ?? []).contains(where: { $0 === image }) {
+                    add("Image \(image.id) points to block \(gallery.id) which does not list it", image.id.uuidString)
+                }
+            } else if !ImageToken.references(in: owner.body).contains(image.id) {
+                add("Inline image \(image.id) has no token in the body of thought \(owner.id)", image.id.uuidString)
             }
         }
 
@@ -86,6 +111,20 @@ enum IntegrityChecker {
             }
             for image in thought.images ?? [] where image.thought !== thought {
                 add("Thought \(id) lists image \(image.id) whose thought differs", id)
+            }
+
+            let inlineIDs = Set((thought.images ?? []).filter { $0.block == nil }.map(\.id))
+            for imageID in Set(ImageToken.references(in: thought.body)) where !inlineIDs.contains(imageID) {
+                add("Thought \(id) body references image \(imageID) which is not one of its inline images", id)
+            }
+            for block in thought.blocks ?? [] {
+                let galleryOrders = (block.images ?? []).map(\.order).sorted()
+                if galleryOrders != Array(0..<galleryOrders.count) {
+                    add("Block \(block.id) image orders \(galleryOrders) are not 0..<\(galleryOrders.count)", block.id.uuidString)
+                }
+                if block.kind == .blurred && !(block.images ?? []).isEmpty {
+                    add("Blurred block \(block.id) has images", block.id.uuidString)
+                }
             }
 
             let orders = (thought.blocks ?? []).map(\.order).sorted()

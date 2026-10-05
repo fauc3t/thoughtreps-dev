@@ -1,11 +1,15 @@
 import Foundation
+import CoreGraphics
+import ImageIO
 import SwiftData
+import UniformTypeIdentifiers
 
 /// Sample thoughts for previews and first runs of Debug builds, covering every state:
 /// pinned, overdue, due today, waiting, archived, with and without blocks.
 @MainActor
 enum SampleData {
     private struct Sample {
+        /// `{image}` in the body becomes an inline generated image.
         var body: String
         var createdDaysAgo: Int
         /// Negative = overdue by that many days; positive = waiting.
@@ -15,6 +19,7 @@ enum SampleData {
         var views = 0
         var interval: Int? = nil
         var blocks: [BlockDraft] = []
+        var galleryImages = 0
     }
 
     private static let samples: [Sample] = [
@@ -75,6 +80,14 @@ enum SampleData {
             createdDaysAgo: 30, dueInDays: 9, views: 3, interval: 14
         ),
         Sample(
+            body: "# Whiteboard from planning\nThe sketch we agreed on.\n\n{image}\n\n#projects",
+            createdDaysAgo: 4, dueInDays: 3
+        ),
+        Sample(
+            body: "# Trip moodboard\nColors and places to steal from.\n\n#projects",
+            createdDaysAgo: 6, dueInDays: 1, galleryImages: 3
+        ),
+        Sample(
             body: "# Old idea: newsletter\nShelved for now, keeping it for reference.\n\n#projects",
             createdDaysAgo: 60, dueInDays: -20, archived: true
         ),
@@ -95,9 +108,24 @@ enum SampleData {
         let calendar = Calendar.current
         for sample in samples {
             let created = Scheduler.adding(days: -sample.createdDaysAgo, to: now, calendar: calendar)
+            var body = sample.body
+            var blocks = sample.blocks
+            var images: [ImageDraft] = []
+            if body.contains("{image}"), let image = generatedImage(hue: 0.08, width: 1600, height: 1000) {
+                body = body.replacingOccurrences(of: "{image}", with: ImageToken.token(for: image.id))
+                images = [image]
+            }
+            if sample.galleryImages > 0 {
+                let hues: [CGFloat] = [0.55, 0.75, 0.95]
+                let gallery = hues.prefix(sample.galleryImages).enumerated().compactMap { index, hue in
+                    generatedImage(hue: hue, width: index == 1 ? 1000 : 1200, height: index == 1 ? 1400 : 900)
+                }
+                blocks.append(BlockDraft(kind: .gallery, title: "Moodboard", images: gallery))
+            }
             let thought = store.create(
-                body: sample.body,
-                blocks: sample.blocks,
+                body: body,
+                blocks: blocks,
+                images: images,
                 intervalDays: sample.interval,
                 now: created
             )
@@ -119,6 +147,30 @@ enum SampleData {
                 store.archive(thought, now: Scheduler.adding(days: -10, to: now, calendar: calendar))
             }
         }
+    }
+
+    /// A gradient standing in for a photo.
+    private static func generatedImage(hue: CGFloat, width: Int, height: Int) -> ImageDraft? {
+        let space = CGColorSpaceCreateDeviceRGB()
+        guard let context = CGContext(
+            data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+            space: space, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
+        ) else { return nil }
+        let colors = [
+            CGColor(red: 1 - hue, green: 0.5, blue: hue, alpha: 1),
+            CGColor(red: hue, green: 0.8, blue: 1 - hue, alpha: 1),
+        ]
+        guard let gradient = CGGradient(colorsSpace: space, colors: colors as CFArray, locations: nil) else { return nil }
+        context.drawLinearGradient(gradient, start: .zero, end: CGPoint(x: width, y: height), options: [])
+        let output = NSMutableData()
+        guard let image = context.makeImage(),
+              let destination = CGImageDestinationCreateWithData(output, UTType.jpeg.identifier as CFString, 1, nil)
+        else { return nil }
+        CGImageDestinationAddImage(destination, image, nil)
+        guard CGImageDestinationFinalize(destination),
+              let processed = try? ImageProcessor.process(output as Data)
+        else { return nil }
+        return ImageDraft(processed: processed)
     }
 }
 

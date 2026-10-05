@@ -5,7 +5,21 @@ struct ThoughtCard: View {
     let thought: Thought
     let now: Date
 
+    private static let thumbnailSize: CGFloat = 56
+
     var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            content
+            if let image = thought.firstImage {
+                DataImage(id: image.id) { image.thumbnailData }
+                    .frame(width: Self.thumbnailSize, height: Self.thumbnailSize)
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .accessibilityHidden(true)
+            }
+        }
+    }
+
+    private var content: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(thought.title)

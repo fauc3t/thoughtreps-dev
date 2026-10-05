@@ -69,6 +69,7 @@ struct RootTabView: View {
         }
         .task {
             ThoughtStore(context: context).pruneOrphanTags()
+            ThoughtStore(context: context).cleanUpPendingImageSaves()
             #if DEBUG
             SampleData.seedIfNeeded(context: context)
             IntegrityChecker.logViolations(in: context)

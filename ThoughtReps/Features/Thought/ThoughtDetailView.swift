@@ -15,6 +15,7 @@ struct ThoughtDetailView: View {
     @State private var confirmDelete = false
     @State private var pendingDelete = false
     @State private var tappedTag: Tag?
+    @State private var viewingImage: ImageViewerStart?
 
     private var store: ThoughtStore {
         ThoughtStore(context: context, defaultIntervalDays: defaultIntervalDays)
@@ -28,10 +29,10 @@ struct ThoughtDetailView: View {
                         TagChips(tags: thought.sortedTags, linked: true)
                     }
                 }
-                ThoughtRenderer(markdown: thought.body)
+                ThoughtRenderer(markdown: thought.body, images: thought.images ?? []) { viewingImage = ImageViewerStart(id: $0) }
                     .environment(\.openURL, OpenURLAction(handler: openLink))
                 ForEach(thought.sortedBlocks) { block in
-                    BlockView(block: block)
+                    BlockView(block: block) { viewingImage = ImageViewerStart(id: $0) }
                 }
                 Divider().padding(.top, 8)
                 footer
@@ -42,6 +43,7 @@ struct ThoughtDetailView: View {
         .contentMargins(.bottom, 88, for: .scrollContent) // room for the + button
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { toolbarContent }
+        .imageViewer(item: $viewingImage, images: { thought.orderedImages })
         .navigationDestination(item: $tappedTag) { TagTimelineView(tag: $0) }
         .sheet(isPresented: $isEditing) {
             EditorView(mode: .edit(thought))

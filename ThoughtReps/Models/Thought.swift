@@ -68,6 +68,25 @@ extension Thought {
         (blocks ?? []).sorted { $0.order < $1.order }
     }
 
+    /// Every image in display order: inline images as their tokens appear in the body, then each
+    /// gallery's images, galleries in block order.
+    var orderedImages: [ImageAsset] {
+        let inline = Dictionary(
+            (images ?? []).filter { $0.block == nil }.map { ($0.id, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        var seen = Set<UUID>()
+        let inBody = ImageToken.references(in: body).compactMap { id in
+            seen.insert(id).inserted ? inline[id] : nil
+        }
+        return inBody + sortedBlocks.flatMap(\.sortedImages)
+    }
+
+    /// The image the timeline card shows: the first of `orderedImages`.
+    var firstImage: ImageAsset? {
+        orderedImages.first
+    }
+
     /// First non-empty line, with leading heading markers removed.
     var title: String {
         let line = body

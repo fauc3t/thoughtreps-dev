@@ -83,6 +83,33 @@ struct PersistenceTests {
         }
     }
 
+    @Test func largeImageSurvivesReopeningTheStore() throws {
+        let dir = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appendingPathComponent("default.store")
+        var bytes = [UInt8](repeating: 0, count: 600_000)
+        var rng = SeededGenerator(seed: 7)
+        for index in bytes.indices { bytes[index] = UInt8.random(in: 0...255, using: &rng) }
+        let big = ProcessedImage(data: Data(bytes), thumbnailData: Data(bytes.prefix(300_000)), width: 2048, height: 1536)
+        let draft = ImageDraft(processed: big)
+
+        do {
+            let container = try ModelContainer.thoughtReps(url: url)
+            defer { withExtendedLifetime(container) {} }
+            let store = ThoughtStore(context: container.mainContext, defaultIntervalDays: 7, saveErrors: SaveErrorCenter())
+            store.create(body: "# Big\n\(ImageToken.token(for: draft.id))", images: [draft], now: now)
+        }
+        do {
+            let container = try ModelContainer.thoughtReps(url: url)
+            defer { withExtendedLifetime(container) {} }
+            let image = try #require(try container.mainContext.fetch(FetchDescriptor<ImageAsset>()).first)
+            #expect(image.id == draft.id)
+            #expect(image.data == big.data)
+            #expect(image.thumbnailData == big.thumbnailData)
+            #expect(try IntegrityChecker.check(container.mainContext).isEmpty)
+        }
+    }
+
     @Test func openV1FixtureWithMigrationPlan() throws {
         let fixture = try #require(Bundle(for: BundleToken.self).url(forResource: "default", withExtension: "store"))
         let dir = try makeTempDirectory()
@@ -121,13 +148,30 @@ struct PersistenceTests {
         #expect(archived.isArchived)
         #expect(archived.archivedAt == t0.addingTimeInterval(20 * day))
         #expect(archived.sortedTags.map(\.name) == ["study"])
+        #expect(archived.sortedBlocks.count == 1)
 
         let plain = try thought("# Plain")
         #expect((plain.tags ?? []).isEmpty)
         #expect((plain.blocks ?? []).isEmpty)
 
+        let inlineImage = try #require(viewed.images?.first)
+        #expect((viewed.images ?? []).count == 1)
+        #expect(inlineImage.block == nil)
+        #expect(viewed.orderedImages.map(\.id) == [inlineImage.id])
+        #expect(viewed.body.contains(ImageToken.token(for: inlineImage.id)))
+        #expect(inlineImage.width == 96 && inlineImage.height == 64)
+        #expect(inlineImage.data?.isEmpty == false && inlineImage.thumbnailData?.isEmpty == false)
+
+        let gallery = try #require(archived.sortedBlocks.first)
+        #expect(gallery.kind == .gallery)
+        #expect(gallery.title == "Trip")
+        #expect(gallery.sortedImages.map(\.order) == [0, 1])
+        #expect(gallery.sortedImages.map(\.width) == [64, 80])
+        #expect(archived.firstImage === gallery.sortedImages.first)
+
         #expect(try context.fetchCount(FetchDescriptor<ThoughtReps.Tag>()) == 3)
-        #expect(try context.fetchCount(FetchDescriptor<Block>()) == 2)
+        #expect(try context.fetchCount(FetchDescriptor<Block>()) == 3)
+        #expect(try context.fetchCount(FetchDescriptor<ImageAsset>()) == 3)
         #expect(try IntegrityChecker.check(context).isEmpty)
     }
 }
@@ -329,7 +373,7 @@ struct IntegrityCheckerTests {
     @Test func detectsOrphanBlockAndImage() throws {
         let found = try violations { context, _ in
             context.insert(Block(kind: .blurred, content: "x", order: 0))
-            context.insert(ImageAsset(filename: "a.png", width: 1, height: 1))
+            context.insert(ImageAsset(data: Data([1]), thumbnailData: Data([1]), width: 1, height: 1))
         }
         #expect(found.contains { $0.contains("Block") && $0.contains("no thought") })
         #expect(found.contains { $0.contains("Image") && $0.contains("no thought") })

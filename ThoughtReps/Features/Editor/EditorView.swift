@@ -24,6 +24,9 @@ struct EditorView: View {
     @State private var hasLoaded = false
     @State private var tagUseCounts: [String: Int] = [:]
     @State private var saveErrors = SaveErrorCenter()
+    @State private var inlineDrafts: [ImageDraft] = []
+    @State private var bodyImageIDs: [UUID] = []
+    @State private var intake = ImageIntake()
     @FocusState private var isBodyFocused: Bool
 
     private var isNew: Bool {
@@ -67,6 +70,50 @@ struct EditorView: View {
         )
     }
 
+    /// Images already stored on the thought being edited.
+    private var storedImages: [UUID: ImageAsset] {
+        guard case let .edit(thought) = mode else { return [:] }
+        return Dictionary((thought.images ?? []).map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+    }
+
+    /// Thumbnails for the images whose tokens are in the body, in text order.
+    private var bodyThumbnails: [(id: UUID, data: @MainActor () -> Data?)] {
+        let stored = storedImages
+        return bodyImageIDs.compactMap { id in
+            if let draft = inlineDrafts.first(where: { $0.id == id }), let processed = draft.processed {
+                return (id, { processed.thumbnailData })
+            }
+            if let asset = stored[id], asset.isInline {
+                return (id, { asset.thumbnailData })
+            }
+            return nil
+        }
+    }
+
+    private func addInlineImages(_ added: [ImageDraft]) {
+        for draft in added {
+            inlineDrafts.append(draft)
+            var cursor = text.endIndex
+            if let selection, case let .selection(range) = selection.indices, range.upperBound <= text.endIndex {
+                cursor = range.upperBound
+            }
+            let inserted = ImageToken.inserting(draft.id, into: text, at: cursor)
+            text = inserted.text
+            selection = TextSelection(insertionPoint: inserted.cursor)
+        }
+    }
+
+    /// Looks the block up by id because it may have moved or been deleted while the image processed.
+    private func addGalleryImages(to blockID: UUID, _ added: [ImageDraft]) {
+        guard let index = drafts.firstIndex(where: { $0.id == blockID }) else { return }
+        drafts[index].images.append(contentsOf: added)
+    }
+
+    private func removeInlineImage(_ id: UUID) {
+        text = ImageToken.removing(id, from: text)
+        selection = nil
+    }
+
     private var intervalSummary: String {
         guard let intervalDays else { return "Default (\(defaultIntervalDays) days)" }
         return IntervalDuration(days: intervalDays).label
@@ -81,6 +128,25 @@ struct EditorView: View {
                         .frame(minHeight: 220)
                         .focused($isBodyFocused)
                         .accessibilityLabel("Thought")
+                    ImageProcessingIndicator(intake: intake)
+                    let thumbnails = bodyThumbnails
+                    if !thumbnails.isEmpty {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                ForEach(Array(thumbnails.enumerated()), id: \.element.id) { index, thumbnail in
+                                    RemovableThumbnail(
+                                        id: thumbnail.id,
+                                        index: index + 1,
+                                        count: thumbnails.count,
+                                        data: thumbnail.data
+                                    ) {
+                                        removeInlineImage(thumbnail.id)
+                                    }
+                                }
+                            }
+                        }
+                        .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 8))
+                    }
                 } footer: {
                     if detectedTags.isEmpty {
                         Text("Markdown works here. Add #tags anywhere to file this thought.")
@@ -91,7 +157,7 @@ struct EditorView: View {
 
                 Section {
                     ForEach($drafts) { $draft in
-                        BlockDraftEditor(draft: $draft)
+                        BlockDraftEditor(draft: $draft, storedImages: storedImages) { addGalleryImages(to: $0, $1) }
                     }
                     .onDelete { drafts.remove(atOffsets: $0) }
                     .onMove { drafts.move(fromOffsets: $0, toOffset: $1) }
@@ -131,6 +197,7 @@ struct EditorView: View {
                 }
             }
             .saveErrorAlert(saveErrors)
+            .imageIntake(intake, onAdd: addInlineImages)
             .navigationTitle(isNew ? "New thought" : "Edit thought")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -150,7 +217,7 @@ struct EditorView: View {
                             selection = TextSelection(insertionPoint: applied.cursor)
                         }
                     } else {
-                        FormatBar(text: $text, selection: $selection)
+                        FormatBar(text: $text, selection: $selection, intake: intake)
                     }
                 }
             }
@@ -164,7 +231,12 @@ struct EditorView: View {
                 load()
                 loadTagUseCounts()
             }
-            .onChange(of: text) { old, new in continueList(from: old, to: new) }
+            .onChange(of: text) { old, new in
+                continueList(from: old, to: new)
+                if !bodyImageIDs.isEmpty || new.contains("](img:") {
+                    bodyImageIDs = ImageToken.uniqueReferences(in: new)
+                }
+            }
         }
         .interactiveDismissDisabled(!trimmedText.isEmpty && isNew)
     }
@@ -192,9 +264,7 @@ struct EditorView: View {
         case let .edit(thought):
             text = thought.body
             intervalDays = thought.intervalDays
-            drafts = thought.sortedBlocks.map {
-                BlockDraft(id: $0.id, kind: $0.kind, title: $0.title ?? "", content: $0.content)
-            }
+            drafts = BlockDraft.drafts(for: thought)
         }
     }
 
@@ -205,11 +275,11 @@ struct EditorView: View {
         let saved: Bool
         switch mode {
         case .new:
-            let thought = store.create(body: trimmedText, blocks: drafts, intervalDays: intervalDays, now: .now)
+            let thought = store.create(body: trimmedText, blocks: drafts, images: inlineDrafts, intervalDays: intervalDays, now: .now)
             saved = thought.modelContext != nil
         case let .edit(thought):
             saveErrors.note = "Some changes may have been saved. Tap Save to finish."
-            saved = store.update(thought, body: trimmedText, blocks: drafts, intervalDays: intervalDays, now: .now)
+            saved = store.update(thought, body: trimmedText, blocks: drafts, images: inlineDrafts, intervalDays: intervalDays, now: .now)
         }
         if saved {
             dismiss()
@@ -221,6 +291,7 @@ struct EditorView: View {
 struct FormatBar: View {
     @Binding var text: String
     @Binding var selection: TextSelection?
+    let intake: ImageIntake
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -232,6 +303,13 @@ struct FormatBar: View {
                 button("Task", systemImage: "checklist") { apply(.task) }
                 button("Code", systemImage: "chevron.left.forwardslash.chevron.right") { apply(.code) }
                 button("Tag", systemImage: "tag") { insertHash() }
+                Menu {
+                    ImageSourceButtons(intake: intake)
+                } label: {
+                    Image(systemName: "photo")
+                        .frame(minWidth: 44, minHeight: 44)
+                }
+                .accessibilityLabel("Add image")
             }
             .padding(.horizontal, 12)
         }

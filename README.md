@@ -32,6 +32,7 @@ If Xcode says the bundle ID is unavailable, set `TR_BUNDLE_ID` in `Config/Local.
 - Run tests with **⌘U** in Xcode, or from the command line:
   `xcodebuild test -scheme ThoughtReps -destination 'platform=iOS Simulator,name=<simulator>'`
   (pick a name from `xcrun simctl list devices available`)
+- Images are stored in the SwiftData store (`default.store` in Application Support); larger image bytes go to `.default_SUPPORT/_EXTERNAL_DATA` beside it. The camera needs a real device (the simulator has no camera).
 - Debug builds seed sample thoughts on first launch. **Settings > Developer** can add more or wipe everything.
 
 ## Running on your iPhone
@@ -50,7 +51,7 @@ ThoughtReps/
   Models/       SwiftData models: Thought, Tag, Block, ImageAsset
   Scheduler/    Resurfacing rules as pure, unit-tested functions
   Stores/       ThoughtStore (all writes), ThoughtCounts (count queries), IntegrityChecker, SaveErrorCenter, AppSettings
-  Services/     TagParser, NotificationScheduler, AppNavigation, InboxImporter
+  Services/     TagParser, NotificationScheduler, AppNavigation, InboxImporter, ImageProcessor, ImageToken
   Features/     Timeline, Thought, Editor, Blocks, Tags, Archive, Settings
   Resources/    Assets, sample data
 Shared/            Inbox file format shared by the app and the share extension
@@ -63,12 +64,11 @@ landing/           Static HTML landing-page design prototypes (not part of the a
 
 ## Status
 
-Milestone 1 (skeleton) is in place. It includes the models and the scheduler with tests. It also has a working timeline, the thought view with pin, archive, snooze and restore, a Markdown editor with a selection-aware format bar and list continuation, Markdown rendering via MarkdownUI with tappable tags that open the tag's timeline, blurred-text blocks (the only block kind in v1), tag parsing with tag timelines (including an Untagged one), settings for the default interval, and an optional daily reminder (local notifications, off by default). Quick capture works from the share sheet (Share > Thought Reps); the app imports waiting items on launch and when it returns to the foreground.
+Milestone 1 (skeleton) is in place. It includes the models and the scheduler with tests. It also has a working timeline, the thought view with pin, archive, snooze and restore, a Markdown editor with a selection-aware format bar and list continuation, Markdown rendering via MarkdownUI with tappable tags that open the tag's timeline, blurred-text and image-gallery blocks, images in thoughts (inline or in galleries; photo library, camera or paste; full-screen viewer), tag parsing with tag timelines (including an Untagged one), settings for the default interval, and an optional daily reminder (local notifications, off by default). Quick capture works from the share sheet (Share > Thought Reps); the app imports waiting items on launch and when it returns to the foreground.
 
 Under evaluation: opening a thought requeues it right away. The alternative is an explicit Requeue button on the thought page, so that reading a thought without acting on it leaves it due.
 
 Coming next, per the spec:
 
-- Images (the renderer shows none until then)
 - Search
 - Export (there is no legacy data import)

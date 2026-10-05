@@ -46,9 +46,36 @@ struct RandomizedOperationTests {
         return lines.joined(separator: "\n")
     }
 
+    static func randomImages(_ rng: inout SeededGenerator, count: ClosedRange<Int>) -> [ImageDraft] {
+        (0..<Int.random(in: count, using: &rng)).map { _ in newImage(UInt8.random(in: 0...255, using: &rng)) }
+    }
+
+    /// New inline images, some referenced from the body they are appended to and some not.
+    static func withInlineImages(_ body: String, _ rng: inout SeededGenerator) -> (body: String, images: [ImageDraft]) {
+        let images = randomImages(&rng, count: 0...3)
+        var body = body
+        for image in images where Int.random(in: 0..<4, using: &rng) != 0 {
+            body += "\n" + ImageToken.token(for: image.id)
+        }
+        return (body, images)
+    }
+
+    static func currentDrafts(of thought: Thought) -> [BlockDraft] {
+        thought.sortedBlocks.map {
+            BlockDraft(
+                id: $0.id, kind: $0.kind, title: $0.title ?? "", content: $0.content,
+                images: $0.sortedImages.map { ImageDraft(existing: $0) }
+            )
+        }
+    }
+
     static func randomBlocks(_ rng: inout SeededGenerator) -> [BlockDraft] {
         (0..<Int.random(in: 0...4, using: &rng)).map { _ in
-            BlockDraft(
+            if Int.random(in: 0..<4, using: &rng) == 0 {
+                // No images drops the gallery.
+                return BlockDraft(kind: .gallery, title: Bool.random(using: &rng) ? "Gallery" : "", images: randomImages(&rng, count: 0...3))
+            }
+            return BlockDraft(
                 title: Bool.random(using: &rng) ? "Title" : "",
                 // Whitespace-only content is dropped by the store, which must not leave gaps in `order`.
                 content: Int.random(in: 0..<4, using: &rng) == 0 ? "  " : "content \(Int.random(in: 0..<100, using: &rng))"
@@ -66,38 +93,54 @@ struct RandomizedOperationTests {
         defer { withExtendedLifetime(container) {} }
         let context = container.mainContext
         var failureCountdown: Int? = nil
-        let store = ThoughtStore(context: context, defaultIntervalDays: 7, saveErrors: SaveErrorCenter(), save: {
+        var failNextSave = false
+        var doubleFailure = false
+        let suiteName = "randomized-\(seed)-\(UUID())"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        var store = ThoughtStore(context: context, defaultIntervalDays: 7, saveErrors: SaveErrorCenter(), save: {
+            if failNextSave {
+                failNextSave = false
+                throw InjectedSaveFailure()
+            }
             if let left = failureCountdown {
                 failureCountdown = left - 1
-                if left == 1 { throw InjectedSaveFailure() }
+                if left == 1 {
+                    failNextSave = doubleFailure
+                    throw InjectedSaveFailure()
+                }
             }
             try $0.save()
         })
+        store.pendingImageSaves = PendingImageSaves(defaults: defaults)
         var rng = SeededGenerator(seed: seed)
         var now = Date(timeIntervalSince1970: 1_790_000_000)
 
         for step in 0..<Self.stepsPerSeed {
             let thoughts = try context.fetch(FetchDescriptor<Thought>(sortBy: [SortDescriptor(\.createdAt), SortDescriptor(\.id)]))
-            var op = Int.random(in: 0..<13, using: &rng)
+            var op = Int.random(in: 0..<17, using: &rng)
             if thoughts.isEmpty && op >= 2 && op != 11 && op != 12 { op = 0 }
             let target = thoughts.randomElement(using: &rng)
-            // About 5% of writes have one of their saves (1st to 4th) fail.
-            let injectedStep: Int? = Int.random(in: 0..<20, using: &rng) == 0 ? Int.random(in: 1...4, using: &rng) : nil
+            // About 5% of writes have one of their saves (1st to 6th) fail.
+            let injectedStep: Int? = Int.random(in: 0..<20, using: &rng) == 0 ? Int.random(in: 1...6, using: &rng) : nil
             failureCountdown = injectedStep
+            // A third of failures also fail the next save, which defeats the take-back of early-saved images.
+            doubleFailure = injectedStep != nil && Int.random(in: 0..<3, using: &rng) == 0
             let description: String
 
             switch op {
             case 0, 1:
                 let interval = Self.randomInterval(&rng)
                 let blocks = Self.randomBlocks(&rng)
-                store.create(body: Self.randomBody(&rng), blocks: blocks, intervalDays: interval, now: now)
-                description = "create(interval: \(String(describing: interval)), blocks: \(blocks.count))"
+                let (body, images) = Self.withInlineImages(Self.randomBody(&rng), &rng)
+                store.create(body: body, blocks: blocks, images: images, intervalDays: interval, now: now)
+                description = "create(interval: \(String(describing: interval)), blocks: \(blocks.count), inline: \(images.count))"
             case 2:
-                let body = Self.randomBody(&rng)
+                let (body, images) = Self.withInlineImages(Self.randomBody(&rng), &rng)
                 let blocks = Self.randomBlocks(&rng)
                 let interval = Self.randomInterval(&rng)
-                store.update(target!, body: body, blocks: blocks, intervalDays: interval, now: now)
-                description = "update(body: \(body.debugDescription), blocks: \(blocks.count), interval: \(String(describing: interval)))"
+                store.update(target!, body: body, blocks: blocks, images: images, intervalDays: interval, now: now)
+                description = "update(body: \(body.debugDescription), blocks: \(blocks.count), inline: \(images.count), interval: \(String(describing: interval)))"
             case 3, 4:
                 store.markViewed(target!, now: now)
                 description = "markViewed"
@@ -130,17 +173,70 @@ struct RandomizedOperationTests {
             case 11:
                 store.pruneOrphanTags()
                 description = "pruneOrphanTags"
+            case 13:
+                let image = newImage(UInt8.random(in: 0...255, using: &rng))
+                let body = target!.body + "\n" + ImageToken.token(for: image.id)
+                store.update(target!, body: body, blocks: Self.currentDrafts(of: target!), images: [image], intervalDays: target!.intervalDays, now: now)
+                description = "add inline image"
+            case 14:
+                let tokens = ImageToken.references(in: target!.body)
+                let body = tokens.randomElement(using: &rng).map {
+                    target!.body.replacingOccurrences(of: ImageToken.token(for: $0), with: "")
+                } ?? target!.body
+                store.update(target!, body: body, blocks: Self.currentDrafts(of: target!), intervalDays: target!.intervalDays, now: now)
+                description = "remove a token (of \(tokens.count))"
+            case 15:
+                var drafts = Self.currentDrafts(of: target!)
+                drafts.insert(
+                    BlockDraft(kind: .gallery, title: "New", images: Self.randomImages(&rng, count: 1...3)),
+                    at: Int.random(in: 0...drafts.count, using: &rng)
+                )
+                store.update(target!, body: target!.body, blocks: drafts, intervalDays: target!.intervalDays, now: now)
+                description = "add gallery"
+            case 16:
+                var drafts = Self.currentDrafts(of: target!)
+                let galleries = drafts.indices.filter { drafts[$0].kind == .gallery }
+                if let index = galleries.randomElement(using: &rng) {
+                    switch Int.random(in: 0..<4, using: &rng) {
+                    case 0: drafts.remove(at: index)
+                    case 1: drafts[index].images.shuffle(using: &rng)
+                    case 2:
+                        if !drafts[index].images.isEmpty { drafts[index].images.remove(at: Int.random(in: 0..<drafts[index].images.count, using: &rng)) }
+                    default:
+                        drafts[index].images.insert(
+                            newImage(UInt8.random(in: 0...255, using: &rng)),
+                            at: Int.random(in: 0...drafts[index].images.count, using: &rng)
+                        )
+                    }
+                }
+                store.update(target!, body: target!.body, blocks: drafts, intervalDays: target!.intervalDays, now: now)
+                description = "edit gallery (of \(galleries.count))"
             default:
                 now = now.addingTimeInterval(Double(Int.random(in: 1...20, using: &rng)) * 86_400)
                 description = "advance now to \(now)"
             }
 
-            let violations = try IntegrityChecker.check(context)
+            failureCountdown = nil
+            failNextSave = false
+            if !store.pendingImageSaves.isEmpty && Bool.random(using: &rng) {
+                store.cleanUpPendingImageSaves()
+            }
+
+            var violations = try IntegrityChecker.check(context)
+            let marked = store.pendingImageSaves.ids
+            // Only token-less inline images of marked thoughts are tolerated.
+            violations.removeAll { violation in
+                violation.description.hasPrefix("Inline image") && marked.contains { violation.description.contains($0.uuidString) }
+            }
             #expect(
                 violations.isEmpty,
                 "seed \(seed) step \(step) op \(description) injected failure at save \(String(describing: injectedStep)): \(violations.map(\.description))"
             )
             if !violations.isEmpty { return }
         }
+
+        store.cleanUpPendingImageSaves()
+        #expect(store.pendingImageSaves.isEmpty)
+        #expect(try IntegrityChecker.check(context).isEmpty, "seed \(seed) after final cleanup")
     }
 }
