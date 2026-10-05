@@ -12,6 +12,12 @@ enum APIError: Error, Equatable {
     case assertionInvalid
     case challengeInvalid
     case rateLimited
+    case tooLarge
+    case notFound
+    case uploadMismatch
+    case used
+    case expired
+    case revoked
     case offline
     case network
     case attestationFailed
@@ -29,6 +35,12 @@ enum APIError: Error, Equatable {
         case "assertion_invalid": return .assertionInvalid
         case "challenge_invalid": return .challengeInvalid
         case "rate_limited": return .rateLimited
+        case "too_large": return .tooLarge
+        case "not_found": return .notFound
+        case "upload_mismatch": return .uploadMismatch
+        case "used": return .used
+        case "expired": return .expired
+        case "revoked": return .revoked
         default: return .server(status: status)
         }
     }
@@ -270,7 +282,7 @@ actor AppAttestClient {
         do { return try JSONDecoder().decode(type, from: data) } catch { throw APIError.invalidResponse }
     }
 
-    private static func map(_ error: URLError) -> APIError {
+    static func map(_ error: URLError) -> APIError {
         switch error.code {
         case .notConnectedToInternet, .networkConnectionLost, .timedOut, .dataNotAllowed,
              .cannotConnectToHost, .cannotFindHost, .internationalRoamingOff:

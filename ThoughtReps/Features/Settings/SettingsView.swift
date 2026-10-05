@@ -17,6 +17,7 @@ struct SettingsView: View {
     @State private var feedbackSent = false
     @State private var showFeedbackThanks = false
     @State private var backup = BackupModel.shared
+    @State private var exportLink = ExportLinkModel.shared
     @State private var showImporter = false
 
     private var reminderTime: Binding<Date> {
@@ -93,6 +94,7 @@ struct SettingsView: View {
                     }
                     .disabled(backup.isBusy)
                     .accessibilityHint("Adds thoughts from a Thought Reps export file")
+                    ExportLinkRows(backup: backup, exportLink: exportLink, container: context.container)
                 } header: {
                     Text("Backup")
                 } footer: {
@@ -121,6 +123,7 @@ struct SettingsView: View {
                 }
             }
             .task { notificationStatus = await NotificationScheduler.authorizationStatus() }
+            .task { await exportLink.refresh() }
             .onAppear { backup.host = .settings }
             .onDisappear { backup.host = .root }
             .fileImporter(isPresented: $showImporter, allowedContentTypes: [.thoughtRepsExport, .zip]) { result in
@@ -140,6 +143,7 @@ struct SettingsView: View {
             }
             .onChange(of: scenePhase) { _, phase in
                 guard phase == .active else { return }
+                Task { await exportLink.refresh() }
                 Task { notificationStatus = await NotificationScheduler.authorizationStatus() }
             }
             .onChange(of: reminderEnabled) { _, enabled in

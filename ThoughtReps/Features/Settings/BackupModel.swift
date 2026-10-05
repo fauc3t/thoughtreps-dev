@@ -36,8 +36,13 @@ final class BackupModel {
     private var plan: BackupPlan?
     private var container: ModelContainer?
 
+    static let busyMessage = "Wait for the current export or import to finish."
+
+    /// Set by `ExportLinkModel` while it encrypts and uploads, so exports and imports can't start meanwhile.
+    var isSharingLink = false
+
     var isBusy: Bool {
-        exportProgress != nil || isPresentingImport
+        exportProgress != nil || isPresentingImport || isSharingLink
     }
 
     var isPresentingImport: Bool {
@@ -48,7 +53,17 @@ final class BackupModel {
 
     func export(from container: ModelContainer) async {
         guard !isBusy else { return }
+        do {
+            exportedFile = ExportedFile(url: try await buildArchive(from: container))
+        } catch {
+            problem = error.localizedDescription
+        }
+    }
+
+    /// Builds the `.thoughtreps` file with progress in `exportProgress`. The caller removes the file's directory.
+    func buildArchive(from container: ModelContainer) async throws -> URL {
         exportProgress = 0
+        defer { exportProgress = nil }
         let info = Bundle.main.infoDictionary
         let exporter = BackupExporter(
             container: container,
@@ -56,18 +71,11 @@ final class BackupModel {
             build: info?["CFBundleVersion"] as? String ?? "?"
         )
         let now = Date.now
-        do {
-            let url = try await Task.detached {
-                try exporter.export(now: now) { fraction in
-                    Task { @MainActor in BackupModel.shared.exportProgress = fraction }
-                }
-            }.value
-            exportProgress = nil
-            exportedFile = ExportedFile(url: url)
-        } catch {
-            exportProgress = nil
-            problem = error.localizedDescription
-        }
+        return try await Task.detached {
+            try exporter.export(now: now) { fraction in
+                Task { @MainActor in BackupModel.shared.exportProgress = fraction }
+            }
+        }.value
     }
 
     func finishSharing() {
@@ -83,7 +91,7 @@ final class BackupModel {
     /// from Files or AirDrop sits in the app's Inbox), then checks it and compares it with the store.
     func beginImport(from url: URL, container: ModelContainer) {
         guard !isBusy else {
-            problem = "Wait for the current export or import to finish."
+            problem = Self.busyMessage
             return
         }
         importPhase = .preparing

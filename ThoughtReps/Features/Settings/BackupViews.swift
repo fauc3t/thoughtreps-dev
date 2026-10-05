@@ -1,5 +1,7 @@
+import SwiftData
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 
 /// The share sheet, for a file that only exists after an export finishes.
 struct ActivityView: UIViewControllerRepresentable {
@@ -97,5 +99,99 @@ private struct BackupImportSheetModifier: ViewModifier {
 extension View {
     func backupImportSheet(_ model: BackupModel, host: BackupModel.Host) -> some View {
         modifier(BackupImportSheetModifier(model: model, host: host))
+    }
+}
+
+/// The "Share export as link" row, and the open link with Copy, Share and Revoke while it is unexpired.
+struct ExportLinkRows: View {
+    let backup: BackupModel
+    let exportLink: ExportLinkModel
+    let container: ModelContainer
+    @State private var confirmReplace = false
+    @State private var copied = false
+
+    var body: some View {
+        Button {
+            if exportLink.openLink == nil { start() } else { confirmReplace = true }
+        } label: {
+            HStack {
+                Label("Share export as link", systemImage: "link")
+                if let stage = exportLink.stage {
+                    Spacer()
+                    stageIndicator(stage)
+                }
+            }
+        }
+        .disabled(backup.isBusy || exportLink.isWorking)
+        .accessibilityHint("Creates a one-time link that expires in 24 hours")
+        .confirmationDialog("Replace your open link?", isPresented: $confirmReplace, titleVisibility: .visible) {
+            Button("Replace link", role: .destructive) { start() }
+        } message: {
+            Text("The current link stops working as soon as the new one is ready.")
+        }
+
+        if let link = exportLink.openLink {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(link.link)
+                    .font(.footnote.monospaced())
+                    .lineLimit(3)
+                    .truncationMode(.middle)
+                    .textSelection(.enabled)
+                Text(ExportLinkModel.expiryText(link.expiresAt))
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            .accessibilityElement(children: .combine)
+            Button {
+                // The link carries the key, so it leaves the clipboard when the link expires.
+                UIPasteboard.general.setItems(
+                    [[UTType.utf8PlainText.identifier: link.link]],
+                    options: [.expirationDate: link.expiresAt]
+                )
+                copied = true
+                Task {
+                    try? await Task.sleep(for: .seconds(2))
+                    copied = false
+                }
+            } label: {
+                Label(copied ? "Copied" : "Copy link", systemImage: copied ? "checkmark" : "doc.on.doc")
+            }
+            ShareLink(item: link.link) {
+                Label("Share link", systemImage: "square.and.arrow.up")
+            }
+            Button(role: .destructive) {
+                Task { await exportLink.revoke() }
+            } label: {
+                HStack {
+                    Label("Revoke link", systemImage: "xmark.circle")
+                    if exportLink.isRevoking {
+                        Spacer()
+                        ProgressView()
+                    }
+                }
+            }
+            .disabled(exportLink.isWorking)
+            .accessibilityHint("Stops the link from working")
+        }
+    }
+
+    private func start() {
+        Task { await exportLink.create(from: container) }
+    }
+
+    @ViewBuilder
+    private func stageIndicator(_ stage: ExportLinkModel.Stage) -> some View {
+        switch stage {
+        case .building:
+            ProgressView(value: backup.exportProgress ?? 0)
+                .frame(width: 80)
+                .accessibilityLabel("Export progress")
+        case .encrypting:
+            ProgressView()
+                .accessibilityLabel("Encrypting")
+        case .uploading:
+            ProgressView()
+                .accessibilityLabel("Uploading")
+        }
     }
 }
