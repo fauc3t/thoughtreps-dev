@@ -6,27 +6,32 @@ struct RootTabView: View {
     @State private var captureContext = CaptureContext()
     @State private var isCapturing = false
     @State private var saveErrors = SaveErrorCenter.shared
+    @State private var navigation = AppNavigation.shared
     @State private var prefillTag: String?
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
-        TabView {
+        TabView(selection: $navigation.selectedTab) {
             NavigationStack {
                 ThoughtTimelineView()
                     .thoughtDestinations()
             }
             .tabItem { Label("Timeline", systemImage: "text.alignleft") }
+            .tag(AppTab.timeline)
 
             NavigationStack {
                 TagListView()
                     .thoughtDestinations()
             }
             .tabItem { Label("Tags", systemImage: "number") }
+            .tag(AppTab.tags)
 
             NavigationStack {
                 ArchiveView()
                     .thoughtDestinations()
             }
             .tabItem { Label("Archive", systemImage: "archivebox") }
+            .tag(AppTab.archive)
         }
         .environment(captureContext)
         .overlay(alignment: .bottomTrailing) {
@@ -41,6 +46,20 @@ struct RootTabView: View {
             EditorView(mode: .new(prefillTag: prefillTag))
         }
         .saveErrorAlert(saveErrors)
+        .onChange(of: scenePhase, initial: true) { _, phase in
+            switch phase {
+            case .active:
+                Task { await NotificationScheduler.reschedule(context: context, now: .now) }
+            case .background:
+                let assertion = BackgroundAssertion()
+                Task {
+                    await NotificationScheduler.reschedule(context: context, now: .now)
+                    assertion.end()
+                }
+            default:
+                break
+            }
+        }
         .task {
             ThoughtStore(context: context).pruneOrphanTags()
             #if DEBUG
@@ -48,6 +67,24 @@ struct RootTabView: View {
             IntegrityChecker.logViolations(in: context)
             #endif
         }
+    }
+}
+
+/// Keeps the app running briefly after it backgrounds; `end()` is safe to call more than once.
+@MainActor
+private final class BackgroundAssertion {
+    private var id = UIBackgroundTaskIdentifier.invalid
+
+    init() {
+        id = UIApplication.shared.beginBackgroundTask { [weak self] in
+            MainActor.assumeIsolated { self?.end() }
+        }
+    }
+
+    func end() {
+        guard id != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(id)
+        id = .invalid
     }
 }
 

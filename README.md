@@ -50,7 +50,7 @@ ThoughtReps/
   Models/       SwiftData models: Thought, Tag, Block, ImageAsset
   Scheduler/    Resurfacing rules as pure, unit-tested functions
   Stores/       ThoughtStore (all writes), IntegrityChecker, SaveErrorCenter, AppSettings
-  Services/     TagParser
+  Services/     TagParser, NotificationScheduler, AppNavigation
   Features/     Timeline, Thought, Editor, Blocks, Tags, Archive, Settings
   Resources/    Assets, sample data
 ThoughtRepsTests/  Scheduler, TagParser, MarkdownFormatter, store, integrity and persistence tests (Swift Testing)
@@ -61,7 +61,7 @@ landing/           Static HTML landing-page design prototypes (not part of the a
 
 ## Status
 
-Milestone 1 (skeleton) is in place. It includes the models and the scheduler with tests. It also has a working timeline, the thought view with pin, archive, snooze and restore, a Markdown editor with a selection-aware format bar and list continuation, Markdown rendering via MarkdownUI with tappable tags that open the tag's timeline, blurred-text blocks (the only block kind in v1), tag parsing with tag timelines (including an Untagged one), and settings for the default interval.
+Milestone 1 (skeleton) is in place. It includes the models and the scheduler with tests. It also has a working timeline, the thought view with pin, archive, snooze and restore, a Markdown editor with a selection-aware format bar and list continuation, Markdown rendering via MarkdownUI with tappable tags that open the tag's timeline, blurred-text blocks (the only block kind in v1), tag parsing with tag timelines (including an Untagged one), settings for the default interval, and an optional daily reminder (local notifications, off by default).
 
 Under evaluation: opening a thought requeues it right away. The alternative is an explicit Requeue button on the thought page, so that reading a thought without acting on it leaves it due.
 
@@ -69,5 +69,4 @@ Coming next, per the spec:
 
 - Images (the renderer shows none until then)
 - Search
-- Daily reminder
 - Export (there is no legacy data import)

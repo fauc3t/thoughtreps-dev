@@ -28,6 +28,8 @@ xcodegen && open ThoughtReps.xcodeproj
 
 Debug builds seed sample thoughts on first launch. Settings > Developer can add more or delete everything.
 
+To try the daily reminder, enable it in Settings and set the time a minute or two ahead, then background the app (the simulator shows banners too). Reminders are rescheduled on foreground and background, so they only reflect due thoughts as of the last time the app was active.
+
 Debug builds also run `IntegrityChecker` over the whole store at launch and log any violations via `os.Logger` (subsystem `com.thoughtreps`). It never repairs or crashes, so a logged violation means a bug in a store write; fix the write rather than the data.
 
 ## Running on an iPhone

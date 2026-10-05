@@ -25,6 +25,7 @@ struct ThoughtTimelineView: View {
     @State private var snapshot = Date.now
     @State private var showAll = false
     @State private var showSettings = false
+    @State private var navigation = AppNavigation.shared
 
     private var store: ThoughtStore {
         ThoughtStore(context: context, defaultIntervalDays: defaultIntervalDays)
@@ -116,6 +117,7 @@ struct ThoughtTimelineView: View {
         .onChange(of: showAll) {
             snapshot = .now
         }
+        .onChange(of: navigation.reminderOpenCount) { showSettings = false }
         .sheet(isPresented: $showSettings) {
             SettingsView()
         }

@@ -3,6 +3,7 @@ import SwiftData
 
 @main
 struct ThoughtRepsApp: App {
+    @UIApplicationDelegateAdaptor private var appDelegate: AppDelegate
     private static let container = Result { try ModelContainer.thoughtReps() }
 
     var body: some Scene {
