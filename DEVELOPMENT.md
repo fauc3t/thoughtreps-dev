@@ -38,6 +38,8 @@ To try the daily reminder, enable it in Settings and set the time a minute or tw
 
 Debug builds also run `IntegrityChecker` over the whole store at launch and log any violations via `os.Logger` (subsystem `com.thoughtreps`). It never repairs or crashes, so a logged violation means a bug in a store write; fix the write rather than the data.
 
+Search uses an FTS5 index at `Application Support/Search/search-index.sqlite` (derived data, excluded from backup). It is reconciled in the background at launch, and a missing or damaged file is rebuilt, so delete it to force a rebuild. Tests and previews use an in-memory index. Debug builds also run `SearchIndexChecker` at launch and log any mismatch with the store.
+
 Before launch, a schema change means regenerating `ThoughtRepsTests/Fixtures/default.store`; the steps are in `ThoughtRepsTests/Fixtures/README.md` (`FixtureGenerator` runs only when `TEST_RUNNER_GENERATE_FIXTURE_TO` is set).
 
 ## Running on an iPhone

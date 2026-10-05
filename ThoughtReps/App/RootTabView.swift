@@ -80,6 +80,10 @@ struct RootTabView: View {
             SampleData.seedIfNeeded(context: context)
             IntegrityChecker.logViolations(in: context)
             #endif
+            await SearchIndexStatus.shared.reconcile(container: context.container)
+            #if DEBUG
+            await SearchIndexChecker.logViolations(in: context)
+            #endif
         }
     }
 }

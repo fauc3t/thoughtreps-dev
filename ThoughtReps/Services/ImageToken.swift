@@ -21,6 +21,11 @@ enum ImageToken {
         }
     }
 
+    /// `body` without any image token (including ones in code, which are noise in text either way).
+    static func removing(from body: String) -> String {
+        regex.stringByReplacingMatches(in: body, range: NSRange(location: 0, length: (body as NSString).length), withTemplate: "")
+    }
+
     /// The image id for a Markdown image URL the renderer should load locally, or nil for any other URL.
     static func id(from url: URL) -> UUID? {
         let text = url.absoluteString

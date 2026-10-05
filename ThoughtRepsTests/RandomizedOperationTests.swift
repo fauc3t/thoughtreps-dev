@@ -123,7 +123,7 @@ struct RandomizedOperationTests {
     }
 
     @Test(arguments: seeds)
-    func invariantsHoldAfterEveryOperation(seed: UInt64) throws {
+    func invariantsHoldAfterEveryOperation(seed: UInt64) async throws {
         let container = try ModelContainer.thoughtReps(inMemory: true)
         defer { withExtendedLifetime(container) {} }
         let context = container.mainContext
@@ -149,6 +149,8 @@ struct RandomizedOperationTests {
         })
         store.pendingImageSaves = PendingImageSaves(defaults: defaults)
         store.ratingPrompt = RatingPrompt(defaults: defaults)
+        let index = SearchIndex(location: .inMemory)
+        store.searchIndex = index
         var rng = SeededGenerator(seed: seed)
         var now = Date(timeIntervalSince1970: 1_790_000_000)
 
@@ -276,10 +278,18 @@ struct RandomizedOperationTests {
                 "seed \(seed) step \(step) op \(description) injected failure at save \(String(describing: injectedStep)): \(violations.map(\.description))"
             )
             if !violations.isEmpty { return }
+
+            let indexViolations = try await SearchIndexChecker.check(context, index: index)
+            #expect(
+                indexViolations.isEmpty,
+                "seed \(seed) step \(step) op \(description) injected failure at save \(String(describing: injectedStep)): \(indexViolations)"
+            )
+            if !indexViolations.isEmpty { return }
         }
 
         store.cleanUpPendingImageSaves()
         #expect(store.pendingImageSaves.isEmpty)
         #expect(try IntegrityChecker.check(context).isEmpty, "seed \(seed) after final cleanup")
+        #expect(try await SearchIndexChecker.check(context, index: index).isEmpty, "seed \(seed) index after final cleanup")
     }
 }

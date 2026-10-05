@@ -41,6 +41,8 @@ struct ThoughtStore {
     var save: (ModelContext) throws -> Void = { try $0.save() }
     var pendingImageSaves = PendingImageSaves()
     var ratingPrompt = RatingPrompt()
+    /// Kept in step after every write that changes searchable text or archive state; see `SearchIndex`.
+    var searchIndex: SearchIndex = .shared
 
     // MARK: Create & edit
 
@@ -67,7 +69,9 @@ struct ThoughtStore {
         insertNewBlocks(of: plan, into: thought, firstOrder: 0)
         insertNewInlineImages(of: plan, into: thought)
         removeStaleInlineImages(of: plan)
-        persist()
+        if persist() {
+            indexUpsert(thought)
+        }
         return thought
     }
 
@@ -75,6 +79,14 @@ struct ThoughtStore {
     @discardableResult
     func update(
         _ thought: Thought, body: String, blocks: [BlockDraft], images: [ImageDraft] = [], intervalDays: Int?, now: Date
+    ) -> Bool {
+        // Whatever step failed, the index gets the thought as it now is.
+        defer { reindex(ids: [thought.id]) }
+        return performUpdate(thought, body: body, blocks: blocks, images: images, intervalDays: intervalDays, now: now)
+    }
+
+    private func performUpdate(
+        _ thought: Thought, body: String, blocks: [BlockDraft], images: [ImageDraft], intervalDays: Int?, now: Date
     ) -> Bool {
         if pendingImageSaves.ids.contains(thought.id), !removeTokenlessInlineImages(of: thought) {
             return false
@@ -435,6 +447,7 @@ struct ThoughtStore {
         thought.intervalDays = days
         reanchor(thought)
         thought.updatedAt = now
+        defer { indexFingerprint(of: thought) }
         return persist()
     }
 
@@ -457,6 +470,7 @@ struct ThoughtStore {
         thought.isArchived = true
         thought.isPinned = false
         thought.archivedAt = now
+        defer { indexFingerprint(of: thought) }
         return persist()
     }
 
@@ -465,12 +479,15 @@ struct ThoughtStore {
         thought.isArchived = false
         thought.archivedAt = nil
         thought.nextDueAt = Scheduler.restoredDue(now: now)
+        defer { indexFingerprint(of: thought) }
         return persist()
     }
 
     @discardableResult
     func delete(_ thought: Thought) -> Bool {
+        let id = thought.id
         deleteWithChildren(thought)
+        defer { reindex(ids: [id]) }
         return persist()
     }
 
@@ -499,7 +516,9 @@ struct ThoughtStore {
         for tag in (try? context.fetch(FetchDescriptor<Tag>())) ?? [] {
             context.delete(tag)
         }
-        return persist()
+        guard persist() else { return false }
+        searchIndex.submit(.removeAll)
+        return true
     }
 
     /// Sets schedule fields directly, bypassing the rules. Only for sample data,
@@ -541,6 +560,11 @@ struct ThoughtStore {
     /// color of tags that don't exist yet.
     @discardableResult
     func importThoughts(_ batch: [ImportedThought], tags tagInfo: [TagRecord], tally: inout ImportTally) -> Bool {
+        defer { reindex(ids: Set(batch.map(\.record.id))) }
+        return performImport(batch, tags: tagInfo, tally: &tally)
+    }
+
+    private func performImport(_ batch: [ImportedThought], tags tagInfo: [TagRecord], tally: inout ImportTally) -> Bool {
         var newest: [UUID: ImportedThought] = [:]
         var ids: [UUID] = []
         for item in batch {
@@ -700,8 +724,10 @@ struct ThoughtStore {
                 images: block.images.enumerated().sorted { ($0.element.order, $0.offset) < ($1.element.order, $1.offset) }.map { draft($0.element) }
             )
         }
+        // The index fingerprint is `updatedAt` plus the archive flag. If the app dies mid-replace, `updatedAt`
+        // is unchanged until the last save, so reconciliation can miss the stale text until the thought is next edited.
         // `update` leaves `updatedAt` as it is, so the thought keeps looking older than the file until the last save.
-        guard update(thought, body: record.body, blocks: blocks, images: record.images.map(draft), intervalDays: record.intervalDays, now: thought.updatedAt)
+        guard performUpdate(thought, body: record.body, blocks: blocks, images: record.images.map(draft), intervalDays: record.intervalDays, now: thought.updatedAt)
         else { return false }
         takenBlockIDs = claimed
         apply(record, to: thought)
@@ -719,6 +745,39 @@ struct ThoughtStore {
         thought.isArchived = record.isArchived
         thought.archivedAt = record.archivedAt
         thought.updatedAt = record.updatedAt
+    }
+
+    // MARK: Search index
+
+    // Any new writer that changes the body, block content or titles, or tag names must reindex the
+    // thought (`reindex(ids:)`), or search results go stale until the next launch's reconciliation.
+
+    private func indexUpsert(_ thought: Thought) {
+        searchIndex.submit(.upsert(SearchDocument(thought)))
+    }
+
+    private func indexFingerprint(of thought: Thought) {
+        searchIndex.submit(.setFingerprint(thought.id, updatedAt: thought.updatedAt, isArchived: thought.isArchived))
+    }
+
+    /// Sends the index the thoughts as the store now has them, and drops the ids it no longer has.
+    ///
+    /// The thoughts are fetched rather than read from the objects the caller holds: after a failed
+    /// save is rolled back, reading a relationship such as `tags` straight off such an object can
+    /// crash SwiftData (see `persist()`), while a fresh fetch is safe.
+    private func reindex(ids: Set<UUID>) {
+        let lookup = Array(ids)
+        do {
+            let found = try context.fetch(FetchDescriptor<Thought>(predicate: #Predicate { lookup.contains($0.id) }))
+            for thought in found {
+                indexUpsert(thought)
+            }
+            for id in ids.subtracting(found.map(\.id)) {
+                searchIndex.submit(.remove(id))
+            }
+        } catch {
+            Self.logger.error("Search reindex fetch failed: \(error)")
+        }
     }
 
     private static let logger = Logger(subsystem: "com.thoughtreps", category: "store")

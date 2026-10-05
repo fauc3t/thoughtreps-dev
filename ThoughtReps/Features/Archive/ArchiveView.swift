@@ -12,18 +12,64 @@ struct ArchiveView: View {
     private var archived: [Thought]
 
     @State private var search = ""
+    @State private var model: SearchModel?
+    @State private var now = Date.now
 
     private var store: ThoughtStore {
         ThoughtStore(context: context)
     }
 
-    private var visible: [Thought] {
-        guard !search.isEmpty else { return archived }
-        return archived.filter { $0.body.localizedCaseInsensitiveContains(search) }
+    private var isSearching: Bool {
+        SearchModel.isSearchable(search)
     }
 
     var body: some View {
-        List(visible) { thought in
+        Group {
+            if isSearching, let model {
+                searchResults(model)
+            } else {
+                archiveList
+            }
+        }
+        .contentMargins(.bottom, 88, for: .scrollContent)
+        .searchable(text: $search, prompt: "Search archive")
+        .navigationTitle("Archive")
+        .onAppear {
+            now = .now
+            if model == nil { model = SearchModel(scope: .archived, context: context) }
+            model?.pruneRows()
+        }
+        .task(id: search) { await model?.search(search) }
+    }
+
+    private func searchResults(_ model: SearchModel) -> some View {
+        List(model.liveRows) { row in
+            SearchResultLink(row: row, model: model, now: now)
+            .swipeActions(edge: .leading) {
+                Button {
+                    model.remove(id: row.id)
+                    store.restore(row.thought, now: .now)
+                } label: {
+                    Label("Restore", systemImage: "arrow.uturn.backward")
+                }
+                .tint(.accentColor)
+            }
+            .swipeActions(edge: .trailing) {
+                Button(role: .destructive) {
+                    model.remove(id: row.id)
+                    store.delete(row.thought)
+                } label: {
+                    Label("Delete", systemImage: "trash")
+                }
+            }
+        }
+        .overlay {
+            SearchOutcomeView(model: model, text: search)
+        }
+    }
+
+    private var archiveList: some View {
+        List(archived) { thought in
             NavigationLink(value: thought) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(thought.title)
@@ -54,20 +100,13 @@ struct ArchiveView: View {
             }
         }
         .overlay {
-            if visible.isEmpty {
-                if search.isEmpty {
-                    ContentUnavailableView(
-                        "Archive is empty",
-                        systemImage: "archivebox",
-                        description: Text("Swipe left on a thought to archive it.")
-                    )
-                } else {
-                    ContentUnavailableView.search(text: search)
-                }
+            if archived.isEmpty {
+                ContentUnavailableView(
+                    "Archive is empty",
+                    systemImage: "archivebox",
+                    description: Text("Swipe left on a thought to archive it.")
+                )
             }
         }
-        .contentMargins(.bottom, 88, for: .scrollContent)
-        .searchable(text: $search, prompt: "Search archive")
-        .navigationTitle("Archive")
     }
 }
