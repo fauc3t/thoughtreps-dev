@@ -1,0 +1,4 @@
+@import 'tailwindcss';
+
+/* Simple utility app, no elaborate design system — no @theme overrides
+   needed beyond Tailwind's own defaults. */

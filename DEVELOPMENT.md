@@ -46,3 +46,36 @@ Before launch, a schema change means regenerating `ThoughtRepsTests/Fixtures/def
 3. The first time, trust the developer certificate under Settings > General > VPN & Device Management.
 
 With a paid developer account the install lasts a year.
+
+## Web and infrastructure
+
+The landing site (`site-landing/`), the CDK app (`infra/`) and the mail inbox UI (`infra/mail-web/`) are a pnpm workspace (Node 24+, pnpm 11) separate from the iOS app. What's deployed is recorded in [INTEGRATIONS.md](INTEGRATIONS.md); infra rules are in `infra/CLAUDE.md`.
+
+```sh
+pnpm install
+pnpm test && pnpm typecheck && pnpm lint && pnpm format:check   # repo root
+cd infra && npx cdk synth -c env=prod
+```
+
+Local dev: `pnpm --filter @thoughtreps/site-landing dev`. For the mail UI, copy `infra/mail-web/.env.example` to `.env.local` and fill in the `VITE_*` values from the Mail stack outputs.
+
+### Deploying (manual, no CI)
+
+The AWS account is shared with strands prod, so only touch `ThoughtReps-prod-*` stacks. Use `--profile thoughtreps-dev`; cdk's "could not assume cdk-hnb659fds-*-role ... Proceeding anyway" warnings are harmless (the profile is the root user).
+
+1. `cd infra && npx cdk deploy prod/DnsStack -c env=prod --profile thoughtreps-dev` (done 2026-10-05).
+2. Set the zone's nameservers at the registrar (listed in INTEGRATIONS.md) and wait until `dig NS thoughtreps.com +short` shows them. ACM certs and SES verification need the delegation.
+3. `npx cdk deploy "prod/*" -c env=prod --profile thoughtreps-dev`. Quote the pattern; `--all` doesn't reach Stage-nested stacks.
+4. `scripts/deploy-landing.sh` and `scripts/deploy-mail-web.sh` build, sync to S3 and invalidate CloudFront, reading the stack outputs (`AWS_PROFILE` defaults to `thoughtreps-dev`).
+5. Create the Cognito user (self-signup is off), with `UserPoolId` from the Mail stack outputs:
+
+   ```sh
+   aws cognito-idp admin-create-user --user-pool-id <UserPoolId> --username you@example.com --user-attributes Name=email,Value=you@example.com Name=email_verified,Value=true --message-action SUPPRESS --profile thoughtreps-dev
+   aws cognito-idp admin-set-user-password --user-pool-id <UserPoolId> --username you@example.com --password '<password>' --permanent --profile thoughtreps-dev
+   ```
+
+6. Send a test mail to hello@thoughtreps.com; confirm it lands in the mail bucket and forwards.
+
+Then update INTEGRATIONS.md with the new status and output values.
+
+To add a mailbox, edit `mailboxAddresses`/`forwardTo` in `infra/lib/env-config.ts`, redeploy Mail, and rerun `deploy-mail-web.sh` (it reads the `MailboxAddresses` output, so there is no separate `VITE_` edit).

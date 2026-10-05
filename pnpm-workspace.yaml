@@ -1,0 +1,13 @@
+packages:
+  - 'infra'
+  - 'infra/mail-web'
+  - 'site-landing'
+allowBuilds:
+  '@parcel/watcher': true
+  '@swc/core': true
+  esbuild: true
+  unrs-resolver: true
+minimumReleaseAgeExclude:
+  - '@aws-sdk/client-s3@3.1125.0'
+  - '@aws-sdk/credential-providers@3.1125.0'
+  - '@aws-sdk/client-ses@3.1125.0'

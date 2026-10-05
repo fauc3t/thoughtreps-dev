@@ -60,7 +60,12 @@ ThoughtRepsTests/  Scheduler, TagParser, MarkdownFormatter, store, integrity and
 Config/            Shared xcconfig; your Local.xcconfig (gitignored)
 project.yml        XcodeGen spec
 landing/           Static HTML landing-page design prototypes (not part of the app)
+site-landing/      The real landing site for thoughtreps.com (Vite + React, prerendered)
+infra/             AWS CDK app (DNS, landing hosting, email) and the mail inbox UI (infra/mail-web)
+scripts/           Manual deploy scripts for the landing site and mail UI
 ```
+
+The web side is a separate pnpm workspace; see [DEVELOPMENT.md](DEVELOPMENT.md#web-and-infrastructure) and [INTEGRATIONS.md](INTEGRATIONS.md) for what is deployed in AWS.
 
 ## Status
 

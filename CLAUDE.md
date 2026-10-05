@@ -1,12 +1,14 @@
 # Thought Reps
 
-Local-first iPhone app: write a Markdown thought, and it resurfaces on the timeline after an interval (7 days by default). Spec and mockups are in `designs/` (don't edit); `landing/` is unrelated landing-page prototypes. Setup and commands are in README.md and DEVELOPMENT.md.
+Local-first iPhone app: write a Markdown thought, and it resurfaces on the timeline after an interval (7 days by default). Spec and mockups are in `designs/` (don't edit); `landing/` is static landing-page prototypes (not shipped; `site-landing/` is the real landing site, a port of `landing/7-ink.html`). `infra/` is the CDK app (landing hosting, DNS, email at hello@thoughtreps.com) and `infra/mail-web/` the inbox UI; see `infra/CLAUDE.md`. What's deployed in AWS is recorded in `INTEGRATIONS.md`. Setup and commands are in README.md and DEVELOPMENT.md.
 
 ## Stack
 
-Swift, SwiftUI, SwiftData, iOS 18+, Swift Testing. One third-party dependency: MarkdownUI (pinned exact; chosen over Textual as the stable option, though it's in maintenance mode). Add packages via `project.yml` `packages:`; the SwiftPM lockfile `ThoughtReps.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved` is tracked, so commit it when versions change. Paid Apple Developer account.
+Swift, SwiftUI, SwiftData, iOS 18+, Swift Testing. One third-party dependency: MarkdownUI (pinned exact; chosen over Textual as the stable option, though it's in maintenance mode). Add packages via `project.yml` `packages:`; the SwiftPM lockfile `ThoughtReps.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved` is tracked, so commit it when versions change. Paid Apple Developer account. The web side is TypeScript in a pnpm workspace (`infra`, `infra/mail-web`, `site-landing`; Node 24+); tests are `pnpm test`, `pnpm typecheck`, `pnpm lint` at the root.
 
 ## Workflow
+
+- Web/infra deploys are manual `cdk deploy` with `--profile thoughtreps-dev` (no CI), into an AWS account shared with strands prod. Read `infra/CLAUDE.md` first, and update `INTEGRATIONS.md` after every deploy.
 
 - `project.yml` is the source of truth. `ThoughtReps.xcodeproj` is generated and gitignored: edit `project.yml`, run `xcodegen`, never hand-edit the project. Re-run after adding or removing files.
 - Signing lives in `Config/Local.xcconfig` (gitignored, copy from the `.example`).

@@ -90,3 +90,13 @@ Config/Local.xcconfig
 # SQLite sidecars created if the fixture store is ever opened in place
 ThoughtRepsTests/Fixtures/*.store-shm
 ThoughtRepsTests/Fixtures/*.store-wal
+
+# Node / CDK (infra/, site-landing/)
+node_modules/
+dist/
+dist-server/
+cdk.out/
+*.tsbuildinfo
+.env.local
+.env.production
+.vite/

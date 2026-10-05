@@ -1,0 +1,295 @@
+@import 'tailwindcss';
+@import '@fontsource-variable/archivo/wdth.css';
+@import '@fontsource/ibm-plex-mono/latin-400.css';
+@import '@fontsource/ibm-plex-mono/latin-500.css';
+@import '@fontsource/ibm-plex-sans/latin-400.css';
+@import '@fontsource/ibm-plex-sans/latin-500.css';
+@import '@fontsource/ibm-plex-sans/latin-600.css';
+
+/* Light/dark palette. Dark follows the OS; data-theme on <html> forces either. */
+:root {
+  --paper: #ffffff;
+  --soft: #f2f2f0;
+  --ink: #111214;
+  --muted: #5e6066;
+  --accent: #111214;
+  --accent-ink: #ffffff;
+  --hl: #e4e4e0;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --paper: #111214;
+    --soft: #1d1e22;
+    --ink: #f2f2ef;
+    --muted: #a3a5ac;
+    --accent: #f2f2ef;
+    --accent-ink: #111214;
+    --hl: #34353a;
+    color-scheme: dark;
+  }
+}
+:root[data-theme='dark'] {
+  --paper: #111214;
+  --soft: #1d1e22;
+  --ink: #f2f2ef;
+  --muted: #a3a5ac;
+  --accent: #f2f2ef;
+  --accent-ink: #111214;
+  --hl: #34353a;
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-paper: var(--paper);
+  --color-soft: var(--soft);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-hl: var(--hl);
+  --shadow-sticker: 4px 4px 0 var(--ink);
+  --shadow-sticker-lg: 7px 7px 0 var(--ink);
+  --shadow-sticker-sm: 2px 2px 0 var(--ink);
+}
+
+@theme {
+  --font-display: 'Archivo Variable', 'Arial Black', system-ui, sans-serif;
+  --font-body:
+    'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, Menlo, monospace;
+  --breakpoint-xs: 520px;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font: 400 17px/1.6 var(--font-body);
+    padding-inline: 16px;
+    overflow-x: hidden;
+  }
+  @media (max-width: 620px) {
+    body {
+      font-size: 16px;
+    }
+  }
+  img,
+  svg {
+    max-width: 100%;
+  }
+  a {
+    color: inherit;
+  }
+  h1,
+  h2,
+  h3 {
+    margin: 0;
+    font-family: var(--font-display);
+    text-wrap: balance;
+  }
+  p {
+    margin: 0;
+  }
+  :focus-visible {
+    outline: 3px solid var(--accent);
+    outline-offset: 3px;
+    border-radius: 6px;
+  }
+}
+
+/* Ink-on-white "sticker" primitives: chunky outlines and hard offset shadows. */
+@layer components {
+  .stk {
+    background: var(--paper);
+    border: 2.5px solid var(--ink);
+    border-radius: 14px;
+    box-shadow: var(--shadow-sticker);
+  }
+  .label {
+    font: 500 12.5px/1 var(--font-mono);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .mono {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    letter-spacing: 0.02em;
+  }
+  .chip {
+    font: 500 12.5px/1 var(--font-mono);
+    padding: 5px 8px;
+    border: 2px solid var(--ink);
+    border-radius: 8px;
+    background: var(--paper);
+  }
+  .due {
+    font: 500 12.5px/1 var(--font-mono);
+    color: var(--accent);
+  }
+  .due.quiet {
+    color: var(--muted);
+  }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 20px 12px 16px;
+    border-radius: 14px;
+    border: 2.5px solid var(--ink);
+    box-shadow: var(--shadow-sticker);
+    background: var(--ink);
+    color: var(--paper);
+    text-decoration: none;
+    font-weight: 600;
+    transition:
+      transform 0.12s ease,
+      box-shadow 0.12s ease,
+      background 0.12s,
+      color 0.12s;
+  }
+  .btn:hover {
+    transform: translate(-2px, -2px);
+    box-shadow: 6px 6px 0 var(--ink);
+    background: var(--accent);
+    color: var(--accent-ink);
+  }
+  .btn:active {
+    transform: translate(3px, 3px);
+    box-shadow: 1px 1px 0 var(--ink);
+  }
+  .soon {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 20px 12px 16px;
+    border-radius: 14px;
+    border: 2.5px dashed var(--ink);
+    background: var(--soft);
+    color: var(--muted);
+    cursor: default;
+    user-select: none;
+  }
+  .btn small,
+  .soon small {
+    display: block;
+    font: 500 11px/1.1 var(--font-body);
+    opacity: 0.8;
+  }
+  .btn b,
+  .soon b {
+    display: block;
+    font: 800 18px/1.1 var(--font-display);
+    font-variation-settings: 'wdth' 110;
+  }
+  .btn svg,
+  .soon svg {
+    flex: none;
+  }
+  .btn.ghost {
+    background: var(--paper);
+    color: var(--ink);
+    padding: 12px 18px;
+  }
+  .btn.ghost:hover {
+    background: var(--soft);
+    color: var(--ink);
+  }
+  .small-btn {
+    font: 500 13px/1 var(--font-mono);
+    padding: 8px 10px;
+    border-radius: 9px;
+    border: 2px solid var(--ink);
+    background: var(--paper);
+    color: var(--ink);
+    cursor: pointer;
+    box-shadow: var(--shadow-sticker-sm);
+    transition:
+      transform 0.1s,
+      box-shadow 0.1s,
+      background 0.12s,
+      color 0.12s;
+  }
+  .small-btn:hover {
+    background: var(--accent);
+    color: var(--accent-ink);
+  }
+  .small-btn:active {
+    transform: translate(2px, 2px);
+    box-shadow: 0 0 0 var(--ink);
+  }
+  .small-btn[aria-pressed='true'] {
+    background: var(--ink);
+    color: var(--paper);
+  }
+}
+
+/* Hero deck: three stacked notes. The front one swings to the back. These use
+   the `transform` property because the swing keyframes animate it. */
+@layer components {
+  .note {
+    position: absolute;
+    inset: 0;
+    padding: 20px 22px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    transition: transform 0.5s cubic-bezier(0.3, 1.3, 0.5, 1);
+  }
+  .note[data-pos='0'] {
+    transform: translate(0, 0) rotate(-2deg);
+    z-index: 3;
+  }
+  .note[data-pos='1'] {
+    transform: translate(16px, -16px) rotate(3.5deg);
+    z-index: 2;
+    background: var(--soft);
+  }
+  .note[data-pos='2'] {
+    transform: translate(32px, -32px) rotate(9deg);
+    z-index: 1;
+    background: var(--soft);
+  }
+  .note.swing {
+    animation: swing 0.8s cubic-bezier(0.5, 0, 0.3, 1) forwards;
+  }
+  .deck {
+    transform: translate(-56%, -50%);
+  }
+  @media (max-width: 620px) {
+    .deck {
+      transform: translate(-54%, -46%);
+    }
+  }
+}
+@keyframes swing {
+  0% {
+    transform: translate(0, 0) rotate(-2deg);
+    z-index: 3;
+  }
+  45% {
+    transform: translate(-70%, 30px) rotate(-16deg);
+    z-index: 3;
+  }
+  46% {
+    z-index: 0;
+  }
+  100% {
+    transform: translate(32px, -32px) rotate(9deg);
+    z-index: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

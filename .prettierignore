@@ -1,0 +1,14 @@
+# Prettier covers only infra/, site-landing/, scripts/ and the root JS config.
+# Everything else at the top level (Swift app, designs/, landing/, docs) is
+# ignored by default, then the dirs we own are re-included.
+/*
+!/infra
+!/site-landing
+!/scripts
+!/eslint.config.js
+node_modules
+dist
+dist-server
+cdk.out
+coverage
+pnpm-lock.yaml
