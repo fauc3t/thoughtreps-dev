@@ -10,22 +10,28 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         return true
     }
 
+    // Completion-handler variants on purpose: the `async` ones return to UIKit off the main
+    // thread, which crashes with "Call must be made on main thread" when a reminder is tapped.
     nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter,
-        willPresent notification: UNNotification
-    ) async -> UNNotificationPresentationOptions {
-        [.banner, .sound]
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping @Sendable (UNNotificationPresentationOptions) -> Void
+    ) {
+        completionHandler([.banner, .sound])
     }
 
     nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter,
-        didReceive response: UNNotificationResponse
-    ) async {
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping @Sendable () -> Void
+    ) {
         let identifier = response.notification.request.identifier
-        await MainActor.run {
-            guard identifier.hasPrefix(NotificationScheduler.identifierPrefix)
-                || identifier.hasPrefix(NotificationScheduler.testIdentifierPrefix) else { return }
-            AppNavigation.shared.openTimelineFromReminder()
+        Task { @MainActor in
+            if identifier.hasPrefix(NotificationScheduler.identifierPrefix)
+                || identifier.hasPrefix(NotificationScheduler.testIdentifierPrefix) {
+                AppNavigation.shared.openTimelineFromReminder()
+            }
+            completionHandler()
         }
     }
 }
