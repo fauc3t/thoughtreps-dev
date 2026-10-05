@@ -15,13 +15,3 @@ final class Tag {
         self.displayName = displayName
     }
 }
-
-extension Tag {
-    var activeThoughts: [Thought] {
-        (thoughts ?? []).filter { !$0.isArchived }
-    }
-
-    func dueCount(now: Date) -> Int {
-        activeThoughts.filter { Scheduler.isDue(nextDueAt: $0.nextDueAt, now: now) }.count
-    }
-}

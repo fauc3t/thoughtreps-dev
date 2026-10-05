@@ -4,40 +4,46 @@ import SwiftData
 /// Every tag in use, with how many of its thoughts are due, plus an Untagged row for
 /// thoughts that have no tag.
 struct TagListView: View {
+    struct Counts: Equatable {
+        var active = 0
+        var due = 0
+    }
+
+    @Environment(\.modelContext) private var context
     @Query(sort: \Tag.name) private var tags: [Tag]
-    @Query(filter: #Predicate<Thought> { $0.isArchived == false })
-    private var activeThoughts: [Thought]
     @State private var filter = ""
     @State private var now = Date.now
+    @State private var tagCounts: [String: Counts] = [:]
+    @State private var untaggedCounts = Counts()
 
     private var visible: [Tag] {
         tags.filter { tag in
-            !tag.activeThoughts.isEmpty
+            (tagCounts[tag.name]?.active ?? 0) > 0
                 && (filter.isEmpty || tag.name.localizedCaseInsensitiveContains(filter))
         }
     }
 
-    private var untagged: [Thought] {
-        filter.isEmpty ? activeThoughts.filter(\.isUntagged) : []
+    private var showsUntagged: Bool {
+        filter.isEmpty && untaggedCounts.active > 0
     }
 
     var body: some View {
         List {
             ForEach(visible) { tag in
                 NavigationLink(value: tag) {
-                    TagRow(tag: tag, now: now)
+                    TagRow(tag: tag, counts: tagCounts[tag.name] ?? Counts())
                 }
             }
-            if !untagged.isEmpty {
+            if showsUntagged {
                 Section {
                     NavigationLink(value: UntaggedRoute()) {
-                        UntaggedRow(thoughts: untagged, now: now)
+                        UntaggedRow(counts: untaggedCounts)
                     }
                 }
             }
         }
         .overlay {
-            if visible.isEmpty && untagged.isEmpty {
+            if visible.isEmpty && !showsUntagged {
                 if filter.isEmpty {
                     ContentUnavailableView(
                         "No tags yet",
@@ -52,16 +58,42 @@ struct TagListView: View {
         .contentMargins(.bottom, 88, for: .scrollContent)
         .searchable(text: $filter, prompt: "Filter tags")
         .navigationTitle("Tags")
-        .onAppear { now = .now }
+        .onAppear {
+            now = .now
+            refreshCounts()
+        }
+        .onChange(of: tags.map(\.name)) { refreshCounts() }
+        .onReceive(NotificationCenter.default.publisher(for: ModelContext.didSave, object: context)) { _ in refreshCounts() }
+    }
+
+    /// Counts are queries, not `@Query` results, so they are recomputed on appear and after every
+    /// save (all writes go through `ThoughtStore.persist()`), not on every render.
+    private func refreshCounts() {
+        tagCounts = Dictionary(
+            tags.map { tag in
+                (
+                    tag.name,
+                    Counts(
+                        active: ThoughtCounts.count(ThoughtCounts.active(tag: tag.name), in: context),
+                        due: ThoughtCounts.count(ThoughtCounts.due(tag: tag.name, now: now), in: context)
+                    )
+                )
+            },
+            uniquingKeysWith: { first, _ in first }
+        )
+        untaggedCounts = Counts(
+            active: ThoughtCounts.count(ThoughtCounts.untagged, in: context),
+            due: ThoughtCounts.count(ThoughtCounts.dueUntagged(now: now), in: context)
+        )
     }
 }
 
 struct TagRow: View {
     let tag: Tag
-    let now: Date
+    let counts: TagListView.Counts
 
     var body: some View {
-        let due = tag.dueCount(now: now)
+        let due = counts.due
         HStack(spacing: 12) {
             Circle()
                 .fill(TagColor.color(for: tag))
@@ -77,7 +109,7 @@ struct TagRow: View {
                     .background(Capsule().fill(Color.orange.opacity(0.15)))
                     .foregroundStyle(.orange)
             }
-            Text("\(tag.activeThoughts.count)")
+            Text("\(counts.active)")
                 .font(.subheadline)
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
@@ -85,7 +117,7 @@ struct TagRow: View {
         .padding(.vertical, 6)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
-            RowAccessibility.label(title: "#\(tag.displayName)", due: due, count: tag.activeThoughts.count)
+            RowAccessibility.label(title: "#\(tag.displayName)", due: due, count: counts.active)
         )
     }
 }
@@ -99,11 +131,10 @@ private enum RowAccessibility {
 }
 
 struct UntaggedRow: View {
-    let thoughts: [Thought]
-    let now: Date
+    let counts: TagListView.Counts
 
     var body: some View {
-        let due = thoughts.filter { Scheduler.isDue(nextDueAt: $0.nextDueAt, now: now) }.count
+        let due = counts.due
         HStack(spacing: 12) {
             Circle()
                 .fill(.secondary)
@@ -119,14 +150,14 @@ struct UntaggedRow: View {
                     .background(Capsule().fill(Color.orange.opacity(0.15)))
                     .foregroundStyle(.orange)
             }
-            Text("\(thoughts.count)")
+            Text("\(counts.active)")
                 .font(.subheadline)
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
         }
         .padding(.vertical, 6)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(RowAccessibility.label(title: "Untagged", due: due, count: thoughts.count))
+        .accessibilityLabel(RowAccessibility.label(title: "Untagged", due: due, count: counts.active))
     }
 }
 

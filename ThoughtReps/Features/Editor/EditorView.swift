@@ -22,6 +22,7 @@ struct EditorView: View {
     @State private var intervalDays: Int? = nil
     @State private var isPickingInterval = false
     @State private var hasLoaded = false
+    @State private var tagUseCounts: [String: Int] = [:]
     @State private var saveErrors = SaveErrorCenter()
     @FocusState private var isBodyFocused: Bool
 
@@ -48,13 +49,21 @@ struct EditorView: View {
         var rest = text
         rest.removeSubrange(token.range)
         let candidates = allTags.compactMap { tag -> TagSuggester.Candidate? in
-            let count = tag.thoughts?.count ?? 0
+            let count = tagUseCounts[tag.name] ?? 0
             return count > 0 ? TagSuggester.Candidate(key: tag.name, display: tag.displayName, count: count) : nil
         }
         return TagSuggester.suggestions(
             for: token.partial,
             from: candidates,
             excluding: Set(TagParser.parse(rest).map(\.key))
+        )
+    }
+
+    /// Nothing is saved while the editor is open, so these counts stay valid until it closes.
+    private func loadTagUseCounts() {
+        tagUseCounts = Dictionary(
+            allTags.map { ($0.name, ThoughtCounts.count(ThoughtCounts.any(tag: $0.name), in: context)) },
+            uniquingKeysWith: { first, _ in first }
         )
     }
 
@@ -151,7 +160,10 @@ struct EditorView: View {
                     intervalDays = days
                 }
             }
-            .onAppear { load() }
+            .onAppear {
+                load()
+                loadTagUseCounts()
+            }
             .onChange(of: text) { old, new in continueList(from: old, to: new) }
         }
         .interactiveDismissDisabled(!trimmedText.isEmpty && isNew)

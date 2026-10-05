@@ -49,7 +49,7 @@ ThoughtReps/
   App/          App entry, tab bar, navigation destinations
   Models/       SwiftData models: Thought, Tag, Block, ImageAsset
   Scheduler/    Resurfacing rules as pure, unit-tested functions
-  Stores/       ThoughtStore (all writes), IntegrityChecker, SaveErrorCenter, AppSettings
+  Stores/       ThoughtStore (all writes), ThoughtCounts (count queries), IntegrityChecker, SaveErrorCenter, AppSettings
   Services/     TagParser, NotificationScheduler, AppNavigation, InboxImporter
   Features/     Timeline, Thought, Editor, Blocks, Tags, Archive, Settings
   Resources/    Assets, sample data
