@@ -3,7 +3,9 @@ import SwiftData
 
 struct RootTabView: View {
     @Environment(\.modelContext) private var context
+    @State private var captureContext = CaptureContext()
     @State private var isCapturing = false
+    @State private var prefillTag: String?
 
     var body: some View {
         TabView {
@@ -25,13 +27,17 @@ struct RootTabView: View {
             }
             .tabItem { Label("Archive", systemImage: "archivebox") }
         }
+        .environment(captureContext)
         .overlay(alignment: .bottomTrailing) {
-            CaptureButton { isCapturing = true }
+            CaptureButton(hasTag: captureContext.tag != nil) {
+                prefillTag = captureContext.tag?.displayName
+                isCapturing = true
+            }
                 .padding(.trailing, 20)
                 .padding(.bottom, 66) // clears the tab bar
         }
         .sheet(isPresented: $isCapturing) {
-            EditorView(mode: .new())
+            EditorView(mode: .new(prefillTag: prefillTag))
         }
         .task {
             ThoughtStore(context: context).pruneOrphanTags()
@@ -44,6 +50,7 @@ struct RootTabView: View {
 
 /// The floating "+" that opens the editor from any tab.
 struct CaptureButton: View {
+    var hasTag = false
     let action: () -> Void
 
     var body: some View {
@@ -55,7 +62,7 @@ struct CaptureButton: View {
                 .background(Circle().fill(Color.accentColor))
                 .shadow(color: Color.accentColor.opacity(0.35), radius: 8, y: 4)
         }
-        .accessibilityLabel("New thought")
+        .accessibilityLabel(hasTag ? "New thought with this tag" : "New thought")
     }
 }
 

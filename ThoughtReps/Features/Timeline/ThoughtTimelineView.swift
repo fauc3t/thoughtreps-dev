@@ -8,6 +8,7 @@ struct ThoughtTimelineView: View {
 
     @Environment(\.modelContext) private var context
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(CaptureContext.self) private var captureContext: CaptureContext?
     @AppStorage(AppSettings.Key.defaultIntervalDays) private var defaultIntervalDays = Scheduler.defaultIntervalDays
 
     @Query(filter: #Predicate<Thought> { $0.isArchived == false }, sort: \Thought.nextDueAt)
@@ -18,7 +19,6 @@ struct ThoughtTimelineView: View {
     @State private var snapshot = Date.now
     @State private var showAll = false
     @State private var showSettings = false
-    @State private var isCapturing = false
 
     private var store: ThoughtStore {
         ThoughtStore(context: context, defaultIntervalDays: defaultIntervalDays)
@@ -71,7 +71,15 @@ struct ThoughtTimelineView: View {
         .navigationTitle(tag.map { "#\($0.displayName)" } ?? "Timeline")
         .toolbar { toolbarContent }
         .refreshable { @MainActor in snapshot = .now }
-        .onAppear { snapshot = .now }
+        .onAppear {
+            snapshot = .now
+            if let tag { captureContext?.tag = tag }
+        }
+        .onDisappear {
+            if let tag, captureContext?.tag?.persistentModelID == tag.persistentModelID {
+                captureContext?.tag = nil
+            }
+        }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { snapshot = .now }
         }
@@ -80,9 +88,6 @@ struct ThoughtTimelineView: View {
         }
         .sheet(isPresented: $showSettings) {
             SettingsView()
-        }
-        .sheet(isPresented: $isCapturing) {
-            EditorView(mode: .new(prefillTag: tag?.displayName))
         }
     }
 
@@ -133,14 +138,6 @@ struct ThoughtTimelineView: View {
                 }
                 .pickerStyle(.segmented)
                 .frame(width: 120)
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    isCapturing = true
-                } label: {
-                    Image(systemName: "square.and.pencil")
-                }
-                .accessibilityLabel("New thought with this tag")
             }
         }
     }
