@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 import ImageIO
 import UniformTypeIdentifiers
@@ -29,8 +30,8 @@ enum ImageProcessor {
         guard let source = CGImageSourceCreateWithData(input as CFData, nil),
               CGImageSourceGetCount(source) > 0,
               let original = longestEdge(of: source),
-              let full = downscaled(source, longestEdge: min(maxDimension, original)),
-              let thumbnail = downscaled(source, longestEdge: min(thumbnailDimension, original))
+              let full = decoded(source, longestEdge: min(maxDimension, original)),
+              let thumbnail = decoded(source, longestEdge: min(thumbnailDimension, original))
         else { throw ImageProcessingError.undecodable }
 
         return ProcessedImage(
@@ -49,6 +50,29 @@ enum ImageProcessor {
               width > 0, height > 0
         else { return nil }
         return max(width, height)
+    }
+
+    /// Like `downscaled`, but redrawn into an opaque bitmap when the source image has no alpha channel.
+    /// ImageIO thumbnails come back premultiplied even for opaque sources, and encoding those logs a warning.
+    static func decoded(_ source: CGImageSource, longestEdge: Int) -> CGImage? {
+        guard let image = downscaled(source, longestEdge: longestEdge) else { return nil }
+        switch CGImageSourceCreateImageAtIndex(source, 0, nil)?.alphaInfo {
+        case .some(.none), .some(.noneSkipFirst), .some(.noneSkipLast): return opaque(image) ?? image
+        default: return image
+        }
+    }
+
+    private static func opaque(_ image: CGImage) -> CGImage? {
+        let spaces = [image.colorSpace, CGColorSpace(name: CGColorSpace.sRGB)].compactMap { $0 }
+        for space in spaces {
+            guard let context = CGContext(
+                data: nil, width: image.width, height: image.height, bitsPerComponent: 8, bytesPerRow: 0,
+                space: space, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
+            ) else { continue }
+            context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+            return context.makeImage()
+        }
+        return nil
     }
 
     /// Decodes upright (orientation applied) at no more than `longestEdge`; metadata is not carried.

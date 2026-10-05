@@ -35,6 +35,16 @@ private func pixelSize(of data: Data) -> (width: Int, height: Int)? {
     return (width, height)
 }
 
+private func rgba(of image: CGImage, x: Int, y: Int) -> (r: UInt8, g: UInt8, b: UInt8, a: UInt8)? {
+    var bytes = [UInt8](repeating: 0, count: 4)
+    guard let context = CGContext(
+        data: &bytes, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+        space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+    ) else { return nil }
+    context.draw(image, in: CGRect(x: -x, y: -(image.height - 1 - y), width: image.width, height: image.height))
+    return (bytes[0], bytes[1], bytes[2], bytes[3])
+}
+
 @Suite("ImageProcessor")
 struct ImageProcessorTests {
     @Test func downscalesLargeImagesAndMakesAThumbnail() throws {
@@ -102,6 +112,83 @@ struct ImageProcessorTests {
             let exif = found[kCGImagePropertyExifDictionary] as? [CFString: Any]
             #expect(exif?[kCGImagePropertyExifUserComment] == nil)
         }
+    }
+
+    @Test func opaqueSourcesDecodeWithoutAlpha() throws {
+        for type in [UTType.jpeg, .png] {
+            let data = makeTestImageData(width: 300, height: 400, type: type)
+            let source = try #require(CGImageSourceCreateWithData(data as CFData, nil))
+            let image = try #require(ImageProcessor.decoded(source, longestEdge: 300))
+            #expect(image.alphaInfo == .noneSkipLast || image.alphaInfo == .none)
+        }
+    }
+
+    @Test func processedOpaquePNGHasExpectedThumbnail() throws {
+        let result = try ImageProcessor.process(makeTestImageData(width: 600, height: 800, type: .png))
+        let thumb = try #require(pixelSize(of: result.thumbnailData))
+        #expect(thumb.width == 300 && thumb.height == 400)
+    }
+
+    @Test func flatteningKeepsOpaqueContent() throws {
+        let data = makeTestImageData(width: 100, height: 100, type: .png)
+        let source = try #require(CGImageSourceCreateWithData(data as CFData, nil))
+        let image = try #require(ImageProcessor.decoded(source, longestEdge: 100))
+        let pixel = try #require(rgba(of: image, x: 50, y: 50))
+        #expect(pixel.a == 255)
+        #expect(Int(pixel.r) + Int(pixel.g) + Int(pixel.b) > 150)
+    }
+
+    @Test func grayscaleOpaqueSourceComesOutWithoutAlpha() throws {
+        let context = try #require(CGContext(
+            data: nil, width: 80, height: 60, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue
+        ))
+        context.setFillColor(gray: 0.6, alpha: 1)
+        context.fill(CGRect(x: 0, y: 0, width: 80, height: 60))
+        let output = NSMutableData()
+        let destination = try #require(CGImageDestinationCreateWithData(output, UTType.png.identifier as CFString, 1, nil))
+        CGImageDestinationAddImage(destination, try #require(context.makeImage()), nil)
+        #expect(CGImageDestinationFinalize(destination))
+
+        let source = try #require(CGImageSourceCreateWithData(output as Data as CFData, nil))
+        let image = try #require(ImageProcessor.decoded(source, longestEdge: 80))
+        #expect(image.alphaInfo == .noneSkipLast || image.alphaInfo == .none)
+        let pixel = try #require(rgba(of: image, x: 10, y: 10))
+        #expect(pixel.r > 100 && pixel.r < 210)
+    }
+
+    @Test func heicWithRealAlphaKeepsIt() throws {
+        let context = try #require(CGContext(
+            data: nil, width: 100, height: 100, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ))
+        context.setFillColor(CGColor(red: 1, green: 0, blue: 0, alpha: 0.5))
+        context.fill(CGRect(x: 0, y: 0, width: 50, height: 100))
+        let output = NSMutableData()
+        let destination = try #require(CGImageDestinationCreateWithData(output, UTType.heic.identifier as CFString, 1, nil))
+        CGImageDestinationAddImage(destination, try #require(context.makeImage()), nil)
+        #expect(CGImageDestinationFinalize(destination))
+
+        let source = try #require(CGImageSourceCreateWithData(output as Data as CFData, nil))
+        let image = try #require(ImageProcessor.decoded(source, longestEdge: 100))
+        #expect(image.alphaInfo != .noneSkipLast && image.alphaInfo != .none)
+    }
+
+    @Test func sourcesWithRealAlphaKeepIt() throws {
+        let context = try #require(CGContext(
+            data: nil, width: 100, height: 100, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ))
+        context.setFillColor(CGColor(red: 1, green: 0, blue: 0, alpha: 0.5))
+        context.fill(CGRect(x: 0, y: 0, width: 50, height: 100))
+        let output = NSMutableData()
+        let destination = try #require(CGImageDestinationCreateWithData(output, UTType.png.identifier as CFString, 1, nil))
+        CGImageDestinationAddImage(destination, try #require(context.makeImage()), nil)
+        #expect(CGImageDestinationFinalize(destination))
+
+        let source = try #require(CGImageSourceCreateWithData(output as Data as CFData, nil))
+        let image = try #require(ImageProcessor.decoded(source, longestEdge: 100))
+        #expect(image.alphaInfo != .noneSkipLast && image.alphaInfo != .none)
     }
 
     @Test func garbageThrows() {
