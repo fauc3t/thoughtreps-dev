@@ -1,0 +1,111 @@
+@import 'tailwindcss';
+@import '@fontsource-variable/archivo/wdth.css';
+@import '@fontsource/ibm-plex-mono/latin-500.css';
+@import '@fontsource/ibm-plex-sans/latin-400.css';
+@import '@fontsource/ibm-plex-sans/latin-500.css';
+@import '@fontsource/ibm-plex-sans/latin-600.css';
+
+/* Same ink-on-white palette as site-landing; dark follows the OS. */
+:root {
+  --paper: #ffffff;
+  --soft: #f2f2f0;
+  --ink: #111214;
+  --muted: #5e6066;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #111214;
+    --soft: #1d1e22;
+    --ink: #f2f2ef;
+    --muted: #a3a5ac;
+    color-scheme: dark;
+  }
+}
+
+@theme inline {
+  --color-paper: var(--paper);
+  --color-soft: var(--soft);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --shadow-sticker: 4px 4px 0 var(--ink);
+}
+
+@theme {
+  --font-display: 'Archivo Variable', 'Arial Black', system-ui, sans-serif;
+  --font-body: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, Menlo, monospace;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font: 400 17px/1.6 var(--font-body);
+    padding-inline: 16px;
+  }
+  @media (max-width: 620px) {
+    body {
+      font-size: 16px;
+    }
+  }
+  h1,
+  h2 {
+    margin: 0;
+    font-family: var(--font-display);
+    text-wrap: balance;
+  }
+  p {
+    margin: 0;
+  }
+  :focus-visible {
+    outline: 3px solid var(--ink);
+    outline-offset: 3px;
+    border-radius: 6px;
+  }
+}
+
+@layer components {
+  .stk {
+    background: var(--paper);
+    border: 2.5px solid var(--ink);
+    border-radius: 14px;
+    box-shadow: var(--shadow-sticker);
+  }
+  .label {
+    font: 500 12.5px/1 var(--font-mono);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .progress {
+    width: 100%;
+    height: 14px;
+    appearance: none;
+    border: 2px solid var(--ink);
+    border-radius: 8px;
+    background: var(--soft);
+    overflow: hidden;
+  }
+  .progress::-webkit-progress-bar {
+    background: var(--soft);
+  }
+  .progress::-webkit-progress-value {
+    background: var(--ink);
+  }
+  .progress::-moz-progress-bar {
+    background: var(--ink);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+  }
+}

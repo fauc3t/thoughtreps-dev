@@ -7,7 +7,7 @@ import globals from 'globals';
 
 export default tseslint.config(
   {
-    // Lints only infra/, site-landing/ and scripts/. The Swift app, designs/,
+    // Lints only infra/, site-landing/, transfer-web/ and scripts/. The Swift app, designs/,
     // landing/ (HTML prototypes) and the repo's docs are not ours to lint.
     ignores: [
       '**/node_modules/**',
@@ -38,6 +38,7 @@ export default tseslint.config(
     files: [
       'infra/mail-web/src/**/*.{ts,tsx}',
       'site-landing/src/**/*.{ts,tsx}',
+      'transfer-web/src/**/*.{ts,tsx}',
     ],
     plugins: {
       'react-hooks': reactHooks,

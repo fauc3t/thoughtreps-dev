@@ -6,7 +6,6 @@ import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as route53 from 'aws-cdk-lib/aws-route53';
 import * as targets from 'aws-cdk-lib/aws-route53-targets';
 import * as s3 from 'aws-cdk-lib/aws-s3';
-import * as s3deploy from 'aws-cdk-lib/aws-s3-deployment';
 import { Construct } from 'constructs';
 import { ExportApi, OPEN_INDEX_NAME } from './api.js';
 
@@ -18,13 +17,6 @@ export interface ShareStackProps extends cdk.StackProps {
   feedbackFromAddress: string;
   feedbackToAddress: string;
 }
-
-const PLACEHOLDER_HTML = `<!doctype html>
-<html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Thought Reps</title></head>
-<body><p>Thought Reps export download is coming soon.</p></body>
-</html>
-`;
 
 // Every /x/<id> URL serves the same static page; the page reads the id from
 // the path and the decryption key from the fragment.
@@ -164,14 +156,6 @@ export class ShareStack extends cdk.Stack {
         defaultRootObject: 'index.html',
       },
     );
-
-    // Placeholder until the real download page ships. prune is off so a
-    // later page upload into this bucket is not deleted by a redeploy.
-    new s3deploy.BucketDeployment(this, 'PlaceholderSite', {
-      sources: [s3deploy.Source.data('index.html', PLACEHOLDER_HTML)],
-      destinationBucket: this.siteBucket,
-      prune: false,
-    });
 
     const target = route53.RecordTarget.fromAlias(
       new targets.CloudFrontTarget(this.distribution),
