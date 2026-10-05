@@ -11,6 +11,7 @@ export default tseslint.config(
     // landing/ (HTML prototypes) and the repo's docs are not ours to lint.
     ignores: [
       '**/node_modules/**',
+      '.claude/**',
       '**/dist/**',
       '**/dist-server/**',
       '**/cdk.out/**',
