@@ -4,7 +4,7 @@ import MarkdownUI
 extension Theme {
     /// Thought Reps' Markdown look: font sizes are `em` multiples of the Dynamic-Type-scaled
     /// body size, with semantic colors for light and dark mode.
-    @MainActor static let thoughtReps: Theme = {
+    @MainActor static var thoughtReps: Theme {
         let gap = RelativeSize.rem(0.7)
         return Theme()
             .text {
@@ -138,5 +138,5 @@ extension Theme {
                 Divider()
                     .markdownMargin(top: .zero, bottom: gap)
             }
-    }()
+    }
 }
