@@ -10,9 +10,15 @@ import {
 import {
   DeviceRecord,
   ExportLinkRecord,
+  RateRecord,
 } from '../../../lib/export-link/schemas.js';
 
 export const OPEN_INDEX = 'openIndex';
+
+// No key collision: keyIds are base64 (never contain '#'), so a scoped key
+// always has one more segment than an unscoped one.
+const rateKey = (keyId: string, day: string, scope?: string) =>
+  `RATE#${scope ? `${scope}#` : ''}${keyId}#${day}`;
 const SWEEP_PAGE_SIZE = 100;
 const SWEEP_MAX_ITEMS = 500;
 
@@ -29,12 +35,17 @@ export interface Store {
   advanceSignCount(keyId: string, from: number, to: number): Promise<boolean>;
   setCurrentLink(keyId: string, exportLinkId: string): Promise<void>;
 
-  // True while the device is under `limit` for that UTC day.
+  // Current count for that UTC day (0 if none), same `scope` as incrementRate.
+  getRate(keyId: string, day: string, scope?: string): Promise<number>;
+
+  // True while the device is under `limit` for that UTC day. `scope` gives a
+  // separate budget; unscoped is the export-link create counter.
   incrementRate(
     keyId: string,
     day: string,
     limit: number,
     ttl: number,
+    scope?: string,
   ): Promise<boolean>;
 
   getLink(exportLinkId: string): Promise<ExportLinkRecord | null>;
@@ -161,12 +172,29 @@ export class DynamoStore implements Store {
     );
   }
 
-  incrementRate(keyId: string, day: string, limit: number, ttl: number) {
+  async getRate(keyId: string, day: string, scope?: string) {
+    const { Item } = await this.db.send(
+      new GetCommand({
+        TableName: this.tableName,
+        Key: { pk: rateKey(keyId, day, scope) },
+        ConsistentRead: true,
+      }),
+    );
+    return Item ? RateRecord.parse(Item).count : 0;
+  }
+
+  incrementRate(
+    keyId: string,
+    day: string,
+    limit: number,
+    ttl: number,
+    scope?: string,
+  ) {
     return won(
       this.db.send(
         new UpdateCommand({
           TableName: this.tableName,
-          Key: { pk: `RATE#${keyId}#${day}` },
+          Key: { pk: rateKey(keyId, day, scope) },
           UpdateExpression: 'ADD #count :one SET #ttl = :ttl',
           ConditionExpression:
             'attribute_not_exists(#count) OR #count < :limit',

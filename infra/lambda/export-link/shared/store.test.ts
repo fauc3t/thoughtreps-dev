@@ -80,10 +80,30 @@ describe('DynamoStore', () => {
       ConditionExpression: 'attribute_not_exists(#count) OR #count < :limit',
       ExpressionAttributeValues: { ':limit': 10, ':ttl': 99 },
     });
+    await store.incrementRate(KEY_ID, '2026-01-15', 3, 99, 'feedback');
+    expect(calls[1].input).toMatchObject({
+      Key: { pk: `RATE#feedback#${KEY_ID}#2026-01-15` },
+    });
     const full = setup(() => conditionalFailure());
     await expect(full.store.incrementRate(KEY_ID, 'd', 10, 1)).resolves.toBe(
       false,
     );
+  });
+
+  it('reads the feedback rate count from its scoped key', async () => {
+    const hit = setup(() => ({ Item: { pk: 'RATE#x', count: 2, ttl: 9 } }));
+    await expect(
+      hit.store.getRate(KEY_ID, '2026-01-15', 'feedback'),
+    ).resolves.toBe(2);
+    expect(hit.calls[0].input).toMatchObject({
+      Key: { pk: `RATE#feedback#${KEY_ID}#2026-01-15` },
+      ConsistentRead: true,
+    });
+    const miss = setup(() => ({}));
+    await expect(miss.store.getRate(KEY_ID, '2026-01-15')).resolves.toBe(0);
+    expect(miss.calls[0].input).toMatchObject({
+      Key: { pk: `RATE#${KEY_ID}#2026-01-15` },
+    });
   });
 
   it('claims only a ready, unexpired link', async () => {

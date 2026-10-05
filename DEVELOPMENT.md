@@ -14,6 +14,7 @@ xcodegen && open ThoughtReps.xcodeproj
 - `Config/Local.xcconfig` is gitignored. Set `DEVELOPMENT_TEAM` to your Team ID, which is listed under your team in Xcode > Settings > Accounts.
 - If Xcode says the bundle ID is unavailable, also set `TR_BUNDLE_ID` there to something unique, such as `com.yourname.thoughtreps`.
 - On a device, your team needs the App Group `group.<bundle id>` for the share extension (App ID `<bundle id>.share`). Automatic signing usually registers both; if not, add the group under Signing & Capabilities or at developer.apple.com. Simulator builds work without a team.
+- The main app has the App Attest entitlement (`appattest-environment: production`, needed for Send Feedback). If device signing complains, enable the App Attest capability on the App ID at developer.apple.com. The simulator can't send feedback, and the route needs the Share stack deployed.
 - A free Apple ID also works, with 7-day installs and no iCloud.
 
 ## Everyday commands

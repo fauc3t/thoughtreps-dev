@@ -25,6 +25,10 @@ export interface EnvConfig {
   exportLinkSubdomain: string;
   // TeamID.bundleId. The App Attest rpIdHash is SHA-256 of this string.
   appAttestAppId: string;
+  // In-app feedback mail: sent from the verified domain identity (owned by
+  // the Mail stack) to a received mailbox, so it lands in the normal inbox.
+  feedbackFromAddress: string;
+  feedbackToAddress: string;
 }
 
 const ENV_CONFIGS: Record<EnvName, EnvConfig> = {
@@ -42,6 +46,8 @@ const ENV_CONFIGS: Record<EnvName, EnvConfig> = {
     sharedReceiptRuleSetName: 'simple-mail-prod',
     exportLinkSubdomain: 'transfer',
     appAttestAppId: '835DH8RD35.com.thoughtreps.app',
+    feedbackFromAddress: 'feedback@thoughtreps.com',
+    feedbackToAddress: 'hello@thoughtreps.com',
   },
 };
 

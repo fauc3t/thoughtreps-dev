@@ -15,6 +15,8 @@ export interface ShareStackProps extends cdk.StackProps {
   domainName: string;
   exportLinkSubdomain: string;
   appAttestAppId: string;
+  feedbackFromAddress: string;
+  feedbackToAddress: string;
 }
 
 const PLACEHOLDER_HTML = `<!doctype html>
@@ -44,7 +46,14 @@ export class ShareStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: ShareStackProps) {
     super(scope, id, props);
 
-    const { zone, domainName, exportLinkSubdomain, appAttestAppId } = props;
+    const {
+      zone,
+      domainName,
+      exportLinkSubdomain,
+      appAttestAppId,
+      feedbackFromAddress,
+      feedbackToAddress,
+    } = props;
     const hostname = `${exportLinkSubdomain}.${domainName}`;
 
     // Deliberately NOT versioned, unlike the (versioned) mail bucket: a
@@ -95,6 +104,8 @@ export class ShareStack extends cdk.Stack {
       exportBucket: this.exportBucket,
       table: this.table,
       appAttestAppId,
+      feedbackFromAddress,
+      feedbackToAddress,
     });
 
     this.siteBucket = new s3.Bucket(this, 'TransferSiteBucket', {

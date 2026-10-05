@@ -17,7 +17,7 @@ All in one `cdk.Stage` named `prod` (`infra/lib/app-stage.ts`).
 | `ThoughtReps-prod-Dns` | Deployed 2026-10-05 | Route53 hosted zone `thoughtreps.com` (RETAIN) |
 | `ThoughtReps-prod-Landing` | Deployed 2026-10-05 | S3 bucket (OAC) + CloudFront for the apex, `www` -> apex 301, `404.html`; ACM cert |
 | `ThoughtReps-prod-Mail` | Deployed 2026-10-05 | SES identity, MX, DMARC, mail bucket, receipt rule, ForwardFn, Cognito, HTTP API (ReplyFn/DeleteFn), mail web UI hosting |
-| `ThoughtReps-prod-Share` | Deployed 2026-10-05 | Export-link backend: unversioned export bucket, DynamoDB link table, App Attest device/export-link/public/sweep Lambdas, HTTP API, `transfer.thoughtreps.com` site (placeholder page) |
+| `ThoughtReps-prod-Share` | Deployed 2026-10-05 | Export-link backend: unversioned export bucket, DynamoDB link table, App Attest device/export-link/public/sweep Lambdas, FeedbackFn (`POST /feedback`, SES send; code added, **pending deploy**), HTTP API, `transfer.thoughtreps.com` site (placeholder page) |
 
 ### DNS
 
@@ -53,4 +53,4 @@ Last deploy: 2026-10-05 (Dns, Landing and Mail, plus `deploy-landing.sh` and `de
 | Export API URL (`ExportApiUrl`) | https://transfer.thoughtreps.com/api/v1 |
 | Transfer site bucket / distribution (`TransferSiteBucketName`, `TransferDistributionId`) | `thoughtreps-prod-share-transfersitebucket6a3fef50-bl0j1eymkxco` / `E622TVJW5S9HN` |
 | Transfer URL (`TransferUrl`) | https://transfer.thoughtreps.com |
-| Export link real-device App Attest test | _pending_ (needs the iOS client) |
+| Export link real-device App Attest test | _pending_ (iOS `AppAttestClient` exists; needs the deploy and a device build; first check is Settings > Send Feedback) |

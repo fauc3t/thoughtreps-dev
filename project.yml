@@ -46,6 +46,7 @@ targets:
       properties:
         com.apple.security.application-groups:
           - group.$(TR_BUNDLE_ID)
+        com.apple.developer.devicecheck.appattest-environment: production
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: $(TR_BUNDLE_ID)

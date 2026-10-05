@@ -7,6 +7,7 @@ enum AppSettings {
         static let didSeedSampleData = "didSeedSampleData"
         static let reminderEnabled = "reminderEnabled"
         static let reminderMinutes = "reminderMinutes"
+        static let feedbackEmail = "feedbackEmail"
     }
 
     static let defaultReminderMinutes = 8 * 60

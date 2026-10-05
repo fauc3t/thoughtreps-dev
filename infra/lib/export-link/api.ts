@@ -23,6 +23,8 @@ export interface ExportApiProps {
   exportBucket: s3.IBucket;
   table: dynamodb.ITable;
   appAttestAppId: string;
+  feedbackFromAddress: string;
+  feedbackToAddress: string;
 }
 
 // Routes carry the full /api/v1 path: CloudFront forwards /api/* to this API
@@ -33,12 +35,20 @@ export class ExportApi extends Construct {
   constructor(scope: Construct, id: string, props: ExportApiProps) {
     super(scope, id);
 
-    const { exportBucket, table, appAttestAppId } = props;
+    const {
+      exportBucket,
+      table,
+      appAttestAppId,
+      feedbackFromAddress,
+      feedbackToAddress,
+    } = props;
 
     const environment = {
       TABLE_NAME: table.tableName,
       BUCKET_NAME: exportBucket.bucketName,
       APP_ATTEST_APP_ID: appAttestAppId,
+      FEEDBACK_FROM_ADDRESS: feedbackFromAddress,
+      FEEDBACK_TO_ADDRESS: feedbackToAddress,
     };
     const fn = (name: string, dir: string) =>
       new NodejsFunction(this, name, {
@@ -78,6 +88,24 @@ export class ExportApi extends Construct {
     );
     exportLinkFn.addToRolePolicy(
       objects('s3:PutObject', 's3:GetObject', 's3:DeleteObject'),
+    );
+
+    // Same device auth as ExportLinkFn (read device, advance counter, consume
+    // challenge, count the daily rate), no S3. ses:SendEmail is not
+    // resource-scopable, so resources: ['*'] with the ses:FromAddress
+    // condition pins the sender (same approach as the mail stack's ReplyFn).
+    const feedbackFn = fn('FeedbackFn', 'feedback');
+    feedbackFn.addToRolePolicy(
+      items('dynamodb:GetItem', 'dynamodb:UpdateItem', 'dynamodb:DeleteItem'),
+    );
+    feedbackFn.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ['ses:SendEmail'],
+        resources: ['*'],
+        conditions: {
+          StringEquals: { 'ses:FromAddress': feedbackFromAddress },
+        },
+      }),
     );
 
     // Unauthenticated: the link id is the only credential. s3:GetObject is
@@ -147,6 +175,8 @@ export class ExportApi extends Construct {
       'RevokeIntegration',
       exportLinkFn,
     );
+
+    route(POST, '/api/v1/feedback', 'FeedbackIntegration', feedbackFn);
 
     route(GET, '/api/v1/export-links/{id}', 'StatusIntegration', publicFn);
     route(

@@ -29,7 +29,7 @@ The AWS account (`041459489812`) is shared with strands prod.
 
 ## Export link constraints
 
-The device encrypts its export and uploads ciphertext; the key lives only in the link's `#` fragment. Deployed 2026-10-05 (`cdk deploy prod/ShareStack`); a real-device attestation is still untested until the iOS client exists.
+The device encrypts its export and uploads ciphertext; the key lives only in the link's `#` fragment. Deployed 2026-10-05 (`cdk deploy prod/ShareStack`); the feedback route was added afterward and is not yet deployed. A real-device attestation is still untested.
 
 - **The export bucket is unversioned on purpose** (unlike the mail bucket): deletes must really remove the ciphertext. The 2-day lifecycle is only a backstop; link expiry is 24h from `complete`, enforced by `claim` and the 15-minute `SweepFn`.
 - **IAM is scoped to `exports/*` with no `s3:ListBucket`**, so HEAD on a missing object returns 403; treat that as "not uploaded".
@@ -39,6 +39,8 @@ The device encrypts its export and uploads ciphertext; the key lives only in the
 - **Hash contracts the iOS client must match:** attestation `clientDataHash` = SHA256 of the UTF-8 bytes of the base64url challenge string; signed requests are an assertion over SHA256(raw body bytes) plus a single-use challenge.
 - **`cbor.ts` is a hand-written bounded decoder** because cbor-x's native build script is blocked by pnpm 11. `Deps.attestationRootPem` is a test-only seam; the Apple root is pinned in `apple-root.ts`.
 - Limits: 100 MB, 10 creates/day/device, one open link per install (a new one revokes the previous). Status codes: 400 bad_request, 401 auth, 404 not_found, 409 upload_mismatch, 410 used/expired/revoked, 413 too_large, 429 rate_limited.
+- **Feedback (`POST /api/v1/feedback`, `FeedbackFn`) shares this API and App Attest auth** (`authenticateSigned`). Strict body, message 1..5000 UTF-16 units, required email (becomes Reply-To). Limit is 3/device/UTC day on its own counter (`RATE#feedback#<keyId>#<day>`); order is check count -> send -> increment, so a failed SES send doesn't spend a slot. Concurrent requests may briefly exceed 3 (accepted); a failed increment after a successful send still returns 200. SES failure is 500.
+- **Never log the feedback message or email.** The mail body puts the diagnostics block *before* `-- Message --` so the message can't forge diagnostics, and the subject is fixed (`[Feature] Feedback` / `[Bug] Feedback`). IAM is DynamoDB Get/Update/Delete plus `ses:SendEmail` on `*` with a `ses:FromAddress` condition (`feedbackFromAddress`, sent to `feedbackToAddress`); no S3. Reply-To is only on the original attached inside ForwardFn's forward.
 - Request/response schemas are in `lib/export-link/schemas.ts`, exported as `./export-link/schemas` for the download page; the iOS client mirrors these shapes in Swift, so keep them in sync.
 
 ## Deliverability

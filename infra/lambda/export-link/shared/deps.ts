@@ -1,14 +1,19 @@
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { S3Client } from '@aws-sdk/client-s3';
+import { SESv2Client } from '@aws-sdk/client-sesv2';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { randomBytes } from 'node:crypto';
 import type { HttpApiEvent, HttpApiResult } from './http.js';
+import { SesMailer, type Mailer } from './mailer.js';
 import { S3ObjectStore, type ObjectStore } from './objects.js';
 import { DynamoStore, type Store } from './store.js';
 
 export interface Deps {
   store: Store;
   objects: ObjectStore;
+  mailer: Mailer;
+  feedbackFrom: string;
+  feedbackTo: string;
   appId: string;
   // Tests only: production never sets it, so attestations are always
   // validated against Apple's root.
@@ -24,6 +29,9 @@ export function defaultDeps(): Deps {
   return {
     store: new DynamoStore(db, process.env.TABLE_NAME ?? ''),
     objects: new S3ObjectStore(new S3Client({}), process.env.BUCKET_NAME ?? ''),
+    mailer: new SesMailer(new SESv2Client({})),
+    feedbackFrom: process.env.FEEDBACK_FROM_ADDRESS ?? '',
+    feedbackTo: process.env.FEEDBACK_TO_ADDRESS ?? '',
     appId: process.env.APP_ATTEST_APP_ID ?? '',
     nowMs: () => Date.now(),
     randomBytes,

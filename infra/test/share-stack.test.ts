@@ -17,6 +17,8 @@ function synthShareStack() {
     domainName: 'example.test',
     exportLinkSubdomain: 'transfer',
     appAttestAppId: 'TEAM.com.example.app',
+    feedbackFromAddress: 'feedback@example.test',
+    feedbackToAddress: 'hello@example.test',
   });
   return Template.fromStack(stack);
 }
@@ -155,6 +157,7 @@ describe('ShareStack', () => {
     for (const fnId of [
       'ApiDeviceFn',
       'ApiExportLinkFn',
+      'ApiFeedbackFn',
       'ApiPublicFn',
       'ApiSweepFn',
     ]) {
@@ -172,6 +175,7 @@ describe('ShareStack', () => {
     const s3Of = (fnId: string) =>
       actionsOf(s3Statements(statementsFor(template, fnId)));
     expect(s3Of('ApiDeviceFn')).toEqual([]);
+    expect(s3Of('ApiFeedbackFn')).toEqual([]);
     expect(s3Of('ApiExportLinkFn')).toEqual([
       's3:DeleteObject',
       's3:GetObject',
@@ -190,6 +194,11 @@ describe('ShareStack', () => {
       'dynamodb:DeleteItem',
       'dynamodb:PutItem',
     ]);
+    expect(dynamoOf('ApiFeedbackFn')).toEqual([
+      'dynamodb:DeleteItem',
+      'dynamodb:GetItem',
+      'dynamodb:UpdateItem',
+    ]);
     expect(dynamoOf('ApiSweepFn')).toEqual([
       'dynamodb:Query',
       'dynamodb:UpdateItem',
@@ -198,6 +207,29 @@ describe('ShareStack', () => {
       'dynamodb:GetItem',
       'dynamodb:UpdateItem',
     ]);
+  });
+
+  it('lets FeedbackFn send only as the feedback address and passes the addresses via env', () => {
+    const send = statementsFor(template, 'ApiFeedbackFn').filter((s) =>
+      [s.Action].flat().some((a) => a.startsWith('ses:')),
+    );
+    expect(send).toHaveLength(1);
+    expect(send[0]).toMatchObject({
+      Action: 'ses:SendEmail',
+      Effect: 'Allow',
+      Resource: '*',
+      Condition: {
+        StringEquals: { 'ses:FromAddress': 'feedback@example.test' },
+      },
+    });
+    template.hasResourceProperties('AWS::Lambda::Function', {
+      Environment: {
+        Variables: Match.objectLike({
+          FEEDBACK_FROM_ADDRESS: 'feedback@example.test',
+          FEEDBACK_TO_ADDRESS: 'hello@example.test',
+        }),
+      },
+    });
   });
 
   it('limits the sweeper Query to the openIndex index', () => {
@@ -214,8 +246,14 @@ describe('ShareStack', () => {
     });
   });
 
-  it('runs all four functions on Node 24', () => {
-    for (const name of ['DeviceFn', 'ExportLinkFn', 'PublicFn', 'SweepFn']) {
+  it('runs all five functions on Node 24', () => {
+    for (const name of [
+      'DeviceFn',
+      'ExportLinkFn',
+      'FeedbackFn',
+      'PublicFn',
+      'SweepFn',
+    ]) {
       const fns = Object.entries(
         template.findResources('AWS::Lambda::Function', {
           Properties: Match.objectLike({ Runtime: 'nodejs24.x' }),
@@ -242,6 +280,7 @@ describe('ShareStack', () => {
         'POST /api/v1/export-links/revoke',
         'POST /api/v1/export-links/{id}/claim',
         'POST /api/v1/export-links/{id}/done',
+        'POST /api/v1/feedback',
       ].sort(),
     );
   });

@@ -12,6 +12,9 @@ struct SettingsView: View {
     @State private var notificationStatus: UNAuthorizationStatus = .notDetermined
     @State private var confirmWipe = false
     @State private var testReminderSent: Bool?
+    @State private var feedbackKind: FeedbackKind?
+    @State private var feedbackSent = false
+    @State private var showFeedbackThanks = false
 
     private var reminderTime: Binding<Date> {
         Binding(
@@ -57,6 +60,11 @@ struct SettingsView: View {
                     } else {
                         Text("One notification at this time on days when thoughts are back, and a few more if you're away for a while. Pinned thoughts aren't counted.")
                     }
+                }
+
+                Section("Send Feedback") {
+                    Button("Request a Feature") { feedbackKind = .feature }
+                    Button("Report a Problem") { feedbackKind = .bug }
                 }
 
                 Section("Coming soon") {
@@ -108,6 +116,17 @@ struct SettingsView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
                 }
+            }
+            .sheet(item: $feedbackKind, onDismiss: {
+                showFeedbackThanks = feedbackSent
+                feedbackSent = false
+            }) { kind in
+                FeedbackFormView(kind: kind) { feedbackSent = true }
+            }
+            .alert("Thanks for your feedback", isPresented: $showFeedbackThanks) {
+                Button("OK") {}
+            } message: {
+                Text("Your message was sent.")
             }
             .alert(
                 testReminderSent == true ? "Test reminder scheduled" : "Couldn't send a test reminder",

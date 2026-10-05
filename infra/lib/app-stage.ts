@@ -32,6 +32,8 @@ export class AppStage extends cdk.Stage {
       sharedReceiptRuleSetName,
       exportLinkSubdomain,
       appAttestAppId,
+      feedbackFromAddress,
+      feedbackToAddress,
     } = props.config;
     const env = { account, region };
     super(scope, id, { ...props, env });
@@ -73,6 +75,8 @@ export class AppStage extends cdk.Stage {
       domainName,
       exportLinkSubdomain,
       appAttestAppId,
+      feedbackFromAddress,
+      feedbackToAddress,
       stackName: stackId('Share'),
       tags,
     });

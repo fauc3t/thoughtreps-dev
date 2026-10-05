@@ -11,10 +11,13 @@ import type {
 } from '../../../lib/export-link/schemas.js';
 import type { Deps } from './deps.js';
 import type { HttpApiEvent } from './http.js';
+import type { Mailer, OutgoingMail } from './mailer.js';
 import type { ObjectStore } from './objects.js';
 import type { Store } from './store.js';
 
 export const APP_ID = 'TEAMID1234.com.example.app';
+export const FEEDBACK_FROM = 'feedback@example.test';
+export const FEEDBACK_TO = 'hello@example.test';
 export const T0_MS = Date.UTC(2026, 0, 15, 12, 0, 0);
 
 const sha256 = (...parts: Uint8Array[]) =>
@@ -59,8 +62,18 @@ export class FakeStore implements Store {
     if (device) device.currentExportLinkId = exportLinkId;
   }
 
-  async incrementRate(keyId: string, day: string, limit: number) {
-    const key = `${keyId}#${day}`;
+  async getRate(keyId: string, day: string, scope?: string) {
+    return this.rates.get(`${scope ? `${scope}#` : ''}${keyId}#${day}`) ?? 0;
+  }
+
+  async incrementRate(
+    keyId: string,
+    day: string,
+    limit: number,
+    _ttl?: number,
+    scope?: string,
+  ) {
+    const key = `${scope ? `${scope}#` : ''}${keyId}#${day}`;
     const count = this.rates.get(key) ?? 0;
     if (count >= limit) return false;
     this.rates.set(key, count + 1);
@@ -189,9 +202,20 @@ export class FakeObjects implements ObjectStore {
   }
 }
 
+export class FakeMailer implements Mailer {
+  sent: OutgoingMail[] = [];
+  failWith: Error | null = null;
+
+  async send(mail: OutgoingMail) {
+    if (this.failWith) throw this.failWith;
+    this.sent.push(mail);
+  }
+}
+
 export interface TestEnv extends Deps {
   store: FakeStore;
   objects: FakeObjects;
+  mailer: FakeMailer;
   clock: { ms: number };
 }
 
@@ -200,6 +224,9 @@ export function makeEnv(): TestEnv {
   return {
     store: new FakeStore(),
     objects: new FakeObjects(),
+    mailer: new FakeMailer(),
+    feedbackFrom: FEEDBACK_FROM,
+    feedbackTo: FEEDBACK_TO,
     appId: APP_ID,
     nowMs: () => clock.ms,
     randomBytes,

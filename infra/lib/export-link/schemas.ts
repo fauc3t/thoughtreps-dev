@@ -54,6 +54,23 @@ export const RegisterDeviceRequest = z.strictObject({
 });
 export const RegisterDeviceResponse = z.object({ registered: z.literal(true) });
 
+export const FEEDBACK_MAX_MESSAGE_LENGTH = 5000;
+const DeviceInfo = z
+  .string()
+  .min(1)
+  .max(64)
+  .regex(/^[\x20-\x7E]+$/);
+export const FeedbackKind = z.enum(['feature', 'bug']);
+export const FeedbackRequest = Signed.extend({
+  kind: FeedbackKind,
+  message: z.string().trim().min(1).max(FEEDBACK_MAX_MESSAGE_LENGTH),
+  email: z.email().max(254),
+  appVersion: DeviceInfo,
+  osVersion: DeviceInfo,
+  deviceModel: DeviceInfo,
+}).strict();
+export const FeedbackResponse = z.object({ sent: z.literal(true) });
+
 export const CreateExportLinkRequest = Signed.extend({
   sizeBytes: z.int().positive().max(MAX_UPLOAD_BYTES),
   sha256: Sha256,
