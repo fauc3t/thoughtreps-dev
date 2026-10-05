@@ -29,7 +29,7 @@ The AWS account (`041459489812`) is shared with strands prod.
 
 ## Export link constraints
 
-The device encrypts its export and uploads ciphertext; the key lives only in the link's `#` fragment. Deployed 2026-10-05 (`cdk deploy prod/ShareStack`); the feedback route was added afterward and is not yet deployed. A real-device attestation is still untested.
+The device encrypts its export and uploads ciphertext; the key lives only in the link's `#` fragment. Deployed 2026-10-05 (`cdk deploy prod/ShareStack`); the feedback route was deployed the same day. A real-device attestation is still untested.
 
 - **The export bucket is unversioned on purpose** (unlike the mail bucket): deletes must really remove the ciphertext. The 2-day lifecycle is only a backstop; link expiry is 24h from `complete`, enforced by `claim` and the 15-minute `SweepFn`.
 - **IAM is scoped to `exports/*` with no `s3:ListBucket`**, so HEAD on a missing object returns 403; treat that as "not uploaded".

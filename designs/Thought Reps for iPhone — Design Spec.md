@@ -235,7 +235,7 @@ All three are local-first: notifications are scheduled on-device, backup is a fi
 
 **One-time export link (fast follow)**
 
-An optional way to get an export onto any device, such as a computer with no AirDrop or iCloud Drive. It is the app's only server piece, and it only ever holds an encrypted file for a short time.
+An optional way to get an export onto any device, such as a computer with no AirDrop or iCloud Drive. Together with feedback (below), it is the app's only server piece, and it only ever holds an encrypted file for a short time.
 
 - **Share export as link** next to Export uploads the same `.thoughtreps` file (your whole log) to S3 and shows a link to copy or send, in the form `https://transfer.thoughtreps.com/x/<id>#<key>`. The S3 key is `exports/<random id>`.
 - The zip is encrypted on the device before upload. The key is only in the link's `#` fragment, which browsers never send to the server, so the server and S3 only ever see ciphertext. Opening the link loads a small page that downloads the file, decrypts it in the browser and saves `ThoughtReps-export-<date>.thoughtreps` (only the browser's download name). The page title is "Your Thought Reps export".
@@ -252,11 +252,12 @@ An optional way to get an export onto any device, such as a computer with no Air
 
 ## Feedback & support
 
-A **Send feedback** row in Settings, with no server and no analytics SDK:
+A **Send Feedback** section in Settings, sent through the app's own API (no Mail app needed) and no analytics SDK:
 
-- Two options: **Request a feature** and **Report a problem**. Each opens a Mail compose sheet to the support address with a subject prefix (`[Feature]`, `[Bug]`).
-- Body is prefilled with app version, iOS version and device model, visible to the user before sending. Thought content is never attached.
-- If no Mail account is set up, fall back to a `mailto:` link, then to copying the address.
+- Two options: **Request a Feature** and **Report a Problem**. Each opens an in-app form: the message (up to 5,000 characters) and a required email so we can reply. The email is remembered for next time.
+- App version, iOS version and device model are shown on the form and sent with the message. Thought content is never attached.
+- The request is signed with the install's App Attest key (same as the export link), and the server allows 3 messages per device per day; a send that fails doesn't count.
+- The server emails it to hello@thoughtreps.com with the user's address as Reply-To.
 - After the user completes 10 reviews, ask once for an App Store rating with Apple's built-in review prompt.
 - Later, if volume grows, route the address into a helpdesk or a public feature-request board; no app change needed.
 
@@ -280,7 +281,8 @@ Open questions:
 
 - [ ] Do you have the original Thought Reps code or data to import? If so, which format?
 - [ ] Pricing: free core app plus a one-time Pro unlock (about $9.99), with a subscription only once sync ships? Which features are Pro? (Keep export/backup free.)
-- [ ] Support email address for the feedback sheet.
+- [x] Support email address for feedback: hello@thoughtreps.com.
+- [ ] Privacy label and policy for feedback: Contact Info (email) and User Content, used for app support.
 - [ ] One-time export link: how the privacy label and policy describe the temporary upload.
 - [ ] Should viewing re-queue immediately on open, or only after a short dwell (e.g. 3 seconds) to avoid accidental views?
 - [ ] Any block types from the original app beyond blurred text that v1 should include?
