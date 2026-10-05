@@ -1,6 +1,6 @@
 # infra/
 
-CDK app (`bin/thoughtreps.ts`, wired through `lib/app-stage.ts`) for the landing site, mail and the one-time export link (`ThoughtReps-prod-Share`, `lib/export-link/`, `lambda/export-link/`) at thoughtreps.com, plus `mail-web/` (inbox UI, Vite + React). Mail is a replica of the separate `~/dev/simple-mail` project. Account, stack status and outputs live in `../INTEGRATIONS.md`; update it after every deploy. Deploy steps are in `../DEVELOPMENT.md`.
+CDK app (`bin/thoughtreps.ts`, wired through `lib/app-stage.ts`) for the landing site, mail and the one-time export link (`ThoughtReps-prod-Share`, `lib/export-link/`, `lambda/export-link/`) at thoughtreps.com, plus `mail-web/` (inbox UI, Vite + React). The export download page is the separate `../transfer-web/` package. Mail is a replica of the separate `~/dev/simple-mail` project. Account, stack status and outputs live in `../INTEGRATIONS.md`; update it after every deploy. Deploy steps are in `../DEVELOPMENT.md`.
 
 ## Shared-account rules
 
@@ -31,6 +31,7 @@ The AWS account (`041459489812`) is shared with strands prod.
 
 The device encrypts its export and uploads ciphertext; the key lives only in the link's `#` fragment. Deployed 2026-10-05 (`cdk deploy prod/ShareStack`); the feedback route was deployed the same day. A real-device attestation is still untested.
 
+- **The download page is deployed by `../scripts/deploy-transfer-web.sh`, not CDK.** The stack only owns the site bucket and distribution (outputs `TransferSiteBucketName`, `TransferDistributionId`, which the script reads; don't rename them). First rollout: deploy the Share stack, then run the script. The old placeholder `BucketDeployment` is gone; the bucket's contents are retained.
 - **The export bucket is unversioned on purpose** (unlike the mail bucket): deletes must really remove the ciphertext. The 2-day lifecycle is only a backstop; link expiry is 24h from `complete`, enforced by `claim` and the 15-minute `SweepFn`.
 - **IAM is scoped to `exports/*` with no `s3:ListBucket`**, so HEAD on a missing object returns 403; treat that as "not uploaded".
 - **Revoked/expired links stay in the sparse `openIndex` until their object is actually deleted.** `complete` is idempotent for an owned, unexpired ready link.

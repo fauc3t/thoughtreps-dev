@@ -14,7 +14,7 @@ xcodegen && open ThoughtReps.xcodeproj
 - `Config/Local.xcconfig` is gitignored. Set `DEVELOPMENT_TEAM` to your Team ID, which is listed under your team in Xcode > Settings > Accounts.
 - If Xcode says the bundle ID is unavailable, also set `TR_BUNDLE_ID` there to something unique, such as `com.yourname.thoughtreps`.
 - On a device, your team needs the App Group `group.<bundle id>` for the share extension (App ID `<bundle id>.share`). Automatic signing usually registers both; if not, add the group under Signing & Capabilities or at developer.apple.com. Simulator builds work without a team.
-- The main app has the App Attest entitlement (`appattest-environment: production`, needed for Send Feedback). If device signing complains, enable the App Attest capability on the App ID at developer.apple.com. The simulator can't send feedback, and the route needs the Share stack deployed.
+- The main app has the App Attest entitlement (`appattest-environment: production`, needed for Send Feedback). If device signing complains, enable the App Attest capability on the App ID at developer.apple.com. The simulator can't send feedback or export links, and both need the Share stack deployed.
 - A free Apple ID also works, with 7-day installs and no iCloud.
 
 ## Everyday commands
@@ -50,7 +50,7 @@ With a paid developer account the install lasts a year.
 
 ## Web and infrastructure
 
-The landing site (`site-landing/`), the CDK app (`infra/`) and the mail inbox UI (`infra/mail-web/`) are a pnpm workspace (Node 24+, pnpm 11) separate from the iOS app. What's deployed is recorded in [INTEGRATIONS.md](INTEGRATIONS.md); infra rules are in `infra/CLAUDE.md`.
+The landing site (`site-landing/`), the CDK app (`infra/`), the mail inbox UI (`infra/mail-web/`) and the export download page (`transfer-web/`) are a pnpm workspace (Node 24+, pnpm 11) separate from the iOS app. What's deployed is recorded in [INTEGRATIONS.md](INTEGRATIONS.md); infra rules are in `infra/CLAUDE.md`.
 
 ```sh
 pnpm install
@@ -58,7 +58,7 @@ pnpm test && pnpm typecheck && pnpm lint && pnpm format:check   # repo root
 cd infra && npx cdk synth -c env=prod
 ```
 
-Local dev: `pnpm --filter @thoughtreps/site-landing dev`. For the mail UI, copy `infra/mail-web/.env.example` to `.env.local` and fill in the `VITE_*` values from the Mail stack outputs.
+Local dev: `pnpm --filter @thoughtreps/site-landing dev` (likewise `@thoughtreps/transfer-web`; it needs no env, but a real link needs a deployed Share stack and a device-made export). For the mail UI, copy `infra/mail-web/.env.example` to `.env.local` and fill in the `VITE_*` values from the Mail stack outputs.
 
 ### Deploying (manual, no CI)
 
@@ -67,7 +67,7 @@ The AWS account is shared with strands prod, so only touch `ThoughtReps-prod-*` 
 1. `cd infra && npx cdk deploy prod/DnsStack -c env=prod --profile thoughtreps-dev` (done 2026-10-05).
 2. Set the zone's nameservers at the registrar (listed in INTEGRATIONS.md) and wait until `dig NS thoughtreps.com +short` shows them. ACM certs and SES verification need the delegation.
 3. `npx cdk deploy "prod/*" -c env=prod --profile thoughtreps-dev`. Quote the pattern; `--all` doesn't reach Stage-nested stacks.
-4. `scripts/deploy-landing.sh` and `scripts/deploy-mail-web.sh` build, sync to S3 and invalidate CloudFront, reading the stack outputs (`AWS_PROFILE` defaults to `thoughtreps-dev`).
+4. `scripts/deploy-landing.sh`, `scripts/deploy-mail-web.sh` and `scripts/deploy-transfer-web.sh` build, sync to S3 and invalidate CloudFront, reading the stack outputs (`AWS_PROFILE` defaults to `thoughtreps-dev`).
 5. Create the Cognito user (self-signup is off), with `UserPoolId` from the Mail stack outputs:
 
    ```sh

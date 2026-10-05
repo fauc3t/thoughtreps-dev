@@ -1,6 +1,6 @@
 # Thought Reps
 
-A local-first iPhone app for capturing thoughts and having them come back on a schedule. You write a thought in Markdown, and it reappears on your timeline after its interval (7 days by default). Opening a thought queues it up again. Share text, a link, or a Markdown file from any app to add a thought without opening Thought Reps. You can pin thoughts to keep them visible, archive them to retire them, and file them with `#hashtags`.
+A local-first iPhone app for capturing thoughts and having them come back on a schedule. You write a thought in Markdown, and it reappears on your timeline after its interval (7 days by default). Opening a thought queues it up again. Share text, a link, or a Markdown file from any app to add a thought without opening Thought Reps. You can pin thoughts to keep them visible, archive them to retire them, and file them with `#hashtags`. Settings can share your whole export as a one-time encrypted link (24 hours, revocable) that downloads in a browser.
 
 Design: [`designs/`](designs/) holds the spec and the screen mockups.
 
@@ -61,8 +61,9 @@ Config/            Shared xcconfig; your Local.xcconfig (gitignored)
 project.yml        XcodeGen spec
 landing/           Static HTML landing-page design prototypes (not part of the app)
 site-landing/      The real landing site for thoughtreps.com (Vite + React, prerendered)
-infra/             AWS CDK app (DNS, landing hosting, email) and the mail inbox UI (infra/mail-web)
-scripts/           Manual deploy scripts for the landing site and mail UI
+infra/             AWS CDK app (DNS, landing hosting, email, export links) and the mail inbox UI (infra/mail-web)
+transfer-web/      Export download page for transfer.thoughtreps.com (Vite + React)
+scripts/           Manual deploy scripts for the landing site, mail UI and download page
 ```
 
 The web side is a separate pnpm workspace; see [DEVELOPMENT.md](DEVELOPMENT.md#web-and-infrastructure) and [INTEGRATIONS.md](INTEGRATIONS.md) for what is deployed in AWS.
