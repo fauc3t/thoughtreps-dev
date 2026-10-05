@@ -517,6 +517,9 @@ export function Footer({ base = '' }: { base?: string }) {
         <a className={link} href="/help">
           Learn
         </a>
+        <a className={link} href="/third-party-licenses.txt">
+          Licenses
+        </a>
         <a className={link} href="mailto:hello@thoughtreps.com">
           hello@thoughtreps.com
         </a>

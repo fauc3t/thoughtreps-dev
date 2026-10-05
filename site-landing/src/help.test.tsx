@@ -1,13 +1,20 @@
 import { renderToString } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { LandingPage } from './App';
+import { HelpExampleView } from './components/HelpExamples';
+import { InlineIcon } from './components/HelpIcons';
 import {
   getFaqEntries,
   getHelpBreadcrumb,
   HELP_ARTICLES,
   HELP_CATEGORIES,
+  HELP_EXAMPLE_KINDS,
+  HELP_ICONS,
   helpArticlePath,
   parseInline,
+  toPlainText,
+  type HelpArticle,
+  type HelpSection,
 } from './content/help';
 import {
   buildPage,
@@ -40,14 +47,51 @@ function allText(): string[] {
     ...HELP_ARTICLES.flatMap((a) => [
       a.title,
       a.description,
-      ...a.sections.flatMap((s) => [
-        s.heading ?? '',
-        ...(s.paragraphs ?? []),
-        ...(s.steps ?? []),
-        ...(s.list ?? []),
-      ]),
+      ...a.sections.flatMap((s) => [s.heading ?? '', ...bodyText(s)]),
     ]),
   ];
+}
+
+function bodyText(section: HelpSection): string[] {
+  return [
+    ...(section.paragraphs ?? []),
+    ...(section.steps ?? []),
+    ...(section.list ?? []),
+    ...(section.example ? [section.example.caption] : []),
+  ];
+}
+
+function countSyllables(word: string): number {
+  const w = word.toLowerCase().replace(/[^a-z]/g, '');
+  if (w.length <= 3) return 1;
+  const stem = w
+    .replace(/(?:[^laeiouy]es|ed|[^laeiouy]e)$/, '')
+    .replace(/^y/, '');
+  return Math.max(1, stem.match(/[aeiouy]+/g)?.length ?? 1);
+}
+
+/** What a reader reads as prose: icons, `code` and "quoted UI labels" are dropped, link text is kept. */
+function proseOf(text: string): string {
+  const spoken = parseInline(text)
+    .map((t) => (t.kind === 'icon' || t.kind === 'code' ? '' : t.text))
+    .join('')
+    .replace(/["“][^"”]*["”]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return spoken === '' || /[.!?:]$/.test(spoken) ? spoken : `${spoken}.`;
+}
+
+/** Flesch-Kincaid grade level with a naive syllable count. */
+function gradeLevel(article: HelpArticle): number {
+  const text = article.sections.flatMap(bodyText).map(proseOf).join(' ');
+  const sentences = text.split(/[.!?:]+(?:\s|$)/).filter((s) => /\w/.test(s));
+  const words = text.match(/[A-Za-z0-9][A-Za-z0-9'’-]*/g) ?? [];
+  const syllables = words.reduce((n, w) => n + countSyllables(w), 0);
+  return (
+    0.39 * (words.length / sentences.length) +
+    11.8 * (syllables / words.length) -
+    15.59
+  );
 }
 
 describe('help content', () => {
@@ -102,12 +146,178 @@ describe('help content', () => {
       expect(section.paragraphs?.length).toBeGreaterThan(0);
       expect(section.list).toBeUndefined();
       expect(section.steps).toBeUndefined();
+      expect(section.example).toBeUndefined();
     }
   });
 
   it('contains no emoji', () => {
     for (const text of allText()) {
       expect(text).not.toMatch(/\p{Extended_Pictographic}/u);
+    }
+  });
+
+  it('keeps titles and descriptions plain text', () => {
+    for (const article of HELP_ARTICLES) {
+      for (const text of [article.title, article.description]) {
+        expect(text, article.slug).not.toMatch(/[`{}]|\]\(/);
+      }
+    }
+  });
+});
+
+// The rewrite scores 1.8 to 3.9 on this measure (the old copy reached 4.7), so
+// 4.5 leaves a little room for edits and fails if articles drift back up.
+const GRADE_LIMIT = 4.5;
+
+describe('reading level', () => {
+  it('keeps every article at or below the grade limit', () => {
+    for (const article of HELP_ARTICLES) {
+      expect(gradeLevel(article), article.slug).toBeLessThanOrEqual(
+        GRADE_LIMIT,
+      );
+    }
+  });
+
+  it('estimates grade the way the limit assumes', () => {
+    const simple = { sections: [{ paragraphs: ['The cat sat on the mat.'] }] };
+    const dense = {
+      sections: [
+        {
+          paragraphs: [
+            'Notwithstanding considerable organizational complexity, comprehensive documentation facilitates institutional understanding.',
+          ],
+        },
+      ],
+    };
+    expect(gradeLevel(simple as HelpArticle)).toBeLessThan(2);
+    expect(gradeLevel(dense as HelpArticle)).toBeGreaterThan(GRADE_LIMIT + 5);
+  });
+});
+
+describe('help icons', () => {
+  const RAW_TOKEN = /\{icon:([^}|]*)(?:\|decorative)?\}/g;
+
+  it('resolves every icon token used in the content', () => {
+    for (const text of allText()) {
+      for (const [, name] of text.matchAll(RAW_TOKEN)) {
+        expect(Object.keys(HELP_ICONS), `{icon:${name}}`).toContain(name);
+      }
+      for (const token of parseInline(text)) {
+        expect(token.text).not.toContain('{icon:');
+      }
+    }
+  });
+
+  it('leaves an unknown icon name as visible text so it cannot slip through', () => {
+    expect(parseInline('tap {icon:nope}')).toEqual([
+      { kind: 'text', text: 'tap ' },
+      { kind: 'text', text: '{icon:nope}' },
+    ]);
+  });
+
+  it('turns tokens into words for plain text', () => {
+    expect(toPlainText('Tap {icon:search} or {icon:settings}.')).toBe(
+      'Tap Search or Settings.',
+    );
+  });
+
+  it('draws every icon as a labelled image', () => {
+    for (const [name, label] of Object.entries(HELP_ICONS)) {
+      const html = renderToString(
+        <InlineIcon name={name as keyof typeof HELP_ICONS} />,
+      );
+      expect(html, name).toContain('role="img"');
+      expect(html, name).toContain(`aria-label="${label}"`);
+      expect(html, name).toMatch(/<svg[^>]*aria-hidden="true"/);
+    }
+  });
+
+  it('hides decorative chips from assistive tech and plain text', () => {
+    const html = renderToString(<InlineIcon name="archive" decorative />);
+    expect(html).toContain('aria-hidden="true"');
+    expect(html).not.toContain('role="img"');
+    expect(html).not.toContain('aria-label');
+    expect(toPlainText('tap {icon:archive|decorative} "Archive".')).toBe(
+      'tap  "Archive".',
+    );
+  });
+
+  it('only marks a chip decorative when a quoted label follows it', () => {
+    let seen = 0;
+    for (const text of allText()) {
+      const marked = text.match(/\{icon:[a-z-]+\|decorative\}/g) ?? [];
+      const labelled =
+        text.match(/\{icon:[a-z-]+\|decorative\} "[^"]+"/g) ?? [];
+      expect(labelled, text).toHaveLength(marked.length);
+      seen += marked.length;
+    }
+    expect(seen).toBeGreaterThan(0);
+  });
+
+  it('uses icons in the article pages', () => {
+    const { html } = renderRoute(helpArticlePath('the-timeline'));
+    expect(html).toContain('aria-label="Search"');
+    expect(html).toContain('aria-label="Settings"');
+    expect(html).not.toContain('{icon:');
+  });
+});
+
+describe('help examples', () => {
+  const used = HELP_ARTICLES.flatMap((a) =>
+    a.sections.flatMap((s) => (s.example ? [s.example] : [])),
+  );
+
+  it('renders every example kind inside a figure with a caption', () => {
+    for (const kind of HELP_EXAMPLE_KINDS) {
+      const html = renderToString(
+        <HelpExampleView example={{ kind, caption: 'A caption.' }} />,
+      );
+      const doc = new DOMParser().parseFromString(html, 'text/html');
+      expect(doc.querySelector('figure figcaption')?.textContent, kind).toBe(
+        'A caption.',
+      );
+      const focusable = doc.querySelectorAll('input, button, a, [tabindex]');
+      if (kind === 'blurred-block') {
+        const checkbox = doc.querySelector('input[type="checkbox"]');
+        expect(checkbox, kind).not.toBeNull();
+        expect(checkbox!.closest('[aria-hidden="true"]'), kind).toBeNull();
+        expect(checkbox!.getAttribute('aria-label'), kind).toBeTruthy();
+      } else {
+        expect(
+          doc.querySelector('figure > div')?.getAttribute('aria-hidden'),
+          kind,
+        ).toBe('true');
+        expect(focusable.length, kind).toBe(0);
+      }
+    }
+  });
+
+  it('uses every kind at least once, with a caption', () => {
+    expect(new Set(used.map((e) => e.kind))).toEqual(
+      new Set(HELP_EXAMPLE_KINDS),
+    );
+    for (const example of used) {
+      expect(example.caption.length, example.kind).toBeGreaterThan(10);
+    }
+  });
+
+  it('gives every article an example except the text-only ones', () => {
+    const textOnly = new Set(['privacy', 'send-feedback', 'faq']);
+    for (const article of HELP_ARTICLES) {
+      const count = article.sections.filter((s) => s.example).length;
+      if (textOnly.has(article.slug)) {
+        expect(count, article.slug).toBe(0);
+      } else {
+        expect(count, article.slug).toBeGreaterThanOrEqual(1);
+      }
+    }
+  });
+
+  it('shows the examples on the article pages', () => {
+    for (const article of HELP_ARTICLES) {
+      const { html } = renderRoute(helpArticlePath(article.slug));
+      const expected = article.sections.filter((s) => s.example).length;
+      expect(html.match(/<figure/g)?.length ?? 0, article.slug).toBe(expected);
     }
   });
 });
@@ -201,6 +411,10 @@ describe('sitemap and robots', () => {
     }
   });
 
+  it('has no raw icon tokens', () => {
+    expect(sitemap).not.toContain('{icon:');
+  });
+
   it('leaves out the 404', () => {
     expect(sitemap).not.toContain('404');
   });
@@ -273,6 +487,19 @@ describe('structured data', () => {
         ),
         article.slug,
       ).toBe(false);
+    }
+  });
+
+  it('writes icon tokens as words in the head and JSON-LD, never raw', () => {
+    for (const route of HELP_ROUTES) {
+      const { head, html } = renderRoute(route.path);
+      expect(head, route.path).not.toContain('{icon:');
+      expect(html, route.path).not.toContain('{icon:');
+    }
+    const faq = renderRoute(helpArticlePath(FAQ.slug)).head;
+    expect(faq).toContain('Tap Search on the Timeline');
+    for (const entry of getFaqEntries(FAQ)) {
+      expect(entry.answer).not.toContain('{');
     }
   });
 

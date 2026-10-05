@@ -10,6 +10,8 @@ import {
   type HelpArticle,
   type HelpSection,
 } from '../content/help';
+import { HelpExampleView } from './HelpExamples';
+import { InlineIcon } from './HelpIcons';
 import { Nav } from './Hero';
 import { Footer } from './Sections';
 import { AppStoreButton, Sprites } from './shared';
@@ -56,6 +58,10 @@ function Inline({ text }: { text: string }) {
             {token.text}
           </a>
         );
+      case 'icon':
+        return (
+          <InlineIcon key={i} name={token.name} decorative={token.decorative} />
+        );
       case 'text':
         return token.text;
     }
@@ -93,6 +99,7 @@ function Section({ section }: { section: HelpSection }) {
           ))}
         </ul>
       )}
+      {section.example && <HelpExampleView example={section.example} />}
     </div>
   );
 }
@@ -101,9 +108,12 @@ function Breadcrumb({ article }: { article: HelpArticle }) {
   const items = getHelpBreadcrumb(article);
   return (
     <nav aria-label="Breadcrumb" className="mono text-muted">
-      <ol className="m-0 flex list-none flex-wrap items-center gap-x-2 gap-y-1 p-0">
+      <ol className="m-0 flex list-none items-baseline gap-x-2 p-0">
         {items.map((item, i) => (
-          <li key={item.path} className="flex items-center gap-2">
+          <li
+            key={item.path}
+            className={`flex items-baseline gap-2 ${i === 0 ? 'shrink-0' : ''} ${i === items.length - 1 ? 'min-w-0 [overflow-wrap:anywhere]' : ''}`}
+          >
             {i > 0 && <span aria-hidden="true">&rsaquo;</span>}
             {i === items.length - 1 ? (
               <span aria-current="page" className="text-ink">
