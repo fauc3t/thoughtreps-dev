@@ -9,6 +9,7 @@ struct RootTabView: View {
     @State private var navigation = AppNavigation.shared
     @State private var prefillTag: String?
     @State private var inboxImporter = InboxImporter()
+    @State private var backup = BackupModel.shared
     @Environment(\.scenePhase) private var scenePhase
 
     private func importInbox() {
@@ -52,6 +53,10 @@ struct RootTabView: View {
             EditorView(mode: .new(prefillTag: prefillTag))
         }
         .saveErrorAlert(saveErrors)
+        .backupImportSheet(backup, host: .root)
+        .onOpenURL { url in
+            if url.isFileURL { backup.beginImport(from: url, container: context.container) }
+        }
         .onChange(of: scenePhase, initial: true) { _, phase in
             switch phase {
             case .active:
@@ -68,6 +73,7 @@ struct RootTabView: View {
             }
         }
         .task {
+            backup.removeStaleTemporaryFiles()
             ThoughtStore(context: context).pruneOrphanTags()
             ThoughtStore(context: context).cleanUpPendingImageSaves()
             #if DEBUG

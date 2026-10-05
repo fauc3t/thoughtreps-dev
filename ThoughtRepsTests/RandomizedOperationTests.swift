@@ -83,6 +83,41 @@ struct RandomizedOperationTests {
         }
     }
 
+    /// A thought as an export file would hold it: with the id and creation date of `existing` when given, and
+    /// an `updatedAt` on either side of its current one.
+    static func randomImported(replacing existing: Thought?, now: Date, _ rng: inout SeededGenerator) -> ImportedThought {
+        var images: [UUID: ProcessedImage] = [:]
+        func imageRecord(order: Int) -> ImageRecord {
+            let id = UUID()
+            images[id] = fakeImage(UInt8.random(in: 0...255, using: &rng))
+            return ImageRecord(id: id, width: 40, height: 30, order: order)
+        }
+        var body = randomBody(&rng)
+        let inline = (0..<Int.random(in: 0...2, using: &rng)).map { _ in imageRecord(order: 0) }
+        for image in inline where Int.random(in: 0..<4, using: &rng) != 0 {
+            body += "\n" + ImageToken.token(for: image.id)
+        }
+        let blocks: [BlockRecord] = (0..<Int.random(in: 0...3, using: &rng)).map { order in
+            if Int.random(in: 0..<3, using: &rng) == 0 {
+                let gallery = (0..<Int.random(in: 1...3, using: &rng)).map { imageRecord(order: $0) }
+                return BlockRecord(id: UUID(), kindRaw: BlockKind.gallery.rawValue, title: nil, content: "", order: order, images: gallery.shuffled(using: &rng))
+            }
+            return BlockRecord(id: UUID(), kindRaw: BlockKind.blurred.rawValue, title: "T", content: "content \(order)", order: order, images: [])
+        }
+        let createdAt = existing?.createdAt ?? now.addingTimeInterval(-86_400)
+        let updatedAt = max(createdAt, (existing?.updatedAt ?? now).addingTimeInterval(Double(Int.random(in: -100...100, using: &rng))))
+        let archived = Int.random(in: 0..<4, using: &rng) == 0
+        let viewed = Bool.random(using: &rng)
+        let imported = ThoughtRecord(
+            id: existing?.id ?? UUID(), body: body, createdAt: createdAt, updatedAt: updatedAt,
+            nextDueAt: now.addingTimeInterval(86_400), lastViewedAt: viewed ? now : nil, viewCount: viewed ? 2 : 0,
+            intervalDays: randomInterval(&rng), intervalModeRaw: IntervalMode.fixed.rawValue,
+            isPinned: !archived && Bool.random(using: &rng), isArchived: archived, archivedAt: archived ? updatedAt : nil,
+            tags: [], blocks: blocks, images: inline
+        )
+        return ImportedThought(record: imported, images: images)
+    }
+
     static func randomInterval(_ rng: inout SeededGenerator) -> Int? {
         Bool.random(using: &rng) ? nil : Int.random(in: 1...Scheduler.maxIntervalDays, using: &rng)
     }
@@ -118,7 +153,7 @@ struct RandomizedOperationTests {
 
         for step in 0..<Self.stepsPerSeed {
             let thoughts = try context.fetch(FetchDescriptor<Thought>(sortBy: [SortDescriptor(\.createdAt), SortDescriptor(\.id)]))
-            var op = Int.random(in: 0..<17, using: &rng)
+            var op = Int.random(in: 0..<18, using: &rng)
             if thoughts.isEmpty && op >= 2 && op != 11 && op != 12 { op = 0 }
             let target = thoughts.randomElement(using: &rng)
             // About 5% of writes have one of their saves (1st to 6th) fail.
@@ -211,6 +246,13 @@ struct RandomizedOperationTests {
                 }
                 store.update(target!, body: target!.body, blocks: drafts, intervalDays: target!.intervalDays, now: now)
                 description = "edit gallery (of \(galleries.count))"
+            case 17:
+                let items = (0..<Int.random(in: 1...3, using: &rng)).map { _ in
+                    Self.randomImported(replacing: Bool.random(using: &rng) ? target : nil, now: now, &rng)
+                }
+                var tally = ImportTally()
+                store.importThoughts(items, tags: [], tally: &tally)
+                description = "import(\(items.count), replacing: \(items.filter { $0.record.id == target?.id }.count), added: \(tally.added), replaced: \(tally.replaced))"
             default:
                 now = now.addingTimeInterval(Double(Int.random(in: 1...20, using: &rng)) * 86_400)
                 description = "advance now to \(now)"

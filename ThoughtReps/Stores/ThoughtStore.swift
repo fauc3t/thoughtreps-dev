@@ -518,6 +518,200 @@ struct ThoughtStore {
         return persist()
     }
 
+    // MARK: Import
+
+    /// Merges a batch read from an export, by thought id: unknown ids are added, a stored thought
+    /// with an older `updatedAt` is replaced wholesale (blocks and images too), and an equal or
+    /// newer stored one is left alone, so importing the same file twice changes nothing.
+    ///
+    /// Added thoughts land in one save. A replacement goes through `update` (so it follows the
+    /// `persist()` note: new tags are saved first, children are saved in steps) and then writes the
+    /// remaining fields and `updatedAt` last; a failure part-way leaves consistent data, the thought
+    /// still looks older than the file, and importing again finishes it. Returns false on the first
+    /// failure with `tally` counting what was written before it. `tags` give the display name and
+    /// color of tags that don't exist yet.
+    @discardableResult
+    func importThoughts(_ batch: [ImportedThought], tags tagInfo: [TagRecord], tally: inout ImportTally) -> Bool {
+        var newest: [UUID: ImportedThought] = [:]
+        var ids: [UUID] = []
+        for item in batch {
+            let id = item.record.id
+            if let kept = newest[id] {
+                tally.upToDate += 1
+                if item.record.updatedAt > kept.record.updatedAt { newest[id] = item }
+            } else {
+                newest[id] = item
+                ids.append(id)
+            }
+        }
+        let items = ids.compactMap { newest[$0] }
+
+        let stored: [UUID: Thought]
+        var imageOwners: [UUID: UUID?] = [:]
+        var takenBlockIDs = Set<UUID>()
+        do {
+            let lookup = ids
+            stored = Dictionary(
+                try context.fetch(FetchDescriptor<Thought>(predicate: #Predicate { lookup.contains($0.id) })).map { ($0.id, $0) },
+                uniquingKeysWith: { first, _ in first }
+            )
+            let imageIDs = items.flatMap(\.record.imageIDs)
+            for image in try context.fetch(FetchDescriptor<ImageAsset>(predicate: #Predicate { imageIDs.contains($0.id) })) {
+                imageOwners[image.id] = image.thought?.id
+            }
+            let blockIDs = items.flatMap { $0.record.blocks.map(\.id) }
+            takenBlockIDs = Set(try context.fetch(FetchDescriptor<Block>(predicate: #Predicate { blockIDs.contains($0.id) })).map(\.id))
+        } catch {
+            Self.logger.error("Import lookup failed: \(error)")
+            saveErrors.report(error)
+            return false
+        }
+
+        var additions: [ImportedThought] = []
+        var replacements: [(thought: Thought, item: ImportedThought)] = []
+        var claimedImageIDs = Set<UUID>()
+        for item in items {
+            let record = item.record
+            let imageClash = record.imageIDs.contains { imageID in
+                claimedImageIDs.contains(imageID) || imageOwners[imageID].map { $0 != record.id } ?? false
+            }
+            if imageClash {
+                tally.rejected += 1
+            } else if let current = stored[record.id] {
+                if record.updatedAt > current.updatedAt {
+                    claimedImageIDs.formUnion(record.imageIDs)
+                    replacements.append((current, item))
+                } else {
+                    tally.upToDate += 1
+                }
+            } else {
+                claimedImageIDs.formUnion(record.imageIDs)
+                additions.append(item)
+            }
+        }
+
+        guard let tagsByName = saveTags(for: additions + replacements.map(\.item), info: tagInfo) else { return false }
+
+        if !additions.isEmpty {
+            for item in additions {
+                insertImported(item, tags: tagsByName, takenBlockIDs: &takenBlockIDs)
+            }
+            guard persist() else { return false }
+            tally.added += additions.count
+        }
+        for (thought, item) in replacements {
+            guard replace(thought, with: item, takenBlockIDs: &takenBlockIDs) else { return false }
+            tally.replaced += 1
+        }
+        return true
+    }
+
+    /// Saves the tags the bodies need that don't exist yet, before any thought links to them.
+    private func saveTags(for items: [ImportedThought], info: [TagRecord]) -> [String: Tag]? {
+        let parsed = items.flatMap { TagParser.parse($0.record.body) }
+        let names = Set(parsed.map(\.key))
+        guard !names.isEmpty else { return [:] }
+        var byName: [String: Tag]
+        do {
+            byName = Dictionary(
+                try context.fetch(FetchDescriptor<Tag>(predicate: #Predicate { names.contains($0.name) })).map { ($0.name, $0) },
+                uniquingKeysWith: { first, _ in first }
+            )
+        } catch {
+            Self.logger.error("Import tag lookup failed: \(error)")
+            saveErrors.report(error)
+            return nil
+        }
+        let known = Dictionary(info.map { ($0.name, $0) }, uniquingKeysWith: { first, _ in first })
+        var inserted = false
+        for tag in parsed where byName[tag.key] == nil {
+            let created = Tag(name: tag.key, displayName: known[tag.key]?.displayName ?? tag.display)
+            created.colorHex = known[tag.key]?.colorHex
+            context.insert(created)
+            byName[tag.key] = created
+            inserted = true
+        }
+        return !inserted || persist() ? byName : nil
+    }
+
+    private func insertImported(_ item: ImportedThought, tags: [String: Tag], takenBlockIDs: inout Set<UUID>) {
+        let record = item.record
+        let thought = Thought(body: record.body, createdAt: record.createdAt, nextDueAt: record.nextDueAt)
+        thought.id = record.id
+        apply(record, to: thought)
+        context.insert(thought)
+        thought.tags = TagParser.parse(record.body).compactMap { tags[$0.key] }
+
+        let tokens = Set(ImageToken.references(in: record.body))
+        for ref in record.images where tokens.contains(ref.id) {
+            insertImported(ref, from: item, order: 0, into: thought, block: nil)
+        }
+        let blocks = record.blocks.enumerated().sorted { ($0.element.order, $0.offset) < ($1.element.order, $1.offset) }
+        for (order, entry) in blocks.enumerated() {
+            let source = entry.element
+            let id = takenBlockIDs.contains(source.id) ? UUID() : source.id
+            takenBlockIDs.insert(id)
+            let block = Block(id: id, kind: BlockKind(rawValue: source.kindRaw) ?? .blurred, content: source.content, title: source.title, order: order)
+            context.insert(block)
+            block.thought = thought
+            let images = source.images.enumerated().sorted { ($0.element.order, $0.offset) < ($1.element.order, $1.offset) }
+            for (position, image) in images.enumerated() {
+                insertImported(image.element, from: item, order: position, into: thought, block: block)
+            }
+        }
+    }
+
+    private func insertImported(_ ref: ImageRecord, from item: ImportedThought, order: Int, into thought: Thought, block: Block?) {
+        guard let processed = item.images[ref.id] else { return }
+        let image = ImageAsset(
+            id: ref.id, data: processed.data, thumbnailData: processed.thumbnailData,
+            width: ref.width, height: ref.height, order: order
+        )
+        context.insert(image)
+        image.thought = thought
+        image.block = block
+    }
+
+    private func replace(_ thought: Thought, with item: ImportedThought, takenBlockIDs: inout Set<UUID>) -> Bool {
+        let record = item.record
+        let ownBlockIDs = Set((thought.blocks ?? []).map(\.id))
+        var claimed = takenBlockIDs
+        func blockID(_ id: UUID) -> UUID {
+            let fresh = claimed.contains(id) && !ownBlockIDs.contains(id) ? UUID() : id
+            claimed.insert(fresh)
+            return fresh
+        }
+        func draft(_ ref: ImageRecord) -> ImageDraft {
+            ImageDraft(id: ref.id, processed: item.images[ref.id])
+        }
+        let blocks = record.blocks.enumerated().sorted { ($0.element.order, $0.offset) < ($1.element.order, $1.offset) }.map { entry in
+            let block = entry.element
+            return BlockDraft(
+                id: blockID(block.id), kind: BlockKind(rawValue: block.kindRaw) ?? .blurred, title: block.title ?? "", content: block.content,
+                images: block.images.enumerated().sorted { ($0.element.order, $0.offset) < ($1.element.order, $1.offset) }.map { draft($0.element) }
+            )
+        }
+        // `update` leaves `updatedAt` as it is, so the thought keeps looking older than the file until the last save.
+        guard update(thought, body: record.body, blocks: blocks, images: record.images.map(draft), intervalDays: record.intervalDays, now: thought.updatedAt)
+        else { return false }
+        takenBlockIDs = claimed
+        apply(record, to: thought)
+        return persist()
+    }
+
+    private func apply(_ record: ThoughtRecord, to thought: Thought) {
+        thought.createdAt = record.createdAt
+        thought.nextDueAt = record.nextDueAt
+        thought.lastViewedAt = record.lastViewedAt
+        thought.viewCount = record.viewCount
+        thought.intervalDays = record.intervalDays
+        thought.intervalModeRaw = record.intervalModeRaw
+        thought.isPinned = record.isPinned
+        thought.isArchived = record.isArchived
+        thought.archivedAt = record.archivedAt
+        thought.updatedAt = record.updatedAt
+    }
+
     private static let logger = Logger(subsystem: "com.thoughtreps", category: "store")
 
     /// Saves, and on failure rolls back so memory matches disk.

@@ -28,7 +28,7 @@ If Xcode says the bundle ID is unavailable, set `TR_BUNDLE_ID` in `Config/Local.
 ## Everyday workflow
 
 - `ThoughtReps.xcodeproj` is generated and gitignored. Run `xcodegen` again after pulling, or after adding or removing files.
-- The first build resolves Swift packages (MarkdownUI). If that fails, run `xcodebuild -resolvePackageDependencies -scheme ThoughtReps`. `ThoughtReps.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved` is tracked; commit it when dependency versions change.
+- The first build resolves Swift packages (MarkdownUI, ZIPFoundation). If that fails, run `xcodebuild -resolvePackageDependencies -scheme ThoughtReps`. `ThoughtReps.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved` is tracked; commit it when dependency versions change.
 - Run tests with **⌘U** in Xcode, or from the command line:
   `xcodebuild test -scheme ThoughtReps -destination 'platform=iOS Simulator,name=<simulator>'`
   (pick a name from `xcrun simctl list devices available`)
@@ -76,4 +76,3 @@ Under evaluation: opening a thought requeues it right away. The alternative is a
 Coming next, per the spec:
 
 - Search
-- Export (there is no legacy data import)

@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import UniformTypeIdentifiers
 import UserNotifications
 
 struct SettingsView: View {
@@ -15,6 +16,8 @@ struct SettingsView: View {
     @State private var feedbackKind: FeedbackKind?
     @State private var feedbackSent = false
     @State private var showFeedbackThanks = false
+    @State private var backup = BackupModel.shared
+    @State private var showImporter = false
 
     private var reminderTime: Binding<Date> {
         Binding(
@@ -67,10 +70,34 @@ struct SettingsView: View {
                     Button("Report a Problem") { feedbackKind = .bug }
                 }
 
-                Section("Coming soon") {
-                    Label("Export & import", systemImage: "square.and.arrow.up")
+                Section {
+                    Button {
+                        Task { await backup.export(from: context.container) }
+                    } label: {
+                        HStack {
+                            Label("Export…", systemImage: "square.and.arrow.up")
+                            if let progress = backup.exportProgress {
+                                Spacer()
+                                ProgressView(value: progress)
+                                    .frame(width: 80)
+                                    .accessibilityLabel("Export progress")
+                            }
+                        }
+                    }
+                    .disabled(backup.isBusy)
+                    .accessibilityHint("Saves all thoughts and images to a file you can keep or share")
+                    Button {
+                        showImporter = true
+                    } label: {
+                        Label("Import…", systemImage: "square.and.arrow.down")
+                    }
+                    .disabled(backup.isBusy)
+                    .accessibilityHint("Adds thoughts from a Thought Reps export file")
+                } header: {
+                    Text("Backup")
+                } footer: {
+                    Text("Exports every thought, tag and image to one file. Importing adds what's missing and keeps the newer version of a thought you already have.")
                 }
-                .foregroundStyle(.secondary)
 
                 #if DEBUG
                 Section("Developer") {
@@ -94,6 +121,23 @@ struct SettingsView: View {
                 }
             }
             .task { notificationStatus = await NotificationScheduler.authorizationStatus() }
+            .onAppear { backup.host = .settings }
+            .onDisappear { backup.host = .root }
+            .fileImporter(isPresented: $showImporter, allowedContentTypes: [.thoughtRepsExport, .zip]) { result in
+                switch result {
+                case .success(let url): backup.beginImport(from: url, container: context.container)
+                case .failure(let error): backup.problem = error.localizedDescription
+                }
+            }
+            .sheet(item: Binding(get: { backup.exportedFile }, set: { backup.exportedFile = $0 }), onDismiss: { backup.finishSharing() }) { file in
+                ActivityView(url: file.url)
+                    .presentationDetents([.medium, .large])
+            }
+            .alert("Backup problem", isPresented: Binding(get: { backup.problem != nil }, set: { if !$0 { backup.problem = nil } })) {
+                Button("OK") {}
+            } message: {
+                Text(backup.problem ?? "")
+            }
             .onChange(of: scenePhase) { _, phase in
                 guard phase == .active else { return }
                 Task { notificationStatus = await NotificationScheduler.authorizationStatus() }
@@ -138,6 +182,7 @@ struct SettingsView: View {
                     ? "It arrives in 5 seconds. Lock your phone to see it on the Lock Screen."
                     : "Notifications are off for Thought Reps. Turn them on in iOS Settings.")
             }
+            .backupImportSheet(backup, host: .settings)
             .confirmationDialog("Delete every thought and tag?", isPresented: $confirmWipe, titleVisibility: .visible) {
                 Button("Delete all", role: .destructive) {
                     ThoughtStore(context: context).deleteAll()

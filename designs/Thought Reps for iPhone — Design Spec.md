@@ -229,16 +229,16 @@ All three are local-first: notifications are scheduled on-device, backup is a fi
 
 **Export and import (v1)**
 
-- Export writes a `.zip` with `thoughts.json` (all models) and the `Images/` folder, shared via the system share sheet to Files, AirDrop or iCloud Drive.
-- Import reads the same format and merges by `id`, keeping the newer `updatedAt`.
+- Export writes a `.thoughtreps` file (a zip, UTType `com.thoughtreps.export`) with `manifest.json`, `tags.jsonl`, `thoughts.jsonl` and `images/<uuid>`, shared via the system share sheet to Files, AirDrop or iCloud Drive.
+- Import reads the same format (also via Open in Thought Reps from Files or AirDrop) and merges by `id`, keeping the newer `updatedAt`.
 - Optional Markdown export: one `.md` file per thought with front matter (tags, dates, pinned) for use in other apps.
 
 **One-time export link (fast follow)**
 
 An optional way to get an export onto any device, such as a computer with no AirDrop or iCloud Drive. It is the app's only server piece, and it only ever holds an encrypted file for a short time.
 
-- **Share export as link** next to Export uploads the same `.zip` (your whole log) to S3 and shows a link to copy or send, in the form `https://transfer.thoughtreps.com/x/<id>#<key>`. The S3 key is `exports/<random id>`.
-- The zip is encrypted on the device before upload. The key is only in the link's `#` fragment, which browsers never send to the server, so the server and S3 only ever see ciphertext. Opening the link loads a small page that downloads the file, decrypts it in the browser and saves `ThoughtReps-export-<date>.zip` (only the browser's download name). The page title is "Your Thought Reps export".
+- **Share export as link** next to Export uploads the same `.thoughtreps` file (your whole log) to S3 and shows a link to copy or send, in the form `https://transfer.thoughtreps.com/x/<id>#<key>`. The S3 key is `exports/<random id>`.
+- The zip is encrypted on the device before upload. The key is only in the link's `#` fragment, which browsers never send to the server, so the server and S3 only ever see ciphertext. Opening the link loads a small page that downloads the file, decrypts it in the browser and saves `ThoughtReps-export-<date>.thoughtreps` (only the browser's download name). The page title is "Your Thought Reps export".
 - **One use:** the first download deletes the object. A small API (Lambda) issues a short-lived presigned URL once, marks the link used and deletes the object, so a second visit gets "This link has already been used." The claim happens on a **Download** tap, not on page load, so link previews can't use the link up.
 - **Expires after 24 hours** if nobody uses it. A scheduled cleanup deletes anything older than 24h, with an S3 lifecycle rule as a backstop, because lifecycle rules alone run once a day and can leave a file for up to about 48h.
 - No account and no sign-in. Uploads are capped at 100 MB and rate-limited per device. The app shows the expiry time, and the link can be revoked from the app before it's used.

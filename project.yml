@@ -24,6 +24,9 @@ packages:
   MarkdownUI:
     url: https://github.com/gonzalezreal/swift-markdown-ui
     exactVersion: 2.4.1
+  ZIPFoundation:
+    url: https://github.com/weichsel/ZIPFoundation
+    exactVersion: 0.9.20
 
 targets:
   ThoughtReps:
@@ -34,6 +37,7 @@ targets:
       - path: Shared
     dependencies:
       - package: MarkdownUI
+      - package: ZIPFoundation
       - target: ThoughtRepsShare
     info:
       path: Config/App-Info.plist
@@ -41,6 +45,24 @@ targets:
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         TRAppGroupIdentifier: group.$(TR_BUNDLE_ID)
+        LSSupportsOpeningDocumentsInPlace: false
+        UTExportedTypeDeclarations:
+          - UTTypeIdentifier: com.thoughtreps.export
+            UTTypeDescription: Thought Reps export
+            UTTypeConformsTo:
+              - public.zip-archive
+              - public.data
+            UTTypeTagSpecification:
+              public.filename-extension:
+                - thoughtreps
+              public.mime-type:
+                - application/vnd.thoughtreps.export+zip
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: Thought Reps export
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Owner
+            LSItemContentTypes:
+              - com.thoughtreps.export
     entitlements:
       path: Config/ThoughtReps.entitlements
       properties:

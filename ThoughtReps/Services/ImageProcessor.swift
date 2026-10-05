@@ -42,6 +42,16 @@ enum ImageProcessor {
         )
     }
 
+    /// Just the thumbnail of an image already stored, for rebuilding one from the original bytes.
+    static func thumbnail(of input: Data) throws -> Data {
+        guard let source = CGImageSourceCreateWithData(input as CFData, nil),
+              CGImageSourceGetCount(source) > 0,
+              let original = longestEdge(of: source),
+              let thumbnail = decoded(source, longestEdge: min(thumbnailDimension, original))
+        else { throw ImageProcessingError.undecodable }
+        return try encode(thumbnail)
+    }
+
     /// EXIF orientation only swaps the edges, so the longest edge needs no orientation handling.
     private static func longestEdge(of source: CGImageSource) -> Int? {
         guard let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
