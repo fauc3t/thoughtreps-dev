@@ -1,0 +1,517 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Thought Reps Ink, Orange</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: ink-on-white "sticker" system from the app icon: chunky ink outlines + hard offset shadows; hero stack of real notes that cycles; one accent reserved for "it came back" moments. */
+:root {
+  --paper: #FFFFFF;
+  --soft: #F2F2F0;
+  --ink: #111214;
+  --muted: #5E6066;
+  --accent: #E2581F;     /* ACCENT */
+  --accent-ink: #FFFFFF; /* ACCENT-INK */
+  --hl: #FFD2BD;         /* HIGHLIGHT */
+  --display: "Archivo", "Arial Black", system-ui, sans-serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  --bw: 2.5px;
+  --sh: 4px 4px 0 var(--ink);
+  --sh-lg: 7px 7px 0 var(--ink);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #111214; --soft: #1D1E22; --ink: #F2F2EF; --muted: #A3A5AC;
+    --accent: #FF7A3D;     /* ACCENT-DARK */
+    --accent-ink: #111214; /* ACCENT-INK-DARK */
+    --hl: #5A2A14;         /* HIGHLIGHT-DARK */
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #111214; --soft: #1D1E22; --ink: #F2F2EF; --muted: #A3A5AC;
+  --accent: #FF7A3D;     /* ACCENT-DARK */
+  --accent-ink: #111214; /* ACCENT-INK-DARK */
+  --hl: #5A2A14;         /* HIGHLIGHT-DARK */
+  color-scheme: dark;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--paper); color: var(--ink); font: 400 17px/1.6 var(--body); padding-inline: 16px; overflow-x: hidden; }
+img, svg { max-width: 100%; }
+a { color: inherit; }
+p { margin: 0; }
+h1, h2, h3 { margin: 0; font-family: var(--display); text-wrap: balance; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; border-radius: 6px; }
+.wrap { max-width: 1140px; margin-inline: auto; }
+.mono { font-family: var(--mono); font-size: 13px; letter-spacing: .02em; }
+.label { font: 500 12.5px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+
+/* sticker primitives */
+.stk { background: var(--paper); border: var(--bw) solid var(--ink); border-radius: 14px; box-shadow: var(--sh); }
+.btn {
+  display: inline-flex; align-items: center; gap: 12px; padding: 12px 20px 12px 16px; border-radius: 14px;
+  border: var(--bw) solid var(--ink); box-shadow: var(--sh); background: var(--ink); color: var(--paper);
+  text-decoration: none; font-weight: 600; transition: transform .12s ease, box-shadow .12s ease, background .12s, color .12s;
+}
+.btn:hover { transform: translate(-2px, -2px); box-shadow: 6px 6px 0 var(--ink); background: var(--accent); color: var(--accent-ink); }
+.btn:active { transform: translate(3px, 3px); box-shadow: 1px 1px 0 var(--ink); }
+.btn small { display: block; font: 500 11px/1.1 var(--body); opacity: .8; }
+.btn b { display: block; font: 800 18px/1.1 var(--display); font-variation-settings: "wdth" 110; }
+.btn svg { flex: none; }
+.btn.ghost { background: var(--paper); color: var(--ink); padding: 12px 18px; }
+.btn.ghost:hover { background: var(--soft); color: var(--ink); }
+
+/* nav */
+.nav { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-block: 18px; }
+.brand { display: flex; align-items: center; gap: 10px; text-decoration: none; font: 800 19px/1 var(--display); font-variation-settings: "wdth" 108; letter-spacing: -.01em; }
+.brand svg { width: 38px; height: 38px; border-radius: 10px; border: 2px solid var(--ink); box-shadow: 2px 2px 0 var(--ink); }
+.nav-links { display: flex; align-items: center; gap: 6px; }
+.nav-links a { text-decoration: none; font-weight: 500; font-size: 15px; padding: 8px 12px; border-radius: 10px; border: 2px solid transparent; transition: border-color .12s, background .12s; }
+.nav-links a:hover { border-color: var(--ink); background: var(--soft); }
+.nav-links a.get { border-color: var(--ink); box-shadow: 2px 2px 0 var(--ink); }
+.nav-links a.get:hover { background: var(--accent); color: var(--accent-ink); }
+@media (max-width: 680px) { .nav-links a:not(.get) { display: none; } }
+
+/* hero */
+.hero { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, .95fr); gap: 56px; align-items: center; padding-block: 40px 88px; }
+.hero-copy { display: flex; flex-direction: column; gap: 24px; min-width: 0; }
+.hero h1 { font-size: clamp(46px, 7.4vw, 92px); line-height: .92; font-weight: 900; font-variation-settings: "wdth" 112; letter-spacing: -.035em; }
+.hl { background: linear-gradient(transparent 60%, var(--hl) 60%, var(--hl) 92%, transparent 92%); padding-inline: .04em; }
+.loopy { display: inline-block; width: .7em; height: .7em; vertical-align: -.02em; margin-left: .06em; color: var(--accent); }
+.lede { font-size: 19px; color: var(--muted); max-width: 33em; }
+.lede strong { color: var(--ink); font-weight: 600; }
+.cta-row { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; }
+.meta { color: var(--muted); }
+
+.stage { position: relative; height: 420px; min-width: 0; }
+.deck { position: absolute; left: 50%; top: 50%; width: min(340px, 86%); height: 230px; transform: translate(-56%, -50%); }
+.note {
+  position: absolute; inset: 0; padding: 20px 22px; display: flex; flex-direction: column; gap: 10px;
+  transition: transform .5s cubic-bezier(.3, 1.3, .5, 1);
+}
+.note[data-pos="0"] { transform: translate(0, 0) rotate(-2deg); z-index: 3; }
+.note[data-pos="1"] { transform: translate(16px, -16px) rotate(3.5deg); z-index: 2; background: var(--soft); }
+.note[data-pos="2"] { transform: translate(32px, -32px) rotate(9deg); z-index: 1; background: var(--soft); }
+.note.swing { animation: swing .8s cubic-bezier(.5, 0, .3, 1) forwards; }
+@keyframes swing {
+  0%   { transform: translate(0, 0) rotate(-2deg); z-index: 3; }
+  45%  { transform: translate(-70%, 30px) rotate(-16deg); z-index: 3; }
+  46%  { z-index: 0; }
+  100% { transform: translate(32px, -32px) rotate(9deg); z-index: 0; }
+}
+.note .t { font: 800 24px/1.15 var(--display); font-variation-settings: "wdth" 100; letter-spacing: -.01em; }
+.note .b { color: var(--muted); font-size: 16px; line-height: 1.5; }
+.note .foot { margin-top: auto; display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip { font: 500 12.5px/1 var(--mono); padding: 5px 8px; border: 2px solid var(--ink); border-radius: 8px; background: var(--paper); }
+.due { font: 500 12.5px/1 var(--mono); color: var(--accent); }
+.due.quiet { color: var(--muted); }
+.loop-badge {
+  position: absolute; left: 4%; bottom: 36px; width: 82px; height: 82px; border-radius: 50%; z-index: 5;
+  display: grid; place-items: center; background: var(--paper); border: var(--bw) solid var(--ink); box-shadow: var(--sh);
+}
+.loop-badge svg { width: 50px; height: 50px; color: var(--accent); transition: transform .8s cubic-bezier(.5, 0, .3, 1); }
+.next {
+  position: absolute; right: 6%; bottom: 30px; z-index: 5; font: 500 13px/1 var(--mono); padding: 10px 12px; border-radius: 10px;
+  border: 2px solid var(--ink); background: var(--paper); color: var(--ink); box-shadow: 2px 2px 0 var(--ink); cursor: pointer; transition: transform .12s, box-shadow .12s, background .12s;
+}
+.next:hover { transform: translate(-1px, -1px); box-shadow: 3px 3px 0 var(--ink); background: var(--soft); }
+.next:active { transform: translate(2px, 2px); box-shadow: 0 0 0 var(--ink); }
+
+/* sections */
+section.block { padding-block: 80px; border-top: var(--bw) solid var(--ink); }
+.sec-head { display: flex; flex-direction: column; gap: 14px; max-width: 680px; margin-bottom: 44px; }
+.sec-head h2 { font-size: clamp(34px, 5vw, 58px); line-height: .98; font-weight: 900; font-variation-settings: "wdth" 110; letter-spacing: -.03em; }
+.sec-head p { color: var(--muted); font-size: 18px; max-width: 34em; }
+
+.steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; list-style: none; margin: 0; padding: 0; }
+.step { padding: 24px; display: flex; flex-direction: column; gap: 12px; }
+.step .n { width: 44px; height: 44px; border-radius: 50%; border: var(--bw) solid var(--ink); display: grid; place-items: center; font: 800 20px/1 var(--display); }
+.step h3 { font-size: 26px; font-weight: 800; font-variation-settings: "wdth" 104; letter-spacing: -.01em; }
+.step p { color: var(--muted); }
+.mini { margin-top: 6px; padding: 12px 14px; border: 2px dashed var(--ink); border-radius: 12px; display: flex; justify-content: space-between; gap: 10px; align-items: center; }
+.mini b { font-weight: 600; font-size: 15px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.step:last-child .mini { border-style: solid; background: var(--soft); }
+
+.bento { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 22px; }
+.tile { padding: 24px; display: flex; flex-direction: column; gap: 14px; min-width: 0; transition: transform .15s ease, box-shadow .15s ease; }
+.tile:hover { transform: translate(-2px, -2px); box-shadow: var(--sh-lg); }
+.tile.w2 { grid-column: span 2; }
+.tile h3 { font-size: 23px; font-weight: 800; font-variation-settings: "wdth" 104; letter-spacing: -.01em; }
+.tile > p { color: var(--muted); font-size: 16px; }
+.demo { margin-top: auto; }
+.md { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; }
+.md pre { margin: 0; padding: 14px; border-radius: 12px; background: var(--soft); font: 400 13px/1.7 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.md pre i { font-style: normal; color: var(--muted); }
+.md .out { padding: 14px; border: 2px solid var(--ink); border-radius: 12px; font-size: 14.5px; line-height: 1.5; display: flex; flex-direction: column; gap: 6px; }
+.md .out b { font: 800 17px/1.2 var(--display); }
+.md .out ul { margin: 0; padding-left: 18px; }
+.md .out code { font: 13px var(--mono); background: var(--soft); padding: 1px 5px; border-radius: 5px; }
+.md .ph { height: 46px; border: 2px dashed var(--ink); border-radius: 8px; display: grid; place-items: center; font: 12px var(--mono); color: var(--muted); }
+@media (max-width: 520px) { .md { grid-template-columns: minmax(0, 1fr); } }
+
+.blur { padding: 14px 16px; border: 2px solid var(--ink); border-radius: 12px; display: flex; flex-direction: column; gap: 8px; }
+.blur-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.blur-top span { font-weight: 600; font-size: 14px; }
+.small-btn { font: 500 13px/1 var(--mono); padding: 8px 10px; border-radius: 9px; border: 2px solid var(--ink); background: var(--paper); color: var(--ink); cursor: pointer; box-shadow: 2px 2px 0 var(--ink); transition: transform .1s, box-shadow .1s, background .12s, color .12s; }
+.small-btn:hover { background: var(--accent); color: var(--accent-ink); }
+.small-btn:active { transform: translate(2px, 2px); box-shadow: 0 0 0 var(--ink); }
+.small-btn[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+.answer { font-size: 15px; line-height: 1.45; filter: blur(7px); transition: filter .25s; user-select: none; }
+.blur.open .answer { filter: none; user-select: auto; }
+
+.tags { display: flex; flex-direction: column; gap: 8px; }
+.tags li { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 14px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.tags li b { color: var(--accent); font-weight: 500; }
+ul.tags { list-style: none; margin: 0; padding: 0; }
+.pinned { padding: 14px 16px; border: 2px solid var(--ink); border-radius: 12px; display: flex; flex-direction: column; gap: 4px; }
+.pinned .row { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-weight: 600; }
+.pinned span { color: var(--muted); font-size: 14px; }
+.snooze-out { font: 13px var(--mono); color: var(--muted); min-height: 1.4em; }
+.snooze-out b { color: var(--accent); font-weight: 500; }
+.btn-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.seg { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+.interval-out { margin-top: 12px; font: 14px var(--mono); color: var(--muted); }
+.interval-out b { color: var(--ink); font-weight: 500; }
+.notif { display: flex; gap: 12px; align-items: center; padding: 12px 14px; border: 2px solid var(--ink); border-radius: 16px; background: var(--paper); }
+.notif svg { flex: none; width: 40px; height: 40px; border-radius: 10px; border: 2px solid var(--ink); }
+.notif .top { display: flex; justify-content: space-between; gap: 8px; font: 12px var(--mono); color: var(--muted); }
+.notif .msg { font-weight: 600; font-size: 15px; }
+
+/* privacy */
+.privacy { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 56px; align-items: start; }
+.privacy .sec-head { margin-bottom: 0; }
+.facts { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.facts li { display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: 14px; padding-block: 18px; border-bottom: 2px solid var(--ink); }
+.facts li:first-child { border-top: 2px solid var(--ink); }
+.facts svg { width: 26px; height: 26px; margin-top: 2px; }
+.facts b { display: block; font: 800 19px/1.25 var(--display); font-variation-settings: "wdth" 104; }
+.facts span { color: var(--muted); font-size: 16px; }
+.later { font: 500 11px/1 var(--mono); text-transform: uppercase; letter-spacing: .06em; padding: 4px 6px; border: 2px solid var(--ink); border-radius: 6px; margin-left: 8px; vertical-align: 3px; }
+
+/* final */
+.final { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 26px; padding-block: 96px 80px; border-top: var(--bw) solid var(--ink); }
+.final .big-icon { width: 128px; height: 128px; border-radius: 30px; border: var(--bw) solid var(--ink); box-shadow: var(--sh-lg); }
+.final h2 { font-size: clamp(40px, 7vw, 84px); line-height: .92; font-weight: 900; font-variation-settings: "wdth" 112; letter-spacing: -.035em; max-width: 12ch; }
+.final p { color: var(--muted); font-size: 18px; }
+footer { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding-block: 24px 40px; border-top: var(--bw) solid var(--ink); color: var(--muted); font: 13px var(--mono); }
+footer nav { display: flex; gap: 16px; }
+footer a { text-decoration: none; }
+footer a:hover { color: var(--ink); text-decoration: underline; }
+
+@media (max-width: 920px) {
+  .hero { grid-template-columns: minmax(0, 1fr); gap: 32px; padding-block: 24px 64px; }
+  .stage { height: 380px; }
+  .steps { grid-template-columns: minmax(0, 1fr); }
+  .bento { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .privacy { grid-template-columns: minmax(0, 1fr); gap: 32px; }
+}
+@media (max-width: 620px) {
+  body { font-size: 16px; }
+  section.block { padding-block: 60px; }
+  .bento { grid-template-columns: minmax(0, 1fr); }
+  .tile.w2 { grid-column: auto; }
+  .stage { height: 340px; }
+  .deck { height: 210px; transform: translate(-54%, -46%); }
+  .note .t { font-size: 21px; }
+  .loop-badge { width: 66px; height: 66px; bottom: 16px; }
+  .loop-badge svg { width: 40px; height: 40px; }
+  .next { bottom: 18px; right: 2%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <!-- App icon (ink on white): back note, front note, loop, one line. 40-unit grid. -->
+    <symbol id="app-icon" viewBox="0 0 100 100">
+      <rect width="100" height="100" fill="var(--paper)"/>
+      <g transform="translate(50 50) scale(2.02) translate(-19.3 -19)" stroke="var(--ink)" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="9" y="4" width="22" height="24" rx="4" transform="rotate(9 20 16)" fill="var(--soft)" stroke-width="3"/>
+        <rect x="5" y="9" width="24" height="25" rx="4" fill="var(--paper)" stroke-width="3"/>
+        <path d="M20.47 14.86A5.4 5.4 0 1 1 13.18 15.18" fill="none" stroke-width="3.2"/>
+        <path d="M10.92 12.92L15.87 12.5L15.45 17.45Z" fill="var(--ink)" stroke-width="1"/>
+        <path d="M11 29h12" fill="none" stroke-width="3"/>
+      </g>
+    </symbol>
+    <symbol id="loop" viewBox="0 0 24 24">
+      <path d="M17.3 6.1A8 8 0 1 1 6.3 6.6" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+      <path d="M3.2 3.6L8.6 3.3L8.2 9.1Z" fill="currentColor" stroke="currentColor" stroke-width="1" stroke-linejoin="round"/>
+    </symbol>
+  </defs>
+</svg>
+
+<div class="wrap">
+  <header class="nav">
+    <a class="brand" href="#top" aria-label="Thought Reps home"><svg aria-hidden="true"><use href="#app-icon"/></svg>Thought Reps</a>
+    <nav class="nav-links" aria-label="Page">
+      <a href="#how">How it works</a>
+      <a href="#features">Features</a>
+      <a href="#privacy">Privacy</a>
+      <a class="get" href="#get">Get the app</a>
+    </nav>
+  </header>
+
+  <main id="top">
+    <section class="hero" aria-labelledby="hero-h">
+      <div class="hero-copy">
+        <span class="label">For iPhone · Free</span>
+        <h1 id="hero-h">Write it down. It comes <span class="hl">back</span><svg class="loopy" aria-hidden="true"><use href="#loop"/></svg></h1>
+        <p class="lede">Thought Reps is a notebook that hands your ideas back to you. Jot something down in five seconds, and <strong>a week later it's on your timeline again</strong>, so the good ones get a second look.</p>
+        <div class="cta-row">
+          <a class="btn" href="#get">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="6" y="2.5" width="12" height="19" rx="3"/><path d="M10.5 18.5h3"/></svg>
+            <span><small>Download on the</small><b>App Store</b></span>
+          </a>
+          <a class="btn ghost" href="#how">How it works</a>
+        </div>
+        <p class="meta mono">No account · Stays on your phone · iOS 18 or later</p>
+      </div>
+
+      <div class="stage" aria-label="A stack of thoughts. Every few seconds the top one goes to the back and the next one comes up.">
+        <div class="deck" id="deck">
+          <article class="note stk" data-pos="0">
+            <span class="t">Rubber-duck before asking</span>
+            <span class="b">Explain the bug out loud in full sentences first. Half the time the answer shows up.</span>
+            <div class="foot"><div class="chips"><span class="chip">#work</span></div><span class="due">due today</span></div>
+          </article>
+          <article class="note stk" data-pos="1">
+            <span class="t">Big-O of Swift collections</span>
+            <span class="b">Array append is amortized O(1). Set and Dictionary lookups are O(1) on average.</span>
+            <div class="foot"><div class="chips"><span class="chip">#swift</span><span class="chip">#study</span></div><span class="due">due 2d ago</span></div>
+          </article>
+          <article class="note stk" data-pos="2">
+            <span class="t">Weekly review questions</span>
+            <span class="b">What moved forward? What stalled? What do I want to stop doing?</span>
+            <div class="foot"><div class="chips"><span class="chip">#habits</span></div><span class="due quiet">pinned</span></div>
+          </article>
+        </div>
+        <div class="loop-badge" aria-hidden="true"><svg id="badgeLoop"><use href="#loop"/></svg></div>
+        <button class="next" type="button" id="next">Bring the next one back</button>
+      </div>
+    </section>
+
+    <section class="block" id="how" aria-labelledby="how-h">
+      <div class="sec-head">
+        <span class="label">How it works</span>
+        <h2 id="how-h">Write it once. See it again in a week.</h2>
+        <p>Most notes apps are where ideas go to be forgotten. Thought Reps only shows you what's due today, and brings the rest back on schedule.</p>
+      </div>
+      <ol class="steps">
+        <li class="step stk">
+          <span class="n" aria-hidden="true">1</span>
+          <h3>Write it</h3>
+          <p>Tap + from anywhere. Markdown, photos and #tags all work, and it takes about five seconds.</p>
+          <div class="mini"><b>Rubber-duck before asking</b><span class="mono">saved</span></div>
+        </li>
+        <li class="step stk">
+          <span class="n" aria-hidden="true">2</span>
+          <h3>Let it go</h3>
+          <p>It stays off your timeline for 7 days, or whatever interval you set for that thought.</p>
+          <div class="mini"><b>Rubber-duck before asking</b><span class="mono">in 4 days</span></div>
+        </li>
+        <li class="step stk">
+          <span class="n" aria-hidden="true">3</span>
+          <h3>Meet it again</h3>
+          <p>It's back on your timeline, marked due. Read it and it heads out for another lap. Archive it when you're done.</p>
+          <div class="mini"><b>Rubber-duck before asking</b><span class="due">due today</span></div>
+        </li>
+      </ol>
+    </section>
+
+    <section class="block" id="features" aria-labelledby="feat-h">
+      <div class="sec-head">
+        <span class="label">Features</span>
+        <h2 id="feat-h">Small app. Everything a thought needs.</h2>
+      </div>
+      <div class="bento">
+        <article class="tile stk w2">
+          <h3>Markdown and photos</h3>
+          <p>Headings, lists, code and images. It looks tidy when it comes back.</p>
+          <div class="demo md">
+<pre aria-label="Markdown source"><i>#</i> Big-O of Swift collections
+<i>-</i> <i>**</i>Array<i>**</i> append: O(1)
+<i>-</i> <i>`</i>contains<i>`</i>: O(n)
+<i>![](</i>whiteboard<i>)</i>
+#swift #study</pre>
+            <div class="out" aria-label="Rendered">
+              <b>Big-O of Swift collections</b>
+              <ul><li><strong>Array</strong> append: O(1)</li><li><code>contains</code>: O(n)</li></ul>
+              <div class="ph">whiteboard.heic</div>
+            </div>
+          </div>
+        </article>
+
+        <article class="tile stk">
+          <h3>Blurred answers</h3>
+          <p>Hide an answer under a blur and quiz yourself when it comes back.</p>
+          <div class="demo blur" id="blur">
+            <div class="blur-top"><span>Quiz: Set lookup?</span><button class="small-btn" type="button" id="reveal" aria-expanded="false" aria-controls="answer">Reveal</button></div>
+            <p class="answer" id="answer">O(1) on average, because elements are hashed. Worst case O(n).</p>
+          </div>
+        </article>
+
+        <article class="tile stk">
+          <h3>#tags</h3>
+          <p>Type #anything. Every tag gets its own timeline.</p>
+          <ul class="demo tags">
+            <li><span class="chip">#swift</span><span><b>2 due</b> · 14</span></li>
+            <li><span class="chip">#habits</span><span><b>1 due</b> · 6</span></li>
+            <li><span class="chip">#projects</span><span>0 due · 9</span></li>
+          </ul>
+        </article>
+
+        <article class="tile stk">
+          <h3>Pin the keepers</h3>
+          <p>Pinned thoughts stay at the top every day.</p>
+          <div class="demo pinned">
+            <div class="row">Why I'm building this
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-label="Pinned" role="img"><path d="M9 3h6l-1 6 4 4H6l4-4z"/><path d="M12 13v8" fill="none"/></svg>
+            </div>
+            <span>Ideas I write down vanish. This brings them back on purpose.</span>
+          </div>
+        </article>
+
+        <article class="tile stk">
+          <h3>Snooze or archive</h3>
+          <p>Not today? Push it back. Done with it? Archive it, and restore it any time.</p>
+          <div class="demo">
+            <div class="btn-row" role="group" aria-label="What to do with this thought">
+              <button class="small-btn" type="button" data-act="1">Snooze 1 day</button>
+              <button class="small-btn" type="button" data-act="7">Snooze 1 week</button>
+              <button class="small-btn" type="button" data-act="archive">Archive</button>
+            </div>
+            <p class="snooze-out" id="snoozeOut" aria-live="polite" style="margin-top:12px">Rubber-duck before asking · <b>due today</b></p>
+          </div>
+        </article>
+
+        <article class="tile stk w2">
+          <h3>Your own rhythm</h3>
+          <p>Every 7 days by default. Memorizing something? Bring it back tomorrow. Slow-burn idea? Next month.</p>
+          <div class="demo">
+            <div class="seg" role="group" aria-label="Bring this thought back every">
+              <button class="small-btn" type="button" data-days="1" aria-pressed="false">1 day</button>
+              <button class="small-btn" type="button" data-days="3" aria-pressed="false">3 days</button>
+              <button class="small-btn" type="button" data-days="7" aria-pressed="true">7 days</button>
+              <button class="small-btn" type="button" data-days="30" aria-pressed="false">30 days</button>
+            </div>
+            <p class="interval-out" id="intervalOut" aria-live="polite">Read today · back in <b>7 days</b></p>
+          </div>
+        </article>
+
+        <article class="tile stk">
+          <h3>One nudge a day</h3>
+          <p>Pick a time. If nothing is due, you won't hear from it.</p>
+          <div class="demo notif" role="img" aria-label="Notification at 8:00 AM: 4 thoughts are back today.">
+            <svg aria-hidden="true"><use href="#app-icon"/></svg>
+            <div style="flex:1;min-width:0"><div class="top"><span>THOUGHT REPS</span><span>8:00 AM</span></div><div class="msg">4 thoughts are back today.</div></div>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="block" id="privacy" aria-labelledby="priv-h">
+      <div class="privacy">
+        <div class="sec-head">
+          <span class="label">Privacy</span>
+          <h2 id="priv-h">Your thoughts never leave your phone.</h2>
+          <p>There's no account and no server. Back it up whenever you like, as files you own.</p>
+        </div>
+        <ul class="facts">
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg><div><b>No account</b><span>Open the app and start writing.</span></div></li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg><div><b>Stored on your iPhone</b><span>Text and images stay in the app, on your device.</span></div></li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg><div><b>Export any time</b><span>A .zip of JSON and images, or one Markdown file per thought.</span></div></li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="3 3" aria-hidden="true"><circle cx="12" cy="12" r="8"/></svg><div><b>iCloud sync<span class="later">Later</span></b><span>Optional sync across your devices is planned.</span></div></li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="final" id="get" aria-labelledby="get-h">
+      <svg class="big-icon" aria-hidden="true"><use href="#app-icon"/></svg>
+      <h2 id="get-h">Start with one thought.</h2>
+      <p>See it again on <span id="backDate" class="mono">next week</span>.</p>
+      <a class="btn" href="#">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="6" y="2.5" width="12" height="19" rx="3"/><path d="M10.5 18.5h3"/></svg>
+        <span><small>Download on the</small><b>App Store</b></span>
+      </a>
+    </section>
+  </main>
+
+  <footer>
+    <span>© 2026 Thought Reps</span>
+    <nav aria-label="Footer"><a href="#how">How it works</a><a href="#features">Features</a><a href="#privacy">Privacy</a></nav>
+  </footer>
+</div>
+
+<script>
+(function () {
+  var RM = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function fmt(days) {
+    var d = new Date(); d.setDate(d.getDate() + days);
+    try { return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }); } catch (e) { return d.toDateString(); }
+  }
+
+  // Hero deck: the top note swings to the back and the next one comes up.
+  var deck = document.getElementById('deck'), notes = Array.prototype.slice.call(deck.querySelectorAll('.note'));
+  var badge = document.getElementById('badgeLoop'), spins = 0, busy = false;
+  function cycle() {
+    if (busy) return; busy = true;
+    var front = notes.filter(function (n) { return n.dataset.pos === '0'; })[0];
+    notes.forEach(function (n) { if (n !== front) n.dataset.pos = String(+n.dataset.pos - 1); });
+    spins++; badge.style.transform = 'rotate(' + spins * 360 + 'deg)';
+    if (RM) { front.dataset.pos = '2'; busy = false; return; }
+    front.classList.add('swing');
+    front.addEventListener('animationend', function done() {
+      front.removeEventListener('animationend', done);
+      front.classList.remove('swing'); front.dataset.pos = '2'; busy = false;
+    });
+  }
+  document.getElementById('next').addEventListener('click', cycle);
+  var hover = false, stage = deck.parentNode;
+  stage.addEventListener('mouseenter', function () { hover = true; });
+  stage.addEventListener('mouseleave', function () { hover = false; });
+  stage.addEventListener('focusin', function () { hover = true; });
+  stage.addEventListener('focusout', function () { hover = false; });
+  if (!RM) setInterval(function () { if (!hover && !document.hidden) cycle(); }, 4200);
+
+  // Blurred answer
+  var blur = document.getElementById('blur'), reveal = document.getElementById('reveal');
+  reveal.addEventListener('click', function () {
+    var open = blur.classList.toggle('open');
+    reveal.textContent = open ? 'Hide' : 'Reveal';
+    reveal.setAttribute('aria-expanded', String(open));
+  });
+
+  // Snooze / archive
+  var out = document.getElementById('snoozeOut');
+  document.querySelectorAll('[data-act]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var a = b.dataset.act;
+      out.innerHTML = a === 'archive' ? 'Archived · restore it any time' : 'Snoozed · back on <b>' + fmt(+a) + '</b>';
+    });
+  });
+
+  // Interval
+  var io = document.getElementById('intervalOut'), seg = document.querySelectorAll('[data-days]');
+  function setDays(n) {
+    seg.forEach(function (b) { b.setAttribute('aria-pressed', String(+b.dataset.days === n)); });
+    io.innerHTML = 'Read today · back on <b>' + fmt(n) + '</b>';
+  }
+  seg.forEach(function (b) { b.addEventListener('click', function () { setDays(+b.dataset.days); }); });
+  setDays(7);
+  document.getElementById('backDate').textContent = fmt(7);
+})();
+</script>
+</body>
+</html>
