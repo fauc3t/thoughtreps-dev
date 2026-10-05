@@ -75,6 +75,12 @@ ThoughtReps.xcodeproj/project.xcworkspace/xcshareddata/*
 ThoughtReps.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/*
 !ThoughtReps.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
 
+# Plists and entitlements XcodeGen generates from project.yml (run `xcodegen`)
+Config/App-Info.plist
+Config/ThoughtReps.entitlements
+ThoughtRepsShare/Info.plist
+ThoughtRepsShare/ThoughtRepsShare.entitlements
+
 # Personal signing settings (copy Config/Local.xcconfig.example)
 Config/Local.xcconfig
 

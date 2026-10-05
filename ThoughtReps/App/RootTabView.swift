@@ -8,7 +8,13 @@ struct RootTabView: View {
     @State private var saveErrors = SaveErrorCenter.shared
     @State private var navigation = AppNavigation.shared
     @State private var prefillTag: String?
+    @State private var inboxImporter = InboxImporter()
     @Environment(\.scenePhase) private var scenePhase
+
+    private func importInbox() {
+        guard let inbox = try? Inbox.directoryURL() else { return }
+        inboxImporter.importPending(from: inbox, store: ThoughtStore(context: context))
+    }
 
     var body: some View {
         TabView(selection: $navigation.selectedTab) {
@@ -49,6 +55,7 @@ struct RootTabView: View {
         .onChange(of: scenePhase, initial: true) { _, phase in
             switch phase {
             case .active:
+                importInbox()
                 Task { await NotificationScheduler.reschedule(context: context, now: .now) }
             case .background:
                 let assertion = BackgroundAssertion()
