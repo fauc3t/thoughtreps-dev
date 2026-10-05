@@ -31,6 +31,13 @@ Time moves a thought from waiting to due; a view or snooze sends it back, and ar
 - **Archived.** Archived thoughts never resurface. They live in the Archive screen and can be restored, which sets `nextDueAt = now`.
 - **Snooze.** A swipe action pushes `nextDueAt` forward (1 day, 1 week, custom) without counting as a view.
 
+**Study mode (v1 release).** When a due thought opens, the footer offers **Again** and **Got it** instead of counting the open as a view.
+
+- Again: brings it back tomorrow and resets a growing interval.
+- Got it: re-queues it on its interval; in growing mode, doubles the interval (capped at 365 days).
+- Blurred blocks act as the answer to recall before revealing.
+- Thoughts opened outside the due list (pinned, tag "All", search) still record a plain view.
+
 Intervals:
 
 - Global default: 7 days, editable in Settings.
@@ -118,7 +125,7 @@ The app has three tabs (Timeline, Tags, Archive) plus a capture button that is r
 | Tag timeline | Same cards as Timeline, filtered by tag; toggle between Due and All | Same as Timeline |
 | Archive | Archived thoughts, newest first, searchable | Restore, delete |
 | Search | Full-text over body and blocks, from the Timeline toolbar | Open result |
-| Settings | Default interval, daily reminder time, export and import | Change values, export JSON + images |
+| Settings | Default interval, daily reminder time, export and import, Send feedback (request a feature / report a problem) | Change values, export JSON + images |
 
 Capture flow:
 
@@ -232,19 +239,36 @@ All three are local-first: notifications are scheduled on-device, backup is a fi
 - Requires the paid Apple Developer Program; the free Apple ID can't use CloudKit.
 - The model rules above (defaults on every field, optional relationships, no unique constraints enforced by the database) are what make this a switch rather than a rewrite. Tag uniqueness is enforced in `TagStore` instead.
 
+## Feedback & support
+
+A **Send feedback** row in Settings, with no server and no analytics SDK:
+
+- Two options: **Request a feature** and **Report a problem**. Each opens a Mail compose sheet to the support address with a subject prefix (`[Feature]`, `[Bug]`).
+- Body is prefilled with app version, iOS version and device model, visible to the user before sending. Thought content is never attached.
+- If no Mail account is set up, fall back to a `mailto:` link, then to copying the address.
+- After the user completes 10 reviews, ask once for an App Store rating with Apple's built-in review prompt.
+- Later, if volume grows, route the address into a helpdesk or a public feature-request board; no app change needed.
+
 ## Milestones & open questions
 
-The build runs in five milestones, each ending with something installable on your phone.
+The build runs in four stages.
 
-1. **Repo and skeleton.** GitHub repo, Xcode project, models, Scheduler with unit tests, sample data, three empty tabs. Renderer spike (MarkdownUI vs Textual).
-2. **Capture and review.** Editor with plain Markdown, Timeline with due logic, Thought view that records views, pin, archive, snooze, Archive screen.
-3. **Rich content.** Formatting bar, images, tag parsing and chips, Tags tab and tag timelines, blurred blocks.
-4. **Polish.** Search, Settings, per-thought intervals, daily notification, empty states, export and import.
-5. **Extras (optional).** Share extension for quick capture, home-screen widget showing one due thought, growing intervals, iCloud sync.
+1. **Skeleton — done.** Repo, models, Scheduler with tests, timeline, thought view with view-to-requeue, pin, archive, snooze, editor with blurred blocks, tags and tag timelines, archive, settings, sample data.
+2. **v1 release — must ship.**
+    - Backup and export/import (zip of JSON + images; Markdown export).
+    - Daily reminder notification.
+    - Search across bodies and blocks.
+    - Markdown renderer (MarkdownUI vs Textual spike) and images.
+    - Study mode: Again / Got it, growing intervals, blurred blocks as answers.
+    - Send feedback / request a feature.
+    - App Store prep: paid Apple Developer Program ($99/yr), app icon, privacy label, screenshots, TestFlight beta.
+3. **Fast follow — driven by user requests.** Quick capture from anywhere: share extension, Lock Screen and Control Center button, Shortcuts/Siri "Add thought", home-screen widget.
+4. **Later.** iCloud sync, more block types, Face ID lock, themes and app icons.
 
 Open questions:
 
 - [ ] Do you have the original Thought Reps code or data to import? If so, which format?
-- [ ] Free Apple ID (reinstall every 7 days) or the $99/year developer account (year-long installs, TestFlight, iCloud)?
+- [ ] Pricing: free core app plus a one-time Pro unlock (about $9.99), with a subscription only once sync ships? Which features are Pro? (Keep export/backup free.)
+- [ ] Support email address for the feedback sheet.
 - [ ] Should viewing re-queue immediately on open, or only after a short dwell (e.g. 3 seconds) to avoid accidental views?
 - [ ] Any block types from the original app beyond blurred text that v1 should include?
