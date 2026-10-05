@@ -40,16 +40,16 @@ export function Nav() {
 
 const NOTES = [
   {
-    title: 'Rubber-duck before asking',
-    body: 'Explain the bug out loud in full sentences first. Half the time the answer shows up.',
-    tags: ['#work'],
+    title: 'One wild and precious life',
+    body: '“Tell me, what is it you plan to do with your one wild and precious life?” — Mary Oliver',
+    tags: ['#quotes'],
     due: 'due today',
     quiet: false,
   },
   {
-    title: 'Big-O of Swift collections',
-    body: 'Array append is amortized O(1). Set and Dictionary lookups are O(1) on average.',
-    tags: ['#swift', '#study'],
+    title: 'Read later: the case for slow email',
+    body: "Saved Tuesday, 12 min read. You said you'd get to it.",
+    tags: ['#toread'],
     due: 'due 2d ago',
     quiet: false,
   },

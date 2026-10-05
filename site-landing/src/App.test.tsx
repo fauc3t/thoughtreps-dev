@@ -99,7 +99,7 @@ describe('landing page', () => {
   it('renders the key copy', () => {
     expect(html).toContain('Write it down. It comes');
     expect(html).toContain('Write it once. See it again in a week.');
-    expect(html).toContain('Your thoughts never leave your phone.');
+    expect(html).toContain('Your thoughts stay on your phone.');
     expect(html).toContain('Start with one thought.');
   });
 

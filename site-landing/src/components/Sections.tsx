@@ -58,7 +58,7 @@ export function HowItWorks() {
               }`}
             >
               <b className="min-w-0 truncate text-[15px] font-semibold">
-                Rubber-duck before asking
+                Word: petrichor
               </b>
               <span className={i === STEPS.length - 1 ? 'due' : 'mono'}>
                 {s.status}
@@ -82,46 +82,42 @@ function Markdown() {
     <article className={`${tile} col-span-2 max-[620px]:col-auto`}>
       <h3 className={tileTitle}>Markdown and photos</h3>
       <p className={tileText}>
-        Headings, lists, code and images. It looks tidy when it comes back.
+        Headings, lists, quotes and images. It looks tidy when it comes back.
       </p>
       <div className="mt-auto grid grid-cols-2 gap-3.5 max-xs:grid-cols-[minmax(0,1fr)]">
         <pre
           className="m-0 min-w-0 rounded-xl bg-soft p-3.5 font-mono text-[13px] leading-[1.7] break-words whitespace-pre-wrap"
           aria-label="Markdown source"
         >
-          <i className="text-muted not-italic">#</i> Big-O of Swift collections
-          {'\n'}
+          <i className="text-muted not-italic">#</i> Word: petrichor{'\n'}
           <i className="text-muted not-italic">-</i>{' '}
-          <i className="text-muted not-italic">**</i>Array
-          <i className="text-muted not-italic">**</i> append: O(1){'\n'}
-          <i className="text-muted not-italic">-</i>{' '}
-          <i className="text-muted not-italic">`</i>contains
-          <i className="text-muted not-italic">`</i>: O(n){'\n'}
-          <i className="text-muted not-italic">![](</i>whiteboard
+          <i className="text-muted not-italic">**</i>noun
+          <i className="text-muted not-italic">**</i> the smell of rain on dry
+          earth{'\n'}
+          <i className="text-muted not-italic">&gt;</i> The petrichor hit before
+          the first drop.{'\n'}
+          <i className="text-muted not-italic">![](</i>storm
           <i className="text-muted not-italic">)</i>
           {'\n'}
-          #swift #study
+          #words #study
         </pre>
         <div
           className="flex min-w-0 flex-col gap-1.5 rounded-xl border-2 border-ink p-3.5 text-[14.5px] leading-normal"
           aria-label="Rendered"
         >
           <b className="text-[17px] leading-[1.2] font-extrabold [font-family:var(--font-display)]">
-            Big-O of Swift collections
+            Word: petrichor
           </b>
           <ul className="m-0 pl-[18px]">
             <li>
-              <strong>Array</strong> append: O(1)
-            </li>
-            <li>
-              <code className="rounded-[5px] bg-soft px-[5px] py-px font-mono text-[13px]">
-                contains
-              </code>
-              : O(n)
+              <strong>noun</strong> the smell of rain on dry earth
             </li>
           </ul>
+          <blockquote className="m-0 border-l-[3px] border-ink pl-2.5 text-muted">
+            The petrichor hit before the first drop.
+          </blockquote>
           <div className="grid h-[46px] place-items-center rounded-lg border-2 border-dashed border-ink font-mono text-[12px] text-muted">
-            whiteboard.heic
+            storm.heic
           </div>
         </div>
       </div>
@@ -139,7 +135,9 @@ function BlurredAnswers() {
       </p>
       <div className="mt-auto flex flex-col gap-2 rounded-xl border-2 border-ink px-4 py-3.5">
         <div className="flex items-center justify-between gap-2">
-          <span className="text-[14px] font-semibold">Quiz: Set lookup?</span>
+          <span className="text-[14px] font-semibold">
+            Quiz: what does <i>sonder</i> mean?
+          </span>
           <button
             className="small-btn"
             type="button"
@@ -154,7 +152,7 @@ function BlurredAnswers() {
           id="answer"
           className={`text-[15px] leading-[1.45] transition-[filter] duration-[250ms] ${open ? 'blur-none' : 'blur-[7px] select-none'}`}
         >
-          O(1) on average, because elements are hashed. Worst case O(n).
+          The feeling that every stranger has a life as vivid as your own.
         </p>
       </div>
     </article>
@@ -163,9 +161,9 @@ function BlurredAnswers() {
 
 function Tags() {
   const rows = [
-    { tag: '#swift', due: '2 due', total: 14 },
-    { tag: '#habits', due: '1 due', total: 6 },
-    { tag: '#projects', due: '0 due', total: 9 },
+    { tag: '#quotes', due: '2 due', total: 14 },
+    { tag: '#toread', due: '1 due', total: 6 },
+    { tag: '#words', due: '0 due', total: 9 },
   ];
   return (
     <article className={tile}>
@@ -202,7 +200,7 @@ function Pinned() {
       <p className={tileText}>Pinned thoughts stay at the top every day.</p>
       <div className="mt-auto flex flex-col gap-1 rounded-xl border-2 border-ink px-4 py-3.5">
         <div className="flex items-center justify-between gap-2 font-semibold">
-          Why I&apos;m building this
+          What makes a good day
           <svg
             width="18"
             height="18"
@@ -219,7 +217,7 @@ function Pinned() {
           </svg>
         </div>
         <span className="text-[14px] text-muted">
-          Ideas I write down vanish. This brings them back on purpose.
+          Walk before screens. Cook something. Text a friend.
         </span>
       </div>
     </article>
@@ -270,7 +268,7 @@ function Snooze() {
         >
           {result === null ? (
             <>
-              Rubber-duck before asking ·{' '}
+              Read later: slow email ·{' '}
               <b className="font-medium text-accent">due today</b>
             </>
           ) : result === 'archive' ? (
@@ -392,6 +390,10 @@ const FACTS = [
     title: 'Export any time',
     body: 'A .zip of JSON and images, or one Markdown file per thought.',
   },
+  {
+    title: 'For your eyes only',
+    body: "Send an export to another device and it's encrypted on your iPhone first. Only your link can open it, not even us.",
+  },
 ];
 
 export function Privacy() {
@@ -402,10 +404,10 @@ export function Privacy() {
         <SectionHead
           label="Privacy"
           id="priv-h"
-          title="Your thoughts never leave your phone."
+          title="Your thoughts stay on your phone."
         >
-          There&apos;s no account and no server. Back it up whenever you like,
-          as files you own.
+          There&apos;s no account and nothing to sign in to. Back it up whenever
+          you like, as files you own.
         </SectionHead>
         <ul className="m-0 flex list-none flex-col p-0">
           {FACTS.map((f, i) => (
