@@ -54,7 +54,7 @@ struct SettingsView: View {
                     if notificationStatus == .denied {
                         Text("Notifications are off for Thought Reps in iOS Settings. Turn them on there to get reminders.")
                     } else {
-                        Text("One notification at this time on days when thoughts are back. Pinned thoughts aren't counted.")
+                        Text("One notification at this time on days when thoughts are back, and a few more if you're away for a while. Pinned thoughts aren't counted.")
                     }
                 }
 

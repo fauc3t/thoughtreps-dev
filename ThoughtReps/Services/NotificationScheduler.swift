@@ -44,7 +44,7 @@ enum NotificationScheduler {
     }
 
     /// Removes stale reminders before adding the planned ones, so pending never exceeds the plan.
-    /// Leaves pending reminders untouched if the thoughts can't be read.
+    /// Leaves pending reminders untouched if the thoughts can't be counted.
     private static func performReschedule(context: ModelContext, now: Date) async {
         let center = UNUserNotificationCenter.current()
         let status = await authorizationStatus()
@@ -52,23 +52,20 @@ enum NotificationScheduler {
         let calendar = Calendar.current
 
         if AppSettings.reminderEnabled, status == .authorized || status == .provisional {
-            let thoughts: [Thought]
+            let minutes = AppSettings.reminderMinutes
             do {
-                thoughts = try context.fetch(FetchDescriptor<Thought>())
+                entries = try ReminderPlanner.plan(
+                    hour: minutes / 60,
+                    minute: minutes % 60,
+                    now: now,
+                    calendar: calendar
+                ) { fireDate in
+                    try context.fetchCount(FetchDescriptor<Thought>(predicate: ReminderPlanner.countedPredicate(dueBy: fireDate)))
+                }
             } catch {
-                logger.error("Reminder reschedule skipped, fetch failed: \(error.localizedDescription)")
+                logger.error("Reminder reschedule skipped, count failed: \(error.localizedDescription)")
                 return
             }
-            let minutes = AppSettings.reminderMinutes
-            entries = ReminderPlanner.plan(
-                thoughts: thoughts.map {
-                    ReminderPlanner.Input(nextDueAt: $0.nextDueAt, isPinned: $0.isPinned, isArchived: $0.isArchived)
-                },
-                hour: minutes / 60,
-                minute: minutes % 60,
-                now: now,
-                calendar: calendar
-            )
         }
 
         let planned = entries.map { entry in
@@ -85,7 +82,7 @@ enum NotificationScheduler {
         for (identifier, entry) in planned {
             let content = UNMutableNotificationContent()
             content.title = "Thought Reps"
-            content.body = ReminderPlanner.message(count: entry.count)
+            content.body = ReminderPlanner.message(count: entry.count, kind: entry.kind)
             content.sound = .default
             let components = calendar.dateComponents([.year, .month, .day, .hour, .minute], from: entry.fireDate)
             let request = UNNotificationRequest(
