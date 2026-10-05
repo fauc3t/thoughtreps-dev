@@ -258,7 +258,7 @@ A **Send Feedback** section in Settings, sent through the app's own API (no Mail
 - App version, iOS version and device model are shown on the form and sent with the message. Thought content is never attached.
 - The request is signed with the install's App Attest key (same as the export link), and the server allows 3 messages per device per day; a send that fails doesn't count.
 - The server emails it to hello@thoughtreps.com with the user's address as Reply-To.
-- After the user completes 10 reviews, ask once for an App Store rating with Apple's built-in review prompt.
+- After the user opens 10 due thoughts (not pinned or archived), ask once for an App Store rating with Apple's built-in review prompt.
 - Later, if volume grows, route the address into a helpdesk or a public feature-request board; no app change needed.
 
 ## Milestones & open questions

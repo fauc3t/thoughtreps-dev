@@ -148,6 +148,7 @@ struct RandomizedOperationTests {
             try $0.save()
         })
         store.pendingImageSaves = PendingImageSaves(defaults: defaults)
+        store.ratingPrompt = RatingPrompt(defaults: defaults)
         var rng = SeededGenerator(seed: seed)
         var now = Date(timeIntervalSince1970: 1_790_000_000)
 

@@ -40,6 +40,7 @@ struct ThoughtStore {
     /// Seam so tests can force a save failure.
     var save: (ModelContext) throws -> Void = { try $0.save() }
     var pendingImageSaves = PendingImageSaves()
+    var ratingPrompt = RatingPrompt()
 
     // MARK: Create & edit
 
@@ -411,8 +412,16 @@ struct ThoughtStore {
 
     @discardableResult
     func markViewed(_ thought: Thought, now: Date) -> Bool {
+        let countsAsDueOpen = Scheduler.countsAsDueOpen(
+            isPinned: thought.isPinned,
+            isArchived: thought.isArchived,
+            nextDueAt: thought.nextDueAt,
+            now: now
+        )
         thought.applyView(defaultIntervalDays: defaultIntervalDays, now: now)
-        return persist()
+        guard persist() else { return false }
+        if countsAsDueOpen { ratingPrompt.recordDueOpen() }
+        return true
     }
 
     @discardableResult

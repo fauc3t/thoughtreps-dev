@@ -28,7 +28,7 @@ struct PersistenceTests {
         do {
             let container = try ModelContainer.thoughtReps(url: url)
             defer { withExtendedLifetime(container) {} }
-            let store = ThoughtStore(context: container.mainContext, defaultIntervalDays: 7, saveErrors: SaveErrorCenter())
+            let store = ThoughtStore(context: container.mainContext, defaultIntervalDays: 7, saveErrors: SaveErrorCenter(), ratingPrompt: .throwaway())
             let kept = store.create(
                 body: "# Kept\n#Swift #café",
                 blocks: [BlockDraft(title: "Q", content: "A"), BlockDraft(title: "", content: "B")],

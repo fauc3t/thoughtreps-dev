@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import StoreKit
 
 enum TimelineScope {
     case all
@@ -14,6 +15,7 @@ struct ThoughtTimelineView: View {
 
     @Environment(\.modelContext) private var context
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.requestReview) private var requestReview
     @Environment(CaptureContext.self) private var captureContext: CaptureContext?
     @AppStorage(AppSettings.Key.defaultIntervalDays) private var defaultIntervalDays = Scheduler.defaultIntervalDays
 
@@ -106,6 +108,7 @@ struct ThoughtTimelineView: View {
             snapshot = .now
             if let tag { captureContext?.tag = tag }
         }
+        .task(id: scenePhase) { await requestReviewIfPending() }
         .onDisappear {
             if let tag, captureContext?.tag?.persistentModelID == tag.persistentModelID {
                 captureContext?.tag = nil
@@ -121,6 +124,18 @@ struct ThoughtTimelineView: View {
         .sheet(isPresented: $showSettings) {
             SettingsView()
         }
+    }
+
+    /// Runs while the main timeline is on screen. The delay lets a returning navigation or sheet
+    /// settle; `.task` cancels if the view leaves, and `pending` stays set so a dropped attempt retries.
+    private func requestReviewIfPending() async {
+        guard !isScoped, scenePhase == .active else { return }
+        let prompt = RatingPrompt()
+        guard prompt.isPending, !prompt.wasAsked else { return }
+        try? await Task.sleep(for: .seconds(1))
+        guard !Task.isCancelled, scenePhase == .active else { return }
+        requestReview()
+        prompt.markAsked()
     }
 
     private func row(_ thought: Thought) -> some View {

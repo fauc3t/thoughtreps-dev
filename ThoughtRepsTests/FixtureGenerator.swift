@@ -17,7 +17,7 @@ struct FixtureGenerator {
         let url = URL(fileURLWithPath: directory).appendingPathComponent("default.store")
         let container = try ModelContainer.thoughtReps(url: url)
         defer { withExtendedLifetime(container) {} }
-        let store = ThoughtStore(context: container.mainContext, defaultIntervalDays: 7, saveErrors: SaveErrorCenter())
+        let store = ThoughtStore(context: container.mainContext, defaultIntervalDays: 7, saveErrors: SaveErrorCenter(), ratingPrompt: .throwaway())
         let t0 = Date(timeIntervalSince1970: 1_790_000_000)
         let day: TimeInterval = 86_400
 

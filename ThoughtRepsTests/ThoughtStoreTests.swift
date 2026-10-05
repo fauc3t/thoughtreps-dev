@@ -16,7 +16,7 @@ struct ThoughtStoreTests {
             for: Thought.self, ThoughtReps.Tag.self, Block.self, ImageAsset.self,
             configurations: ModelConfiguration(isStoredInMemoryOnly: true)
         )
-        store = ThoughtStore(context: container.mainContext, defaultIntervalDays: 7)
+        store = ThoughtStore(context: container.mainContext, defaultIntervalDays: 7, ratingPrompt: .throwaway())
     }
 
     func days(_ n: Int, from date: Date) -> Date {

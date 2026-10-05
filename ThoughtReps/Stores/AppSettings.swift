@@ -8,6 +8,9 @@ enum AppSettings {
         static let reminderEnabled = "reminderEnabled"
         static let reminderMinutes = "reminderMinutes"
         static let feedbackEmail = "feedbackEmail"
+        static let ratingDueOpenCount = "ratingDueOpenCount"
+        static let ratingPromptPending = "ratingPromptPending"
+        static let ratingPromptAsked = "ratingPromptAsked"
     }
 
     static let defaultReminderMinutes = 8 * 60
