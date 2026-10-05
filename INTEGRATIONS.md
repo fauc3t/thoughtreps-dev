@@ -17,7 +17,7 @@ All in one `cdk.Stage` named `prod` (`infra/lib/app-stage.ts`).
 | `ThoughtReps-prod-Dns` | Deployed 2026-10-05 | Route53 hosted zone `thoughtreps.com` (RETAIN) |
 | `ThoughtReps-prod-Landing` | Deployed 2026-10-05 | S3 bucket (OAC) + CloudFront for the apex, `www` -> apex 301, `404.html`; ACM cert |
 | `ThoughtReps-prod-Mail` | Deployed 2026-10-05 | SES identity, MX, DMARC, mail bucket, receipt rule, ForwardFn, Cognito, HTTP API (ReplyFn/DeleteFn), mail web UI hosting |
-| `ThoughtReps-prod-Share` | Deployed 2026-10-05 (FeedbackFn added 2026-10-05) | Export-link backend: unversioned export bucket, DynamoDB link table, App Attest device/export-link/public/sweep Lambdas, FeedbackFn (`POST /feedback`, SES send), HTTP API, `transfer.thoughtreps.com` site (placeholder page) |
+| `ThoughtReps-prod-Share` | Deployed 2026-10-05 (FeedbackFn added, placeholder `BucketDeployment` removed the same day) | Export-link backend: unversioned export bucket, DynamoDB link table, App Attest device/export-link/public/sweep Lambdas, FeedbackFn (`POST /feedback`, SES send), HTTP API, `transfer.thoughtreps.com` site (download page from `transfer-web/`, deployed by `scripts/deploy-transfer-web.sh`) |
 
 ### DNS
 
@@ -35,7 +35,7 @@ All in one `cdk.Stage` named `prod` (`infra/lib/app-stage.ts`).
 
 ## Values filled in after deploy
 
-Last deploy: 2026-10-05 (Dns, Landing and Mail, plus `deploy-landing.sh` and `deploy-mail-web.sh`; Share redeployed the same day with the feedback route, and an unsigned `POST /api/v1/feedback` returns 400 `bad_request` as expected). SES identity `thoughtreps.com` verified (DKIM and MAIL FROM `SUCCESS`); MX resolves to `inbound-smtp.us-east-1.amazonaws.com`; our rule sits first in `simple-mail-prod`, ahead of the three strands.io rules, which are unchanged.
+Last deploy: 2026-10-05 (Dns, Landing and Mail, plus `deploy-landing.sh` and `deploy-mail-web.sh`; Share redeployed the same day with the feedback route, and an unsigned `POST /api/v1/feedback` returns 400 `bad_request` as expected; Share redeployed again to drop the placeholder, then `deploy-transfer-web.sh`: `/x/<id>` serves "Your Thought Reps export" and an unknown id's status returns 404 `not_found`). SES identity `thoughtreps.com` verified (DKIM and MAIL FROM `SUCCESS`); MX resolves to `inbound-smtp.us-east-1.amazonaws.com`; our rule sits first in `simple-mail-prod`, ahead of the three strands.io rules, which are unchanged.
 
 | Item | Value |
 | --- | --- |
