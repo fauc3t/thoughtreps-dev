@@ -150,8 +150,17 @@ struct EditorView: View {
                 }
             }
             .onAppear { load() }
+            .onChange(of: text) { old, new in continueList(from: old, to: new) }
         }
         .interactiveDismissDisabled(!trimmedText.isEmpty && isNew)
+    }
+
+    private func continueList(from old: String, to new: String) {
+        var cursor: String.Index?
+        if let selection, case let .selection(range) = selection.indices, range.isEmpty { cursor = range.upperBound }
+        guard let continued = MarkdownFormatter.continueList(from: old, to: new, cursor: cursor) else { return }
+        text = continued.text
+        selection = TextSelection(insertionPoint: continued.cursor)
     }
 
     private func load() {
@@ -187,57 +196,59 @@ struct EditorView: View {
     }
 }
 
-/// Keyboard toolbar that inserts Markdown at the end of the text.
-/// (Selection-aware formatting comes with the Milestone 3 editor work.)
+/// Keyboard toolbar that formats Markdown at the cursor or selection.
 struct FormatBar: View {
     @Binding var text: String
     @Binding var selection: TextSelection?
 
     var body: some View {
-        HStack(spacing: 0) {
-            button("Heading", systemImage: "number.square") { appendLine("# ") }
-            button("Bold", systemImage: "bold") { append("**bold**") }
-            button("Italic", systemImage: "italic") { append("_italic_") }
-            button("List", systemImage: "list.bullet") { appendLine("- ") }
-            button("Task", systemImage: "checklist") { appendLine("- [ ] ") }
-            button("Code", systemImage: "chevron.left.forwardslash.chevron.right") { append("`code`") }
-            button("Tag", systemImage: "tag") { insertHash() }
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                button("Heading", systemImage: "number.square") { apply(.heading) }
+                button("Bold", systemImage: "bold") { apply(.bold) }
+                button("Italic", systemImage: "italic") { apply(.italic) }
+                button("List", systemImage: "list.bullet") { apply(.bullet) }
+                button("Task", systemImage: "checklist") { apply(.task) }
+                button("Code", systemImage: "chevron.left.forwardslash.chevron.right") { apply(.code) }
+                button("Tag", systemImage: "tag") { insertHash() }
+            }
+            .padding(.horizontal, 12)
         }
+        .scrollBounceBehavior(.basedOnSize)
     }
 
     private func button(_ label: String, systemImage: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: systemImage)
-                .frame(maxWidth: .infinity, minHeight: 44)
+                .frame(minWidth: 44, minHeight: 44)
         }
         .accessibilityLabel(label)
     }
 
+    /// The selected range, or an insertion point at the end of the text if there is no selection.
+    private var currentRange: Range<String.Index> {
+        if let selection, case let .selection(range) = selection.indices { return range }
+        return text.endIndex..<text.endIndex
+    }
+
+    private func apply(_ style: MarkdownFormatter.Inline) {
+        commit(MarkdownFormatter.toggle(style, in: text, selection: currentRange))
+    }
+
+    private func apply(_ prefix: MarkdownFormatter.LinePrefix) {
+        commit(MarkdownFormatter.toggle(prefix, in: text, selection: currentRange))
+    }
+
+    private func commit(_ edit: MarkdownFormatter.Edit) {
+        text = edit.text
+        selection = TextSelection(range: edit.selection)
+    }
+
     /// Inserts `#` at the cursor (end of text if there is none) so suggestions appear right away.
     private func insertHash() {
-        var cursor = text.endIndex
-        if let selection, case let .selection(range) = selection.indices {
-            cursor = range.upperBound
-        }
-        let inserted = TagSuggester.insertHash(in: text, at: cursor)
+        let inserted = TagSuggester.insertHash(in: text, at: currentRange.upperBound)
         text = inserted.text
         selection = TextSelection(insertionPoint: inserted.cursor)
-    }
-
-    /// Appends inline, adding a space if the text doesn't already end in whitespace.
-    private func append(_ snippet: String) {
-        if let last = text.last, !last.isWhitespace {
-            text += " "
-        }
-        text += snippet
-    }
-
-    /// Appends on a new line.
-    private func appendLine(_ prefix: String) {
-        if !text.isEmpty && !text.hasSuffix("\n") {
-            text += "\n"
-        }
-        text += prefix
     }
 }
 
