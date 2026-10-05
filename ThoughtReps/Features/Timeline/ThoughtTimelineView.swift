@@ -170,15 +170,23 @@ struct ThoughtTimelineView: View {
                 .accessibilityLabel("Settings")
             }
         } else {
-            ToolbarItem(placement: .topBarTrailing) {
-                Picker("Show", selection: $showAll) {
-                    Text("Due").tag(false)
-                    Text("All").tag(true)
-                }
-                .pickerStyle(.segmented)
-                .frame(width: 120)
+            if #available(iOS 26, *) {
+                ToolbarItem(placement: .topBarTrailing) { showPicker }
+                    .sharedBackgroundVisibility(.hidden)
+            } else {
+                ToolbarItem(placement: .topBarTrailing) { showPicker }
             }
         }
+    }
+
+    // The segmented control draws its own glass on iOS 26+, so the toolbar's shared background is hidden there.
+    private var showPicker: some View {
+        Picker("Show", selection: $showAll) {
+            Text("Due").tag(false)
+            Text("All").tag(true)
+        }
+        .pickerStyle(.segmented)
+        .frame(width: 120)
     }
 
     @ViewBuilder
