@@ -23,7 +23,8 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
     ) async {
         let identifier = response.notification.request.identifier
         await MainActor.run {
-            guard identifier.hasPrefix(NotificationScheduler.identifierPrefix) else { return }
+            guard identifier.hasPrefix(NotificationScheduler.identifierPrefix)
+                || identifier.hasPrefix(NotificationScheduler.testIdentifierPrefix) else { return }
             AppNavigation.shared.openTimelineFromReminder()
         }
     }

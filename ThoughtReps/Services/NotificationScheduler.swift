@@ -7,6 +7,8 @@ import UserNotifications
 @MainActor
 enum NotificationScheduler {
     static let identifierPrefix = "thoughtreps.reminder."
+    /// Test reminders use their own prefix so a reschedule (e.g. on backgrounding) doesn't remove them.
+    static let testIdentifierPrefix = "thoughtreps.test-reminder."
 
     static func authorizationStatus() async -> UNAuthorizationStatus {
         await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
@@ -41,6 +43,29 @@ enum NotificationScheduler {
         }
         inFlight = task
         await task.value
+    }
+
+    /// Sends a reminder as it would read right now, after `delay` seconds, so it can be seen on
+    /// the Lock Screen too. Asks for permission first if needed; returns whether it was scheduled.
+    static func sendTestReminder(context: ModelContext, now: Date, delay: TimeInterval = 5) async -> Bool {
+        guard await requestAuthorization() else { return false }
+        let count = (try? context.fetchCount(FetchDescriptor<Thought>(predicate: ReminderPlanner.countedPredicate(dueBy: now)))) ?? 0
+        let content = UNMutableNotificationContent()
+        content.title = "Thought Reps"
+        content.body = ReminderPlanner.message(count: count)
+        content.sound = .default
+        let request = UNNotificationRequest(
+            identifier: testIdentifierPrefix + UUID().uuidString,
+            content: content,
+            trigger: UNTimeIntervalNotificationTrigger(timeInterval: delay, repeats: false)
+        )
+        do {
+            try await UNUserNotificationCenter.current().add(request)
+            return true
+        } catch {
+            logger.error("Couldn't schedule test reminder: \(error.localizedDescription)")
+            return false
+        }
     }
 
     /// Removes stale reminders before adding the planned ones, so pending never exceeds the plan.

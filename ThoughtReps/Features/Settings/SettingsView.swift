@@ -11,6 +11,7 @@ struct SettingsView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var notificationStatus: UNAuthorizationStatus = .notDetermined
     @State private var confirmWipe = false
+    @State private var testReminderSent: Bool?
 
     private var reminderTime: Binding<Date> {
         Binding(
@@ -68,6 +69,12 @@ struct SettingsView: View {
                     Button("Add sample thoughts") {
                         SampleData.insert(into: context, now: .now)
                     }
+                    Button("Send test reminder in 5 seconds") {
+                        Task {
+                            testReminderSent = await NotificationScheduler.sendTestReminder(context: context, now: .now)
+                            notificationStatus = await NotificationScheduler.authorizationStatus()
+                        }
+                    }
                     Button("Delete all thoughts", role: .destructive) {
                         confirmWipe = true
                     }
@@ -101,6 +108,16 @@ struct SettingsView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
                 }
+            }
+            .alert(
+                testReminderSent == true ? "Test reminder scheduled" : "Couldn't send a test reminder",
+                isPresented: Binding(get: { testReminderSent != nil }, set: { if !$0 { testReminderSent = nil } })
+            ) {
+                Button("OK") {}
+            } message: {
+                Text(testReminderSent == true
+                    ? "It arrives in 5 seconds. Lock your phone to see it on the Lock Screen."
+                    : "Notifications are off for Thought Reps. Turn them on in iOS Settings.")
             }
             .confirmationDialog("Delete every thought and tag?", isPresented: $confirmWipe, titleVisibility: .visible) {
                 Button("Delete all", role: .destructive) {
