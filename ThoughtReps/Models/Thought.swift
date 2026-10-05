@@ -60,6 +60,10 @@ extension Thought {
         (tags ?? []).sorted { $0.name < $1.name }
     }
 
+    var isUntagged: Bool {
+        (tags ?? []).isEmpty
+    }
+
     var sortedBlocks: [Block] {
         (blocks ?? []).sorted { $0.order < $1.order }
     }

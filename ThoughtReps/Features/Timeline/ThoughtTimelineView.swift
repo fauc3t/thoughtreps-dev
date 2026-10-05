@@ -1,10 +1,16 @@
 import SwiftUI
 import SwiftData
 
-/// The main timeline (pinned + due thoughts). Pass a `tag` to get that tag's timeline,
-/// which adds a Due / All toggle.
+enum TimelineScope {
+    case all
+    case tag(Tag)
+    case untagged
+}
+
+/// The main timeline (pinned + due thoughts). Pass a `scope` to get a tag's or the untagged
+/// timeline, which adds a Due / All toggle.
 struct ThoughtTimelineView: View {
-    var tag: Tag? = nil
+    var scope: TimelineScope = .all
 
     @Environment(\.modelContext) private var context
     @Environment(\.scenePhase) private var scenePhase
@@ -25,11 +31,35 @@ struct ThoughtTimelineView: View {
     }
 
     private var scoped: [Thought] {
-        guard let tag else { return active }
-        let id = tag.persistentModelID
-        return active.filter { thought in
-            (thought.tags ?? []).contains { $0.persistentModelID == id }
+        switch scope {
+        case .all:
+            return active
+        case .tag(let tag):
+            let id = tag.persistentModelID
+            return active.filter { thought in
+                (thought.tags ?? []).contains { $0.persistentModelID == id }
+            }
+        case .untagged:
+            return active.filter(\.isUntagged)
         }
+    }
+
+    private var isScoped: Bool {
+        if case .all = scope { return false }
+        return true
+    }
+
+    private var title: String {
+        switch scope {
+        case .all: "Timeline"
+        case .tag(let tag): "#\(tag.displayName)"
+        case .untagged: "Untagged"
+        }
+    }
+
+    private var tag: Tag? {
+        if case .tag(let tag) = scope { return tag }
+        return nil
     }
 
     private var pinned: [Thought] {
@@ -68,7 +98,7 @@ struct ThoughtTimelineView: View {
                 emptyState
             }
         }
-        .navigationTitle(tag.map { "#\($0.displayName)" } ?? "Timeline")
+        .navigationTitle(title)
         .toolbar { toolbarContent }
         .refreshable { @MainActor in snapshot = .now }
         .onAppear {
@@ -110,18 +140,27 @@ struct ThoughtTimelineView: View {
                 Label("Archive", systemImage: "archivebox")
             }
             .tint(.gray)
-            Button {
-                store.snooze(thought, days: 1, now: .now)
-            } label: {
-                Label("Tomorrow", systemImage: "moon.zzz")
+            if thought.isPinned {
+                Button {
+                    store.setPinned(thought, false)
+                } label: {
+                    Label("Unpin", systemImage: "pin.slash")
+                }
+                .tint(.accentColor)
+            } else {
+                Button {
+                    store.snooze(thought, days: 1, now: .now)
+                } label: {
+                    Label("Tomorrow", systemImage: "moon.zzz")
+                }
+                .tint(.orange)
             }
-            .tint(.orange)
         }
     }
 
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
-        if tag == nil {
+        if !isScoped {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
                     showSettings = true
@@ -148,10 +187,13 @@ struct ThoughtTimelineView: View {
             ContentUnavailableView {
                 Label("No thoughts yet", systemImage: "lightbulb")
             } description: {
-                if let tag {
-                    Text("Thoughts tagged #\(tag.displayName) show up here.")
-                } else {
+                switch scope {
+                case .all:
                     Text("Tap + to capture your first thought.")
+                case .tag(let tag):
+                    Text("Thoughts tagged #\(tag.displayName) show up here.")
+                case .untagged:
+                    Text("Thoughts without a tag show up here.")
                 }
             }
         } else {

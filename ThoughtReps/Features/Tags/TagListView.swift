@@ -1,9 +1,12 @@
 import SwiftUI
 import SwiftData
 
-/// Every tag in use, with how many of its thoughts are due.
+/// Every tag in use, with how many of its thoughts are due, plus an Untagged row for
+/// thoughts that have no tag.
 struct TagListView: View {
     @Query(sort: \Tag.name) private var tags: [Tag]
+    @Query(filter: #Predicate<Thought> { $0.isArchived == false })
+    private var activeThoughts: [Thought]
     @State private var filter = ""
     @State private var now = Date.now
 
@@ -14,14 +17,27 @@ struct TagListView: View {
         }
     }
 
+    private var untagged: [Thought] {
+        filter.isEmpty ? activeThoughts.filter(\.isUntagged) : []
+    }
+
     var body: some View {
-        List(visible) { tag in
-            NavigationLink(value: tag) {
-                TagRow(tag: tag, now: now)
+        List {
+            ForEach(visible) { tag in
+                NavigationLink(value: tag) {
+                    TagRow(tag: tag, now: now)
+                }
+            }
+            if !untagged.isEmpty {
+                Section {
+                    NavigationLink(value: UntaggedRoute()) {
+                        UntaggedRow(thoughts: untagged, now: now)
+                    }
+                }
             }
         }
         .overlay {
-            if visible.isEmpty {
+            if visible.isEmpty && untagged.isEmpty {
                 if filter.isEmpty {
                     ContentUnavailableView(
                         "No tags yet",
@@ -67,7 +83,50 @@ struct TagRow: View {
                 .foregroundStyle(.secondary)
         }
         .padding(.vertical, 6)
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(
+            RowAccessibility.label(title: "#\(tag.displayName)", due: due, count: tag.activeThoughts.count)
+        )
+    }
+}
+
+private enum RowAccessibility {
+    static func label(title: String, due: Int, count: Int) -> String {
+        let noun = count == 1 ? "thought" : "thoughts"
+        let dueText = due > 0 ? ", \(due) due" : ""
+        return "\(title)\(dueText), \(count) \(noun)"
+    }
+}
+
+struct UntaggedRow: View {
+    let thoughts: [Thought]
+    let now: Date
+
+    var body: some View {
+        let due = thoughts.filter { Scheduler.isDue(nextDueAt: $0.nextDueAt, now: now) }.count
+        HStack(spacing: 12) {
+            Circle()
+                .fill(.secondary)
+                .frame(width: 10, height: 10)
+            Text("Untagged")
+                .font(.body.weight(.medium))
+            Spacer()
+            if due > 0 {
+                Text("\(due) due")
+                    .font(.caption.weight(.semibold))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 2)
+                    .background(Capsule().fill(Color.orange.opacity(0.15)))
+                    .foregroundStyle(.orange)
+            }
+            Text("\(thoughts.count)")
+                .font(.subheadline)
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 6)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(RowAccessibility.label(title: "Untagged", due: due, count: thoughts.count))
     }
 }
 
@@ -76,9 +135,12 @@ struct TagTimelineView: View {
     let tag: Tag
 
     var body: some View {
-        ThoughtTimelineView(tag: tag)
+        ThoughtTimelineView(scope: .tag(tag))
     }
 }
+
+/// Route value for the untagged timeline.
+struct UntaggedRoute: Hashable {}
 
 #Preview {
     NavigationStack {

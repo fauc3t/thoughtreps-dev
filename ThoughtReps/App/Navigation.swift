@@ -10,5 +10,8 @@ extension View {
             .navigationDestination(for: Tag.self) { tag in
                 TagTimelineView(tag: tag)
             }
+            .navigationDestination(for: UntaggedRoute.self) { _ in
+                ThoughtTimelineView(scope: .untagged)
+            }
     }
 }
