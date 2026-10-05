@@ -42,7 +42,7 @@ Intervals:
 
 - Global default: 7 days, editable in Settings.
 - Per-thought override: any thought can carry its own interval (for example 1 day for something being memorized).
-- Optional later: growing intervals, where each view multiplies the interval (spaced repetition). Stored as an `intervalMode` so it can be added without a migration.
+- Growing intervals (v1 release, with Study mode): each **Got it** doubles the interval, capped at 365 days, and **Again** resets it. Stored as an `intervalMode` so it can be added without a migration.
 
 Tags:
 

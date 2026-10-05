@@ -25,6 +25,6 @@ Swift, SwiftUI, SwiftData, iOS 18+, Swift Testing. One third-party dependency: M
 
 ## Product decisions
 
-- **Opening a thought requeues it (for now).** `ThoughtDetailView` calls `ThoughtStore.markViewed` on appear. The user is trying this UX before deciding whether to switch to an explicit Requeue button on the full-screen thought page, so don't change it without asking.
+- **Opening a thought requeues it (until Study mode ships).** `ThoughtDetailView` calls `ThoughtStore.markViewed` on appear. Study mode (v1 release, see the spec) replaces this for thoughts opened from the due list with **Again** / **Got it**; thoughts opened elsewhere (pinned, tag "All", search) keep the plain view. Don't change the current behavior outside that work without asking.
 - **v1 blocks are blurred text only** (`BlockKind.blurred`).
-- **No legacy data import.** Export/import is only for the app's own format.
+- **No legacy data import for now.** Export/import is only for the app's own format. Importing the original Thought Reps data is still an open question in the spec; don't build it until that's answered.
