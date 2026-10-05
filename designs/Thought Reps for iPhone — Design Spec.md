@@ -233,6 +233,17 @@ All three are local-first: notifications are scheduled on-device, backup is a fi
 - Import reads the same format and merges by `id`, keeping the newer `updatedAt`.
 - Optional Markdown export: one `.md` file per thought with front matter (tags, dates, pinned) for use in other apps.
 
+**One-time share link (fast follow)**
+
+An optional way to get an export onto any device, such as a computer with no AirDrop or iCloud Drive. It is the app's only server piece, and it only ever holds an encrypted file for a short time.
+
+- **Share as link** next to Export uploads the same `.zip` to S3 and shows a link to copy or send, for example `https://get.thoughtreps.app/x/<id>#<key>`.
+- The zip is encrypted on the device before upload. The key is only in the link's `#` fragment, which browsers never send to the server, so the server and S3 only ever see ciphertext. Opening the link loads a small page that downloads the file, decrypts it in the browser and saves the `.zip`.
+- **One use:** the first download deletes the object. A small API (for example a Lambda) issues a short-lived presigned URL once, marks the link used and deletes the object, so a second visit gets "This link has already been used."
+- **Expires after 24 hours** if nobody uses it. A scheduled cleanup deletes anything older than 24h, with an S3 lifecycle rule as a backstop, because lifecycle rules alone run once a day and can leave a file for up to about 48h.
+- No account and no sign-in. Uploads are capped in size and rate-limited per device. The app shows the expiry time, and the link can be revoked from the app before it's used.
+- **One open link per device.** The server keys links by an anonymous install ID (`identifierForVendor`, checked with App Attest so it can't be faked from a script). Making a new link deletes the previous one if it's still unused, and Settings shows the open link with its expiry. Reinstalling the app gets a new ID, which is acceptable because the 24h expiry still applies.
+
 **iCloud sync (later)**
 
 - SwiftData's CloudKit integration, enabled by adding the iCloud capability and a container.
@@ -262,7 +273,7 @@ The build runs in four stages.
     - Study mode: Again / Got it, growing intervals, blurred blocks as answers.
     - Send feedback / request a feature.
     - App Store prep: paid Apple Developer Program ($99/yr), app icon, privacy label, screenshots, TestFlight beta.
-3. **Fast follow — driven by user requests.** Quick capture from anywhere: share extension, Lock Screen and Control Center button, Shortcuts/Siri "Add thought", home-screen widget.
+3. **Fast follow — driven by user requests.** Quick capture from anywhere: share extension, Lock Screen and Control Center button, Shortcuts/Siri "Add thought", home-screen widget. One-time share link for exports (encrypted, single download, expires after 24h).
 4. **Later.** iCloud sync, more block types, Face ID lock, themes and app icons.
 
 Open questions:
@@ -270,5 +281,6 @@ Open questions:
 - [ ] Do you have the original Thought Reps code or data to import? If so, which format?
 - [ ] Pricing: free core app plus a one-time Pro unlock (about $9.99), with a subscription only once sync ships? Which features are Pro? (Keep export/backup free.)
 - [ ] Support email address for the feedback sheet.
+- [ ] One-time share link: domain for the download page, AWS account and region, maximum upload size, and how the privacy label and policy describe the temporary upload.
 - [ ] Should viewing re-queue immediately on open, or only after a short dwell (e.g. 3 seconds) to avoid accidental views?
 - [ ] Any block types from the original app beyond blurred text that v1 should include?
