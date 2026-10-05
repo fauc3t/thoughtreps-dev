@@ -7,6 +7,10 @@
     "./mail/inbox": {
       "types": "./lib/mail/inbox.ts",
       "default": "./lib/mail/inbox.ts"
+    },
+    "./export-link/schemas": {
+      "types": "./lib/export-link/schemas.ts",
+      "default": "./lib/export-link/schemas.ts"
     }
   },
   "scripts": {
@@ -17,11 +21,15 @@
     "cdk": "cdk"
   },
   "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.1125.0",
     "@aws-sdk/client-s3": "^3.1125.0",
     "@aws-sdk/client-ses": "^3.1125.0",
+    "@aws-sdk/lib-dynamodb": "^3.1125.0",
+    "@aws-sdk/s3-request-presigner": "^3.1125.0",
     "aws-cdk-lib": "^2.265.0",
     "constructs": "^10.5.0",
-    "postal-mime": "^3.0.0"
+    "postal-mime": "^3.0.0",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@swc/core": "^1.15.0",

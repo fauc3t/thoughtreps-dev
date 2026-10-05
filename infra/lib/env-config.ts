@@ -20,6 +20,11 @@ export interface EnvConfig {
   // separate ~/dev/simple-mail repo, so tearing that stack down removes
   // our rules too.
   sharedReceiptRuleSetName: string;
+  // Hostname label for the export-link site + API, e.g. 'transfer' ->
+  // transfer.<domainName>. See export-link/share-stack.ts.
+  exportLinkSubdomain: string;
+  // TeamID.bundleId. The App Attest rpIdHash is SHA-256 of this string.
+  appAttestAppId: string;
 }
 
 const ENV_CONFIGS: Record<EnvName, EnvConfig> = {
@@ -35,6 +40,8 @@ const ENV_CONFIGS: Record<EnvName, EnvConfig> = {
     // needs no extra identity.
     forwardTo: { 'hello@thoughtreps.com': 'me@nickhorn.com' },
     sharedReceiptRuleSetName: 'simple-mail-prod',
+    exportLinkSubdomain: 'transfer',
+    appAttestAppId: '835DH8RD35.com.thoughtreps.app',
   },
 };
 

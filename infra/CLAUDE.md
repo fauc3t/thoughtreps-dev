@@ -1,6 +1,6 @@
 # infra/
 
-CDK app (`bin/thoughtreps.ts`, wired through `lib/app-stage.ts`) for the landing site and mail at thoughtreps.com, plus `mail-web/` (inbox UI, Vite + React). Mail is a replica of the separate `~/dev/simple-mail` project. Account, stack status and outputs live in `../INTEGRATIONS.md`; update it after every deploy. Deploy steps are in `../DEVELOPMENT.md`.
+CDK app (`bin/thoughtreps.ts`, wired through `lib/app-stage.ts`) for the landing site, mail and the one-time export link (`ThoughtReps-prod-Share`, `lib/export-link/`, `lambda/export-link/`) at thoughtreps.com, plus `mail-web/` (inbox UI, Vite + React). Mail is a replica of the separate `~/dev/simple-mail` project. Account, stack status and outputs live in `../INTEGRATIONS.md`; update it after every deploy. Deploy steps are in `../DEVELOPMENT.md`.
 
 ## Shared-account rules
 
@@ -26,6 +26,20 @@ The AWS account (`041459489812`) is shared with strands prod.
 - **CfnOutputs live on `MailStack` / `LandingStack` themselves**, and `../scripts/deploy-*.sh` read the exact keys (`MailWebBucketName`, `UserPoolId`, ...). Don't rename or move them without updating the scripts.
 - Adding a mailbox: edit `mailboxAddresses`/`forwardTo` in `lib/env-config.ts`, redeploy Mail, rerun `deploy-mail-web.sh`.
 - Flat Identity Pool role with read access to the whole mail bucket is deliberate (single tenant).
+
+## Export link constraints
+
+The device encrypts its export and uploads ciphertext; the key lives only in the link's `#` fragment. Not deployed yet; test a real-device attestation on first deploy.
+
+- **The export bucket is unversioned on purpose** (unlike the mail bucket): deletes must really remove the ciphertext. The 2-day lifecycle is only a backstop; link expiry is 24h from `complete`, enforced by `claim` and the 15-minute `SweepFn`.
+- **IAM is scoped to `exports/*` with no `s3:ListBucket`**, so HEAD on a missing object returns 403; treat that as "not uploaded".
+- **Revoked/expired links stay in the sparse `openIndex` until their object is actually deleted.** `complete` is idempotent for an owned, unexpired ready link.
+- **The public status endpoint must have no side effects**, so link-preview bots can't burn a link. Only `claim` (ready -> used, atomic) hands out the 5-minute presigned GET; `done` deletes the object.
+- **Devices are identified by App Attest keyId**, not `identifierForVendor`. Only production attestation is accepted (App ID `appAttestAppId` in `env-config.ts`). The iOS app needs the App Attest capability and `appattest-environment` = `production` for all builds.
+- **Hash contracts the iOS client must match:** attestation `clientDataHash` = SHA256 of the UTF-8 bytes of the base64url challenge string; signed requests are an assertion over SHA256(raw body bytes) plus a single-use challenge.
+- **`cbor.ts` is a hand-written bounded decoder** because cbor-x's native build script is blocked by pnpm 11. `Deps.attestationRootPem` is a test-only seam; the Apple root is pinned in `apple-root.ts`.
+- Limits: 100 MB, 10 creates/day/device, one open link per install (a new one revokes the previous). Status codes: 400 bad_request, 401 auth, 404 not_found, 409 upload_mismatch, 410 used/expired/revoked, 413 too_large, 429 rate_limited.
+- Request/response schemas are in `lib/export-link/schemas.ts`, exported as `./export-link/schemas` for the download page; the iOS client mirrors these shapes in Swift, so keep them in sync.
 
 ## Deliverability
 

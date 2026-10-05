@@ -2,6 +2,7 @@ import * as cdk from 'aws-cdk-lib/core';
 import { Construct } from 'constructs';
 import { DnsStack } from './dns-stack.js';
 import { LandingStack } from './landing-stack.js';
+import { ShareStack } from './export-link/share-stack.js';
 import { MailStack } from './mail/mail-stack.js';
 import type { EnvConfig } from './env-config.js';
 
@@ -9,14 +10,15 @@ export interface AppStageProps extends cdk.StageProps {
   config: EnvConfig;
 }
 
-// DnsStack -> LandingStack and MailStack: both take the hosted zone from
-// DnsStack and have no dependency on each other. Every stackName is
+// DnsStack -> LandingStack, MailStack and ShareStack: each takes the hosted
+// zone from DnsStack and has no dependency on the others. Every stackName is
 // prefixed `ThoughtReps-<env>-` because the AWS account is shared with
 // other apps' stacks.
 export class AppStage extends cdk.Stage {
   public readonly dns: DnsStack;
   public readonly landing: LandingStack;
   public readonly mail: MailStack;
+  public readonly share: ShareStack;
 
   constructor(scope: Construct, id: string, props: AppStageProps) {
     const {
@@ -28,6 +30,8 @@ export class AppStage extends cdk.Stage {
       alertEmail,
       forwardTo,
       sharedReceiptRuleSetName,
+      exportLinkSubdomain,
+      appAttestAppId,
     } = props.config;
     const env = { account, region };
     super(scope, id, { ...props, env });
@@ -60,6 +64,16 @@ export class AppStage extends cdk.Stage {
       forwardTo,
       sharedReceiptRuleSetName,
       stackName: stackId('Mail'),
+      tags,
+    });
+
+    this.share = new ShareStack(this, 'ShareStack', {
+      env,
+      zone: this.dns.zone,
+      domainName,
+      exportLinkSubdomain,
+      appAttestAppId,
+      stackName: stackId('Share'),
       tags,
     });
   }

@@ -10,11 +10,12 @@ describe('AppStage', () => {
     .findAll()
     .filter((node): node is cdk.Stack => cdk.Stack.isStack(node));
 
-  it('wires exactly the Dns, Landing and Mail stacks', () => {
+  it('wires exactly the Dns, Landing, Mail and Share stacks', () => {
     expect(stacks.map((stack) => stack.stackName).sort()).toEqual([
       'ThoughtReps-prod-Dns',
       'ThoughtReps-prod-Landing',
       'ThoughtReps-prod-Mail',
+      'ThoughtReps-prod-Share',
     ]);
   });
 
