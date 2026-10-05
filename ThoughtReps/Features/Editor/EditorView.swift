@@ -22,6 +22,7 @@ struct EditorView: View {
     @State private var intervalDays: Int? = nil
     @State private var isPickingInterval = false
     @State private var hasLoaded = false
+    @State private var saveErrors = SaveErrorCenter()
     @FocusState private var isBodyFocused: Bool
 
     private var isNew: Bool {
@@ -120,6 +121,7 @@ struct EditorView: View {
                     }
                 }
             }
+            .saveErrorAlert(saveErrors)
             .navigationTitle(isNew ? "New thought" : "Edit thought")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -184,15 +186,22 @@ struct EditorView: View {
         }
     }
 
+    /// Dismisses only if the save succeeded, so a failed save keeps the draft on screen.
+    /// Uses its own error center because an alert on the root view doesn't show over this sheet.
     private func save() {
-        let store = ThoughtStore(context: context, defaultIntervalDays: defaultIntervalDays)
+        let store = ThoughtStore(context: context, defaultIntervalDays: defaultIntervalDays, saveErrors: saveErrors)
+        let saved: Bool
         switch mode {
         case .new:
-            store.create(body: trimmedText, blocks: drafts, intervalDays: intervalDays, now: .now)
+            let thought = store.create(body: trimmedText, blocks: drafts, intervalDays: intervalDays, now: .now)
+            saved = thought.modelContext != nil
         case let .edit(thought):
-            store.update(thought, body: trimmedText, blocks: drafts, intervalDays: intervalDays, now: .now)
+            saveErrors.note = "Some changes may have been saved. Tap Save to finish."
+            saved = store.update(thought, body: trimmedText, blocks: drafts, intervalDays: intervalDays, now: .now)
         }
-        dismiss()
+        if saved {
+            dismiss()
+        }
     }
 }
 

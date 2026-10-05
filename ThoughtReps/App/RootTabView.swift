@@ -5,6 +5,7 @@ struct RootTabView: View {
     @Environment(\.modelContext) private var context
     @State private var captureContext = CaptureContext()
     @State private var isCapturing = false
+    @State private var saveErrors = SaveErrorCenter.shared
     @State private var prefillTag: String?
 
     var body: some View {
@@ -39,10 +40,12 @@ struct RootTabView: View {
         .sheet(isPresented: $isCapturing) {
             EditorView(mode: .new(prefillTag: prefillTag))
         }
+        .saveErrorAlert(saveErrors)
         .task {
             ThoughtStore(context: context).pruneOrphanTags()
             #if DEBUG
             SampleData.seedIfNeeded(context: context)
+            IntegrityChecker.logViolations(in: context)
             #endif
         }
     }

@@ -101,6 +101,7 @@ enum SampleData {
                 intervalDays: sample.interval,
                 now: created
             )
+            guard thought.modelContext != nil else { return }
             let nextDueAt = Scheduler.adding(days: sample.dueInDays, to: now, calendar: calendar)
                 .addingTimeInterval(sample.dueInDays == 0 ? -3600 : 0) // "due today" = an hour ago
             let lastViewedAt = sample.views > 0

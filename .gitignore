@@ -69,3 +69,6 @@ ThoughtReps.xcodeproj/
 
 # Personal signing settings (copy Config/Local.xcconfig.example)
 Config/Local.xcconfig
+
+# Agent worktrees
+.claude/worktrees/

@@ -28,6 +28,8 @@ xcodegen && open ThoughtReps.xcodeproj
 
 Debug builds seed sample thoughts on first launch. Settings > Developer can add more or delete everything.
 
+Debug builds also run `IntegrityChecker` over the whole store at launch and log any violations via `os.Logger` (subsystem `com.thoughtreps`). It never repairs or crashes, so a logged violation means a bug in a store write; fix the write rather than the data.
+
 ## Running on an iPhone
 
 1. Connect the phone and turn on Developer Mode (Settings > Privacy & Security).

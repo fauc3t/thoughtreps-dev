@@ -3,10 +3,31 @@ import SwiftData
 
 @main
 struct ThoughtRepsApp: App {
+    private static let container = Result { try ModelContainer.thoughtReps() }
+
     var body: some Scene {
         WindowGroup {
-            RootTabView()
+            switch Self.container {
+            case .success(let container):
+                RootTabView()
+                    .modelContainer(container)
+            case .failure(let error):
+                StoreUnavailableView(error: error)
+            }
         }
-        .modelContainer(for: [Thought.self, Tag.self, Block.self, ImageAsset.self])
+    }
+}
+
+/// Shown instead of the app when the store can't be opened. Falling back to an empty store
+/// would look like data loss and let new writes diverge from what is on disk.
+private struct StoreUnavailableView: View {
+    let error: Error
+
+    var body: some View {
+        ContentUnavailableView(
+            "Couldn't open your thoughts",
+            systemImage: "exclamationmark.triangle",
+            description: Text("Your data hasn't been changed. Restart the app, and if this keeps happening, update to the latest version.\n\n\(error.localizedDescription)")
+        )
     }
 }

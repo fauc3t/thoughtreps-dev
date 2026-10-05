@@ -48,11 +48,11 @@ ThoughtReps/
   App/          App entry, tab bar, navigation destinations
   Models/       SwiftData models: Thought, Tag, Block, ImageAsset
   Scheduler/    Resurfacing rules as pure, unit-tested functions
-  Stores/       ThoughtStore (all writes), AppSettings
+  Stores/       ThoughtStore (all writes), IntegrityChecker, SaveErrorCenter, AppSettings
   Services/     TagParser
   Features/     Timeline, Thought, Editor, Blocks, Tags, Archive, Settings
   Resources/    Assets, sample data
-ThoughtRepsTests/  Scheduler, TagParser and MarkdownFormatter tests (Swift Testing)
+ThoughtRepsTests/  Scheduler, TagParser, MarkdownFormatter, store, integrity and persistence tests (Swift Testing)
 Config/            Shared xcconfig; your Local.xcconfig (gitignored)
 project.yml        XcodeGen spec
 landing/           Static HTML landing-page design prototypes (not part of the app)
