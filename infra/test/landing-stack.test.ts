@@ -90,6 +90,64 @@ describe('LandingStack', () => {
     });
   });
 
+  describe('viewer-request function behavior', () => {
+    const [fn] = Object.values(
+      template.findResources('AWS::CloudFront::Function'),
+    );
+    const code = (fn.Properties as { FunctionCode: string }).FunctionCode;
+    type Req = {
+      uri: string;
+      headers: Record<string, { value: string }>;
+      querystring: Record<
+        string,
+        { value?: string; multiValue?: { value: string }[] }
+      >;
+    };
+    const handler = new Function(`${code}; return handler;`)() as (event: {
+      request: Req;
+    }) => Req & {
+      statusCode?: number;
+      headers: Record<string, { value: string }>;
+    };
+    const run = (
+      uri: string,
+      host = 'example.test',
+      querystring: Req['querystring'] = {},
+    ) =>
+      handler({
+        request: { uri, headers: { host: { value: host } }, querystring },
+      });
+
+    it.each([
+      ['/', '/index.html'],
+      ['/help', '/help/index.html'],
+      ['/help/', '/help/index.html'],
+      ['/help/backup-and-restore', '/help/backup-and-restore/index.html'],
+      ['/help/backup-and-restore/', '/help/backup-and-restore/index.html'],
+      ['/assets/x.js', '/assets/x.js'],
+      ['/favicon.svg', '/favicon.svg'],
+      ['/sitemap.xml', '/sitemap.xml'],
+      ['/404.html', '/404.html'],
+      ['/help/index.html', '/help/index.html'],
+      ['/help/v1.2/guide', '/help/v1.2/guide/index.html'],
+      ['/help/v1.2', '/help/v1.2'],
+    ])('rewrites apex %s to %s', (uri, expected) => {
+      expect(run(uri).uri).toBe(expected);
+    });
+
+    it('301s www to the apex first, preserving path and query without rewriting the path', () => {
+      const res = run('/help', 'www.example.test', { a: { value: '1' } });
+      expect(res.statusCode).toBe(301);
+      expect(res.headers.location.value).toBe('https://example.test/help?a=1');
+    });
+
+    it('301s www/help/ to the apex without appending index.html', () => {
+      const res = run('/help/', 'www.example.test');
+      expect(res.statusCode).toBe(301);
+      expect(res.headers.location.value).toBe('https://example.test/help/');
+    });
+  });
+
   it('maps 403 and 404 to /404.html with a real 404 status (static site, not an SPA)', () => {
     template.hasResourceProperties('AWS::CloudFront::Distribution', {
       DistributionConfig: Match.objectLike({

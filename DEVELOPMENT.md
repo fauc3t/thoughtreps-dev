@@ -60,7 +60,7 @@ pnpm test && pnpm typecheck && pnpm lint && pnpm format:check   # repo root
 cd infra && npx cdk synth -c env=prod
 ```
 
-Local dev: `pnpm --filter @thoughtreps/site-landing dev` (likewise `@thoughtreps/transfer-web`; it needs no env, but a real link needs a deployed Share stack and a device-made export). For the mail UI, copy `infra/mail-web/.env.example` to `.env.local` and fill in the `VITE_*` values from the Mail stack outputs.
+Local dev: `pnpm --filter @thoughtreps/site-landing dev` (likewise `@thoughtreps/transfer-web`; `/help` only exists in the built output, since dev has no client router: preview with `pnpm --filter @thoughtreps/site-landing build` and a static server on `dist/`; it needs no env, but a real link needs a deployed Share stack and a device-made export). For the mail UI, copy `infra/mail-web/.env.example` to `.env.local` and fill in the `VITE_*` values from the Mail stack outputs.
 
 ### Deploying (manual, no CI)
 

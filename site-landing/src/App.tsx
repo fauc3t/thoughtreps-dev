@@ -1,3 +1,4 @@
+import { HelpArticleView, HelpIndex, HelpShell } from './components/Help';
 import { Hero, Nav } from './components/Hero';
 import {
   Features,
@@ -7,6 +8,23 @@ import {
   Privacy,
 } from './components/Sections';
 import { Sprites } from './components/shared';
+import type { HelpArticle } from './content/help';
+
+export function HelpIndexPage() {
+  return (
+    <HelpShell>
+      <HelpIndex />
+    </HelpShell>
+  );
+}
+
+export function HelpArticlePage({ article }: { article: HelpArticle }) {
+  return (
+    <HelpShell>
+      <HelpArticleView article={article} />
+    </HelpShell>
+  );
+}
 
 export function LandingPage() {
   return (

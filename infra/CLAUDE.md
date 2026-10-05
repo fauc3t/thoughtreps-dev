@@ -23,6 +23,7 @@ The AWS account (`041459489812`) is shared with strands prod.
 - **Identity Pool federation uses the ID token**, not the access token (`mail-web/src/lib/credentials.ts`). Reads go browser -> S3 with federated credentials; only reply and delete go through the API.
 - **`inboxPrefix` has one source: `lib/mail/inbox.ts`.** The receipt rule, Lambdas and mail-web all import it; never hardcode `/inbox/`.
 - **DMARC stays `p=none`** until aggregate reports (to `alertEmail`) show clean delivery.
+- **The landing viewer-request CloudFront Function (`WwwRedirectFunction`) also rewrites directory URLs.** On the apex, `/x/` and an extensionless `/x` become `/x/index.html`, so prerendered pages like `/help/<slug>` serve from S3. A dot in the last path segment is treated as a file, so page slugs must not contain dots.
 - **CfnOutputs live on `MailStack` / `LandingStack` themselves**, and `../scripts/deploy-*.sh` read the exact keys (`MailWebBucketName`, `UserPoolId`, ...). Don't rename or move them without updating the scripts.
 - Adding a mailbox: edit `mailboxAddresses`/`forwardTo` in `lib/env-config.ts`, redeploy Mail, rerun `deploy-mail-web.sh`.
 - Flat Identity Pool role with read access to the whole mail bucket is deliberate (single tenant).

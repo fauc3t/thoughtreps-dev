@@ -38,12 +38,22 @@ export class LandingStack extends cdk.Stack {
       validation: acm.CertificateValidation.fromDns(zone),
     });
 
+    // Viewer-request function: 301s www to the apex, then maps extensionless
+    // and trailing-slash paths to the prerendered <dir>/index.html keys
+    // (S3 has no directory index of its own). A dot in the last path segment
+    // is treated as a file extension and left alone.
     const wwwRedirect = new cloudfront.Function(this, 'WwwRedirectFunction', {
       runtime: cloudfront.FunctionRuntime.JS_2_0,
       code: cloudfront.FunctionCode.fromInline(`function handler(event) {
   var request = event.request;
   var host = request.headers.host && request.headers.host.value;
   if (host !== '${wwwDomainName}') {
+    var uri = request.uri;
+    if (uri.charAt(uri.length - 1) === '/') {
+      request.uri = uri + 'index.html';
+    } else if (uri.lastIndexOf('.') < uri.lastIndexOf('/')) {
+      request.uri = uri + '/index.html';
+    }
     return request;
   }
   var query = Object.keys(request.querystring)

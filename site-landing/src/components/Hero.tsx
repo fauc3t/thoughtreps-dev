@@ -1,14 +1,21 @@
 import { useEffect, useState } from 'react';
 import { AppStoreButton, Use } from './shared';
 
-export function Nav() {
+export function Nav({
+  base = '',
+  learnCurrent = false,
+}: {
+  base?: string;
+  learnCurrent?: boolean;
+}) {
   const link =
-    'rounded-[10px] border-2 border-transparent px-3 py-2 text-[15px] font-medium no-underline transition-[border-color,background] duration-[120ms] hover:border-ink hover:bg-soft max-[680px]:hidden';
+    'rounded-[10px] border-2 border-transparent px-3 py-2 text-[15px] font-medium no-underline transition-[border-color,background] duration-[120ms] hover:border-ink hover:bg-soft aria-[current=page]:border-ink aria-[current=page]:bg-soft';
+  const hideOnPhone = 'max-[680px]:hidden';
   return (
     <header className="flex items-center justify-between gap-4 py-[18px]">
       <a
         className="flex items-center gap-2.5 text-[19px] leading-none font-extrabold tracking-[-0.01em] no-underline [font-family:var(--font-display)] [font-variation-settings:'wdth'_108]"
-        href="#top"
+        href={base || '#top'}
         aria-label="Thought Reps home"
       >
         <Use
@@ -18,20 +25,28 @@ export function Nav() {
         Thought Reps
       </a>
       <nav className="flex items-center gap-1.5" aria-label="Page">
-        <a className={link} href="#how">
+        <a className={`${link} ${hideOnPhone}`} href={`${base}#how`}>
           How it works
         </a>
-        <a className={link} href="#features">
+        <a className={`${link} ${hideOnPhone}`} href={`${base}#features`}>
           Features
         </a>
-        <a className={link} href="#privacy">
+        <a className={`${link} ${hideOnPhone}`} href={`${base}#privacy`}>
           Privacy
         </a>
         <a
-          className="rounded-[10px] border-2 border-ink px-3 py-2 text-[15px] font-medium no-underline shadow-sticker-sm transition-[border-color,background] duration-[120ms] hover:bg-accent hover:text-accent-ink"
-          href="#get"
+          className={`${link} max-[680px]:px-2`}
+          href="/help"
+          aria-current={learnCurrent ? 'page' : undefined}
         >
-          Get the app
+          Learn
+        </a>
+        <a
+          className="rounded-[10px] border-2 border-ink px-3 py-2 text-[15px] font-medium no-underline shadow-sticker-sm transition-[border-color,background] duration-[120ms] hover:bg-accent hover:text-accent-ink"
+          href={`${base}#get`}
+          aria-label="Get the app"
+        >
+          Get<span className="max-[480px]:hidden"> the app</span>
         </a>
       </nav>
     </header>

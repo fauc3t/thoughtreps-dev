@@ -1,6 +1,6 @@
 # Thought Reps
 
-Local-first iPhone app: write a Markdown thought, and it resurfaces on the timeline after an interval (7 days by default). Spec and mockups are in `designs/` (don't edit); `landing/` is static landing-page prototypes (not shipped; `site-landing/` is the real landing site, a port of `landing/7-ink.html`). `infra/` is the CDK app (landing hosting, DNS, email at hello@thoughtreps.com), `infra/mail-web/` the inbox UI, and `transfer-web/` the one-time export download page; see `infra/CLAUDE.md`. What's deployed in AWS is recorded in `INTEGRATIONS.md`. Setup and commands are in README.md and DEVELOPMENT.md.
+Local-first iPhone app: write a Markdown thought, and it resurfaces on the timeline after an interval (7 days by default). Spec and mockups are in `designs/` (don't edit); `landing/` is static landing-page prototypes (not shipped; `site-landing/` is the real landing site, a port of `landing/7-ink.html`, plus the prerendered help center at /help). `infra/` is the CDK app (landing hosting, DNS, email at hello@thoughtreps.com), `infra/mail-web/` the inbox UI, and `transfer-web/` the one-time export download page; see `infra/CLAUDE.md`. What's deployed in AWS is recorded in `INTEGRATIONS.md`. Setup and commands are in README.md and DEVELOPMENT.md.
 
 ## Stack
 
@@ -31,6 +31,7 @@ Swift, SwiftUI, SwiftData, iOS 18+, Swift Testing. Two third-party dependencies,
 - **Generated plists and entitlements come from `project.yml`** (`info:`/`entitlements:`, gitignored output); never hand-edit them.
 - **The rating prompt state lives in UserDefaults, not SwiftData** (`RatingPrompt`; no schema change). A due open is decided by the pure `Scheduler.countsAsDueOpen` inside `markViewed`; at 10 the prompt is asked once ever, from the main timeline. Tests that call `markViewed` must inject a throwaway suite (`RatingPrompt.throwaway()`), never the standard defaults.
 - **If the store can't open, show the error screen** ("Couldn't open your thoughts"); never fall back to creating an empty store.
+- **Every documentation pass checks the help center.** `site-landing/src/content/help.ts` is user-facing product documentation, prerendered at thoughtreps.com/help, and must match what the shipped app does. A change that adds, removes or alters a user-facing feature, UI label, limit, setting or workflow updates the matching article; a brand-new feature gets a new article. Write only what's in the shipped app (not unshipped Study mode). Keep `related` slugs pointing at existing articles, and link new articles to and from related ones. Tests enforce title (<=70) and description (<=160) lengths; the sitemap, robots.txt and per-page SEO and JSON-LD generate from `help.ts`, so don't hand-edit them.
 
 ## Product decisions
 
