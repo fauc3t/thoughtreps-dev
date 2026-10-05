@@ -14,6 +14,7 @@ struct ThoughtDetailView: View {
     @State private var isPickingInterval = false
     @State private var confirmDelete = false
     @State private var pendingDelete = false
+    @State private var tappedTag: Tag?
 
     private var store: ThoughtStore {
         ThoughtStore(context: context, defaultIntervalDays: defaultIntervalDays)
@@ -28,6 +29,7 @@ struct ThoughtDetailView: View {
                     }
                 }
                 ThoughtRenderer(markdown: thought.body)
+                    .environment(\.openURL, OpenURLAction(handler: openLink))
                 ForEach(thought.sortedBlocks) { block in
                     BlockView(block: block)
                 }
@@ -40,6 +42,7 @@ struct ThoughtDetailView: View {
         .contentMargins(.bottom, 88, for: .scrollContent) // room for the + button
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { toolbarContent }
+        .navigationDestination(item: $tappedTag) { TagTimelineView(tag: $0) }
         .sheet(isPresented: $isEditing) {
             EditorView(mode: .edit(thought))
         }
@@ -169,6 +172,14 @@ struct ThoughtDetailView: View {
         guard !hasRecordedView, !thought.isArchived else { return }
         hasRecordedView = true
         store.markViewed(thought, now: .now)
+    }
+
+    private func openLink(_ url: URL) -> OpenURLAction.Result {
+        guard url.scheme == TagLinker.scheme else { return .systemAction }
+        guard let key = TagLinker.key(from: url),
+              let tag = thought.sortedTags.first(where: { $0.name == key }) else { return .discarded }
+        tappedTag = tag
+        return .handled
     }
 
     private func deleteThought() {

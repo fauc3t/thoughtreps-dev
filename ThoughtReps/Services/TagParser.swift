@@ -22,22 +22,40 @@ enum TagParser {
     private static let fencedCode = try! NSRegularExpression(pattern: "(```|~~~)[\\s\\S]*?(\\1|$)")
     private static let inlineCode = try! NSRegularExpression(pattern: "`[^`\\n]*`")
 
+    /// One tag occurrence: its range in the matched text, covering `#` and the tag
+    /// without trailing hyphens.
+    struct Match {
+        let range: NSRange
+        let tag: ParsedTag
+    }
+
     /// Unique tags in order of first appearance.
     static func parse(_ text: String) -> [ParsedTag] {
-        // NFC first, so "café" typed precomposed or decomposed is one tag.
-        let source = stripCode(text.precomposedStringWithCanonicalMapping)
-        let ns = source as NSString
         var seen = Set<String>()
         var result: [ParsedTag] = []
-        for match in tagRegex.matches(in: source, range: NSRange(location: 0, length: ns.length)) {
+        for match in matches(in: normalized(text)) where seen.insert(match.tag.key).inserted {
+            result.append(match.tag)
+        }
+        return result
+    }
+
+    /// NFC first, so "café" typed precomposed or decomposed is one tag.
+    static func normalized(_ text: String) -> String {
+        text.precomposedStringWithCanonicalMapping
+    }
+
+    /// Every tag occurrence in order, with ranges into `source` (which should be NFC-normalized).
+    static func matches(in source: String) -> [Match] {
+        let stripped = stripCode(source)
+        let ns = stripped as NSString
+        var result: [Match] = []
+        for match in tagRegex.matches(in: stripped, range: NSRange(location: 0, length: ns.length)) {
             var display = ns.substring(with: match.range(at: 1))
             // A trailing hyphen is punctuation ("#swift-"), not part of the tag.
             while display.hasSuffix("-") { display.removeLast() }
             guard display.contains(where: \.isLetter) else { continue }
-            let key = display.lowercased()
-            if seen.insert(key).inserted {
-                result.append(ParsedTag(key: key, display: display))
-            }
+            let range = NSRange(location: match.range.location, length: 1 + (display as NSString).length)
+            result.append(Match(range: range, tag: ParsedTag(key: display.lowercased(), display: display)))
         }
         return result
     }

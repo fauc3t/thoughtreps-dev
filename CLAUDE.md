@@ -4,7 +4,7 @@ Local-first iPhone app: write a Markdown thought, and it resurfaces on the timel
 
 ## Stack
 
-Swift, SwiftUI, SwiftData, iOS 18+, Swift Testing. No third-party dependencies yet (Markdown renderer is a pending spike). Paid Apple Developer account.
+Swift, SwiftUI, SwiftData, iOS 18+, Swift Testing. One third-party dependency: MarkdownUI (pinned exact; chosen over Textual as the stable option, though it's in maintenance mode). Add packages via `project.yml` `packages:`; the SwiftPM lockfile `ThoughtReps.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved` is tracked, so commit it when versions change. Paid Apple Developer account.
 
 ## Workflow
 
@@ -15,6 +15,7 @@ Swift, SwiftUI, SwiftData, iOS 18+, Swift Testing. No third-party dependencies y
 ## Rules
 
 - **Scheduling is pure.** All resurfacing logic lives in `ThoughtReps/Scheduler/` as pure functions that take `now` as a parameter; never call `Date.now` inside them. `ThoughtStore` methods also take `now` with no default; views pass `.now`. Cover changes with tests in `ThoughtRepsTests/`.
+- **Tag links go through `TagLinker`.** It rewrites `#tag` to a `thoughtreps-tag:` link before MarkdownUI renders, using `TagParser`'s rules; don't parse tags separately in the renderer.
 - **`ThoughtStore` owns all writes.** Views read via `@Query` but mutate (create, edit, schedule, tags, delete) only through the store.
 - **Models stay CloudKit-compatible** so iCloud sync can be switched on later without a migration: every stored property has a default, relationships are optional with inverses declared on one side, no `@Attribute(.unique)` (e.g. tag uniqueness is enforced in `ThoughtStore`), and enums are stored as raw strings.
 - **Schema changes need a migration.** The app container is built from `SchemaV1` + `ThoughtRepsMigrationPlan` (`Models/SchemaVersions.swift`). `SchemaV1` points at the live model classes, so before ANY model change, snapshot V1 into nested copies, then add `SchemaV2` and a migration stage. Never regenerate or edit `ThoughtRepsTests/Fixtures/default.store` (a pre-versioning install; see the README beside it); add a new fixture for new versions. `PersistenceTests.openV1FixtureWithMigrationPlan` guards this.

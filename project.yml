@@ -20,12 +20,19 @@ settings:
     CURRENT_PROJECT_VERSION: "1"
     CODE_SIGN_STYLE: Automatic
 
+packages:
+  MarkdownUI:
+    url: https://github.com/gonzalezreal/swift-markdown-ui
+    exactVersion: 2.4.1
+
 targets:
   ThoughtReps:
     type: application
     platform: iOS
     sources:
       - path: ThoughtReps
+    dependencies:
+      - package: MarkdownUI
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: $(TR_BUNDLE_ID)

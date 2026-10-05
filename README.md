@@ -28,6 +28,7 @@ If Xcode says the bundle ID is unavailable, set `TR_BUNDLE_ID` in `Config/Local.
 ## Everyday workflow
 
 - `ThoughtReps.xcodeproj` is generated and gitignored. Run `xcodegen` again after pulling, or after adding or removing files.
+- The first build resolves Swift packages (MarkdownUI). If that fails, run `xcodebuild -resolvePackageDependencies -scheme ThoughtReps`. `ThoughtReps.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved` is tracked; commit it when dependency versions change.
 - Run tests with **⌘U** in Xcode, or from the command line:
   `xcodebuild test -scheme ThoughtReps -destination 'platform=iOS Simulator,name=<simulator>'`
   (pick a name from `xcrun simctl list devices available`)
@@ -60,14 +61,13 @@ landing/           Static HTML landing-page design prototypes (not part of the a
 
 ## Status
 
-Milestone 1 (skeleton) is in place. It includes the models and the scheduler with tests. It also has a working timeline, the thought view with pin, archive, snooze and restore, a Markdown editor with a selection-aware format bar and list continuation, blurred-text blocks (the only block kind in v1), tag parsing with tag timelines (including an Untagged one), and settings for the default interval.
+Milestone 1 (skeleton) is in place. It includes the models and the scheduler with tests. It also has a working timeline, the thought view with pin, archive, snooze and restore, a Markdown editor with a selection-aware format bar and list continuation, Markdown rendering via MarkdownUI with tappable tags that open the tag's timeline, blurred-text blocks (the only block kind in v1), tag parsing with tag timelines (including an Untagged one), and settings for the default interval.
 
 Under evaluation: opening a thought requeues it right away. The alternative is an explicit Requeue button on the thought page, so that reading a thought without acting on it leaves it due.
 
 Coming next, per the spec:
 
-- The Markdown renderer spike (MarkdownUI vs Textual)
-- Images
+- Images (the renderer shows none until then)
 - Search
 - Daily reminder
 - Export (there is no legacy data import)
