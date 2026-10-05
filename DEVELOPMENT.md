@@ -27,7 +27,7 @@ xcodegen && open ThoughtReps.xcodeproj
 
 `ThoughtReps.xcodeproj` is generated from `project.yml` and gitignored, so edit `project.yml` rather than the project's build settings.
 
-The share extension (`ThoughtRepsShare`) hands thoughts to the app through an `Inbox/` folder in the App Group; `InboxImporter` imports it at launch and on foreground. Info.plists and entitlements are generated from `project.yml` and gitignored, so run `xcodegen` before building a fresh clone. After the first install, "Thought Reps" may not appear in the share sheet until the app has been launched once, or enabled under the share sheet's More / Edit Actions.
+The share extension (`ThoughtRepsShare`) hands thoughts to the app through an `Inbox/` folder in the App Group; `InboxImporter` imports it at launch and on foreground. Info.plists and entitlements are generated from `project.yml` and gitignored, so run `xcodegen` before building a fresh clone. After the first install, "Thought Reps" may not appear in the share sheet until the app has been launched once, or enabled under the share sheet's More / Edit Actions. The extension's `NSExtensionActivationRule` is a predicate string in `project.yml` (text, one `.md`/`.txt` file, or one web URL), so after changing it check a real share sheet: text selection, Safari page, `.md` file, photo, PDF.
 
 Take Photo needs a real device; the simulator has no camera. Photo Library and Paste Image work in the simulator.
 

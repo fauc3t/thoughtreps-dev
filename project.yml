@@ -78,9 +78,11 @@ targets:
           NSExtensionPointIdentifier: com.apple.share-services
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
           NSExtensionAttributes:
-            NSExtensionActivationRule:
-              NSExtensionActivationSupportsText: true
-              NSExtensionActivationSupportsWebURLWithMaxCount: 1
+            NSExtensionActivationRule: >-
+              SUBQUERY(extensionItems, $i, SUBQUERY($i.attachments, $a, (ANY $a.registeredTypeIdentifiers UTI-CONFORMS-TO "public.plain-text" || ANY $a.registeredTypeIdentifiers UTI-CONFORMS-TO "net.daringfireball.markdown") || (ANY $a.registeredTypeIdentifiers UTI-CONFORMS-TO "public.url" && NOT (ANY $a.registeredTypeIdentifiers UTI-CONFORMS-TO "public.file-url"))).@count >= 1).@count >= 1 AND
+              SUBQUERY(extensionItems, $i, SUBQUERY($i.attachments, $a, (ANY $a.registeredTypeIdentifiers UTI-CONFORMS-TO "public.file-url")).@count > 1).@count == 0 AND
+              SUBQUERY(extensionItems, $i, SUBQUERY($i.attachments, $a, (ANY $a.registeredTypeIdentifiers UTI-CONFORMS-TO "public.url" && NOT (ANY $a.registeredTypeIdentifiers UTI-CONFORMS-TO "public.file-url"))).@count > 1).@count == 0 AND
+              SUBQUERY(extensionItems, $i, SUBQUERY($i.attachments, $a, (ANY $a.registeredTypeIdentifiers UTI-CONFORMS-TO "public.file-url") && NOT (ANY $a.registeredTypeIdentifiers UTI-CONFORMS-TO "public.plain-text" || ANY $a.registeredTypeIdentifiers UTI-CONFORMS-TO "net.daringfireball.markdown")).@count > 0).@count == 0
     entitlements:
       path: ThoughtRepsShare/ThoughtRepsShare.entitlements
       properties:

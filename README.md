@@ -1,6 +1,6 @@
 # Thought Reps
 
-A local-first iPhone app for capturing thoughts and having them come back on a schedule. You write a thought in Markdown, and it reappears on your timeline after its interval (7 days by default). Opening a thought queues it up again. Share text or a link from any app to add a thought without opening Thought Reps. You can pin thoughts to keep them visible, archive them to retire them, and file them with `#hashtags`.
+A local-first iPhone app for capturing thoughts and having them come back on a schedule. You write a thought in Markdown, and it reappears on your timeline after its interval (7 days by default). Opening a thought queues it up again. Share text, a link, or a Markdown file from any app to add a thought without opening Thought Reps. You can pin thoughts to keep them visible, archive them to retire them, and file them with `#hashtags`.
 
 Design: [`designs/`](designs/) holds the spec and the screen mockups.
 
@@ -64,7 +64,7 @@ landing/           Static HTML landing-page design prototypes (not part of the a
 
 ## Status
 
-Milestone 1 (skeleton) is in place. It includes the models and the scheduler with tests. It also has a working timeline, the thought view with pin, archive, snooze and restore, a Markdown editor with a selection-aware format bar and list continuation, Markdown rendering via MarkdownUI with tappable tags that open the tag's timeline, blurred-text and image-gallery blocks, images in thoughts (inline or in galleries; photo library, camera or paste; full-screen viewer), tag parsing with tag timelines (including an Untagged one), settings for the default interval, and an optional daily reminder (local notifications, off by default). Quick capture works from the share sheet (Share > Thought Reps); the app imports waiting items on launch and when it returns to the foreground.
+Milestone 1 (skeleton) is in place. It includes the models and the scheduler with tests. It also has a working timeline, the thought view with pin, archive, snooze and restore, a Markdown editor with a selection-aware format bar and list continuation, Markdown rendering via MarkdownUI with tappable tags that open the tag's timeline, blurred-text and image-gallery blocks, images in thoughts (inline or in galleries; photo library, camera or paste; full-screen viewer), tag parsing with tag timelines (including an Untagged one), settings for the default interval, and an optional daily reminder (local notifications, off by default). Quick capture works from the share sheet (Share > Thought Reps; for Apple Notes, use Share > Export as Markdown to keep formatting); the app imports waiting items on launch and when it returns to the foreground.
 
 Under evaluation: opening a thought requeues it right away. The alternative is an explicit Requeue button on the thought page, so that reading a thought without acting on it leaves it due.
 
