@@ -15,8 +15,9 @@ All in one `cdk.Stage` named `prod` (`infra/lib/app-stage.ts`).
 | Stack | Status | Owns |
 | --- | --- | --- |
 | `ThoughtReps-prod-Dns` | Deployed 2026-10-05 | Route53 hosted zone `thoughtreps.com` (RETAIN) |
-| `ThoughtReps-prod-Landing` | Pending | S3 bucket (OAC) + CloudFront for the apex, `www` -> apex 301, `404.html`; ACM cert |
-| `ThoughtReps-prod-Mail` | Pending | SES identity, MX, DMARC, mail bucket, receipt rule, ForwardFn, Cognito, HTTP API (ReplyFn/DeleteFn), mail web UI hosting |
+| `ThoughtReps-prod-Landing` | Deployed 2026-10-05 | S3 bucket (OAC) + CloudFront for the apex, `www` -> apex 301, `404.html`; ACM cert |
+| `ThoughtReps-prod-Mail` | Deployed 2026-10-05 | SES identity, MX, DMARC, mail bucket, receipt rule, ForwardFn, Cognito, HTTP API (ReplyFn/DeleteFn), mail web UI hosting |
+| `ThoughtReps-prod-Share` | Deployed 2026-10-05 | Export-link backend: unversioned export bucket, DynamoDB link table, App Attest device/export-link/public/sweep Lambdas, HTTP API, `transfer.thoughtreps.com` site (placeholder page) |
 
 ### DNS
 
@@ -34,15 +35,22 @@ All in one `cdk.Stage` named `prod` (`infra/lib/app-stage.ts`).
 
 ## Values filled in after deploy
 
+Last deploy: 2026-10-05 (Dns, Landing and Mail, plus `deploy-landing.sh` and `deploy-mail-web.sh`). SES identity `thoughtreps.com` verified (DKIM and MAIL FROM `SUCCESS`); MX resolves to `inbound-smtp.us-east-1.amazonaws.com`; our rule sits first in `simple-mail-prod`, ahead of the three strands.io rules, which are unchanged.
+
 | Item | Value |
 | --- | --- |
-| Cognito user pool id (`UserPoolId`) | _pending_ |
-| Cognito client id (`UserPoolClientId`) | _pending_ |
-| Cognito identity pool id (`IdentityPoolId`) | _pending_ |
-| Mail bucket (`MailBucketName`) | _pending_ |
-| API URL (`ApiUrl`) | _pending_ |
-| Mail web bucket / distribution (`MailWebBucketName`, `MailWebDistributionId`) | _pending_ |
-| Mail web URL (`MailWebUrl`) | _pending_ (expected https://mail.thoughtreps.com) |
-| Landing bucket / distribution (`LandingBucketName`, `LandingDistributionId`) | _pending_ |
-| Landing URL (`LandingUrl`) | _pending_ (expected https://thoughtreps.com) |
+| Cognito user pool id (`UserPoolId`) | `us-east-1_syDehk89q` |
+| Cognito client id (`UserPoolClientId`) | `2ujo7ef2dpmhim8g5uq7kdg4bj` |
+| Cognito identity pool id (`IdentityPoolId`) | `us-east-1:09026af8-7da2-4c4d-9df1-df5780262905` |
+| Mail bucket (`MailBucketName`) | `thoughtreps-prod-mail-mailbucketfabec941-faprsykfvfyq` |
+| API URL (`ApiUrl`) | https://q3ihbwdjgj.execute-api.us-east-1.amazonaws.com |
+| Mail web bucket / distribution (`MailWebBucketName`, `MailWebDistributionId`) | `thoughtreps-prod-mail-websitebucket1e6f6f45-wkfffubeisgp` / `E8O3L2H8SSBPT` |
+| Mail web URL (`MailWebUrl`) | https://mail.thoughtreps.com |
+| Landing bucket / distribution (`LandingBucketName`, `LandingDistributionId`) | `thoughtreps-prod-landing-landingbucket23fe90fb-nzgzwymbfpxa` / `ELBMIPHTLCIZ0` |
+| Landing URL (`LandingUrl`) | https://thoughtreps.com |
 | Cognito web user created | _pending_ |
+| Export bucket / link table (`ExportBucketName`, `ExportLinkTableName`) | `thoughtreps-prod-share-exportbucket4e99310e-wjwcqoidssqh` / `ThoughtReps-prod-Share-ExportLinkTableF59C9DFC-7H2NOAU9YLWG` |
+| Export API URL (`ExportApiUrl`) | https://transfer.thoughtreps.com/api/v1 |
+| Transfer site bucket / distribution (`TransferSiteBucketName`, `TransferDistributionId`) | `thoughtreps-prod-share-transfersitebucket6a3fef50-bl0j1eymkxco` / `E622TVJW5S9HN` |
+| Transfer URL (`TransferUrl`) | https://transfer.thoughtreps.com |
+| Export link real-device App Attest test | _pending_ (needs the iOS client) |
