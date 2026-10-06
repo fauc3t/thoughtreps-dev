@@ -15,6 +15,7 @@ import {
   TransferError,
   type TransferFailure,
 } from './lib/transfer';
+import { ThemeToggle } from './ThemeToggle';
 
 type Unavailable = 'used' | 'expired' | 'revoked' | 'not_found';
 type Working =
@@ -308,7 +309,7 @@ export function App({ link }: { link: ParsedLink }) {
 
   return (
     <div className="flex min-h-dvh flex-col">
-      <header className="mx-auto flex w-full max-w-xl items-center py-[18px]">
+      <header className="mx-auto flex w-full max-w-xl items-center justify-between gap-4 py-[18px]">
         <a
           className="-mx-2 flex items-center gap-2.5 rounded-[12px] border-2 border-transparent px-2 py-1.5 text-[19px] leading-none font-extrabold tracking-[-0.01em] no-underline transition-[border-color,background] duration-[120ms] [font-family:var(--font-display)] [font-variation-settings:'wdth'_108] hover:border-ink hover:bg-soft focus-visible:border-ink"
           href="https://thoughtreps.com"
@@ -320,6 +321,7 @@ export function App({ link }: { link: ParsedLink }) {
           />
           Thought Reps
         </a>
+        <ThemeToggle />
       </header>
       <main className="mx-auto flex w-full max-w-xl flex-1 flex-col justify-center pb-10">
         <h1 className="mb-6 text-4xl leading-none font-extrabold [font-variation-settings:'wdth'_110]">

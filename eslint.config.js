@@ -56,6 +56,14 @@ export default tseslint.config(
       ],
     },
   },
+  {
+    // Classic (non-module) scripts served as-is, e.g. the theme toggle.
+    files: ['site-landing/public/**/*.js', 'transfer-web/public/**/*.js'],
+    languageOptions: {
+      sourceType: 'script',
+      globals: { ...globals.browser },
+    },
+  },
   // Must stay last: turns off stylistic rules that would otherwise fight
   // with prettier's own formatting.
   prettierConfig,

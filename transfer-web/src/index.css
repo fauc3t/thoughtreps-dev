@@ -5,7 +5,8 @@
 @import '@fontsource/ibm-plex-sans/latin-500.css';
 @import '@fontsource/ibm-plex-sans/latin-600.css';
 
-/* Same ink-on-white palette as site-landing; dark follows the OS. */
+/* Same ink-on-white palette as site-landing. Dark follows the OS; data-theme
+   on <html> (set by public/theme.js) forces either. */
 :root {
   --paper: #ffffff;
   --soft: #f2f2f0;
@@ -14,12 +15,38 @@
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme='light']) {
     --paper: #111214;
     --soft: #1d1e22;
     --ink: #f2f2ef;
     --muted: #a3a5ac;
     color-scheme: dark;
+  }
+}
+:root[data-theme='dark'] {
+  --paper: #111214;
+  --soft: #1d1e22;
+  --ink: #f2f2ef;
+  --muted: #a3a5ac;
+  color-scheme: dark;
+}
+
+/* Theme toggle (public/theme.js): show the moon in light, the sun in dark. */
+.theme-sun {
+  display: none;
+}
+:root[data-theme='dark'] .theme-sun {
+  display: block;
+}
+:root[data-theme='dark'] .theme-moon {
+  display: none;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .theme-sun {
+    display: block;
+  }
+  :root:not([data-theme='light']) .theme-moon {
+    display: none;
   }
 }
 
