@@ -36,7 +36,7 @@ export function HelpShell({ children }: { children: ReactNode }) {
   );
 }
 
-function Inline({ text }: { text: string }) {
+export function Inline({ text }: { text: string }) {
   return parseInline(text).map((token, i) => {
     switch (token.kind) {
       case 'code':

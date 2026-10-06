@@ -1,6 +1,6 @@
 # Thought Reps
 
-Local-first iPhone app: write a Markdown thought, and it resurfaces on the timeline after an interval (7 days by default). Spec and mockups are in `designs/` (don't edit); `landing/` is static landing-page prototypes (not shipped; `site-landing/` is the real landing site, a port of `landing/7-ink.html`, plus the prerendered help center at /help). `infra/` is the CDK app (landing hosting, DNS, email at hello@thoughtreps.com), `infra/mail-web/` the inbox UI, and `transfer-web/` the one-time export download page; see `infra/CLAUDE.md`. What's deployed in AWS is recorded in `INTEGRATIONS.md`. Setup and commands are in README.md and DEVELOPMENT.md.
+Local-first iPhone app: write a Markdown thought, and it resurfaces on the timeline after an interval (7 days by default). Spec and mockups are in `designs/` (don't edit); `landing/` is static landing-page prototypes (not shipped; `site-landing/` is the real landing site, a port of `landing/7-ink.html`, plus the prerendered help center at /help and the privacy policy at /privacy). `infra/` is the CDK app (landing hosting, DNS, email at hello@thoughtreps.com), `infra/mail-web/` the inbox UI, and `transfer-web/` the one-time export download page; see `infra/CLAUDE.md`. What's deployed in AWS is recorded in `INTEGRATIONS.md`. Setup and commands are in README.md and DEVELOPMENT.md.
 
 ## Stack
 

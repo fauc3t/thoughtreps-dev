@@ -408,6 +408,13 @@ export function Privacy() {
         >
           There&apos;s no account and nothing to sign in to. Back it up whenever
           you like, as files you own.
+          {' '}
+          <a
+            className="font-medium text-ink underline decoration-2 underline-offset-[3px] hover:bg-hl"
+            href="/privacy"
+          >
+            Read the privacy policy
+          </a>
         </SectionHead>
         <ul className="m-0 flex list-none flex-col p-0">
           {FACTS.map((f, i) => (
@@ -511,7 +518,7 @@ export function Footer({ base = '' }: { base?: string }) {
         <a className={link} href={`${base}#features`}>
           Features
         </a>
-        <a className={link} href={`${base}#privacy`}>
+        <a className={link} href="/privacy">
           Privacy
         </a>
         <a className={link} href="/help">

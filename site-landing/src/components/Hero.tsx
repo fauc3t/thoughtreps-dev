@@ -31,7 +31,7 @@ export function Nav({
         <a className={`${link} ${hideOnPhone}`} href={`${base}#features`}>
           Features
         </a>
-        <a className={`${link} ${hideOnPhone}`} href={`${base}#privacy`}>
+        <a className={`${link} ${hideOnPhone}`} href="/privacy">
           Privacy
         </a>
         <a
