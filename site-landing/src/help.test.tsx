@@ -566,6 +566,7 @@ describe('help pages', () => {
     expect(html).toContain('href="/#get"');
     expect(html).toMatch(/aria-current="page"[^>]*>Learn</);
     expect(html).toContain('aria-label="Footer"');
+    expect(html).toContain('© 2026 Thought Reps LLC');
   });
 });
 

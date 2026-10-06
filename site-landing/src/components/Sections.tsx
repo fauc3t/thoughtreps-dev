@@ -503,7 +503,7 @@ export function Footer({ base = '' }: { base?: string }) {
   const link = 'no-underline hover:text-ink hover:underline';
   return (
     <footer className="flex flex-wrap justify-between gap-4 border-t-[2.5px] border-ink pt-6 pb-10 font-mono text-[13px] text-muted">
-      <span>© 2026 Thought Reps</span>
+      <span>© 2026 Thought Reps LLC</span>
       <nav className="flex flex-wrap gap-4" aria-label="Footer">
         <a className={link} href={`${base}#how`}>
           How it works
