@@ -12,22 +12,19 @@ export function Nav({
     'rounded-[10px] border-2 border-transparent px-3 py-2 text-[15px] font-medium no-underline transition-[border-color,background] duration-[120ms] hover:border-ink hover:bg-soft aria-[current=page]:border-ink aria-[current=page]:bg-soft';
   const hideOnPhone = 'max-[680px]:hidden';
   return (
-    <header className="flex items-center justify-between gap-4 py-[18px] max-[420px]:gap-2">
+    <header className="flex items-center justify-between gap-4 py-[18px]">
       <a
-        className="flex items-center gap-2.5 text-[19px] leading-none max-[420px]:gap-2 max-[420px]:text-[17px] font-extrabold tracking-[-0.01em] no-underline [font-family:var(--font-display)] [font-variation-settings:'wdth'_108]"
+        className="flex items-center gap-2.5 text-[19px] leading-none font-extrabold tracking-[-0.01em] no-underline [font-family:var(--font-display)] [font-variation-settings:'wdth'_108]"
         href={base || '#top'}
         aria-label="Thought Reps home"
       >
         <Use
           id="app-icon"
-          className="size-[38px] shrink-0 rounded-[10px] border-2 border-ink shadow-sticker-sm max-[420px]:size-[34px]"
+          className="size-[38px] shrink-0 rounded-[10px] border-2 border-ink shadow-sticker-sm"
         />
         Thought Reps
       </a>
-      <nav
-        className="flex items-center gap-1.5 max-[420px]:gap-1"
-        aria-label="Page"
-      >
+      <nav className="flex items-center gap-1.5" aria-label="Page">
         <a className={`${link} ${hideOnPhone}`} href={`${base}#how`}>
           How it works
         </a>
@@ -38,15 +35,15 @@ export function Nav({
           Privacy
         </a>
         <a
-          className={`${link} max-[680px]:px-2`}
+          className={`${link} ${hideOnPhone}`}
           href="/help"
           aria-current={learnCurrent ? 'page' : undefined}
         >
           Learn
         </a>
-        <ThemeToggle className="max-[420px]:size-9" />
+        <ThemeToggle />
         <a
-          className="rounded-[10px] border-2 border-ink px-3 py-2 text-[15px] max-[420px]:px-2.5 font-medium no-underline shadow-sticker-sm transition-[border-color,background] duration-[120ms] hover:bg-accent hover:text-accent-ink"
+          className="rounded-[10px] border-2 border-ink px-3 py-2 text-[15px] font-medium no-underline shadow-sticker-sm transition-[border-color,background] duration-[120ms] hover:bg-accent hover:text-accent-ink"
           href={`${base}#get`}
           aria-label="Get the app"
         >
