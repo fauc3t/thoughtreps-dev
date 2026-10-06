@@ -41,8 +41,11 @@ final class BackupModel {
     /// Set by `ExportLinkModel` while it encrypts and uploads, so exports and imports can't start meanwhile.
     var isSharingLink = false
 
+    /// Set by `ExportLinkImportModel` while a link is being checked or its claimed download is in hand.
+    var isImportingLink = false
+
     var isBusy: Bool {
-        exportProgress != nil || isPresentingImport || isSharingLink
+        exportProgress != nil || isPresentingImport || isSharingLink || isImportingLink
     }
 
     var isPresentingImport: Bool {
@@ -89,17 +92,21 @@ final class BackupModel {
 
     /// Copies the file to a temporary location first (a picked file is security-scoped and one opened
     /// from Files or AirDrop sits in the app's Inbox), then checks it and compares it with the store.
-    func beginImport(from url: URL, container: ModelContainer) {
+    /// `consuming` is for a file the app made itself (a decrypted export link): it is moved instead of
+    /// copied, and its folder is removed.
+    /// Returns false, leaving the file alone, when another export or import is running.
+    @discardableResult
+    func beginImport(from url: URL, container: ModelContainer, consuming: Bool = false) -> Bool {
         guard !isBusy else {
             problem = Self.busyMessage
-            return
+            return false
         }
         importPhase = .preparing
         self.container = container
         Task {
             do {
                 let plan = try await Task.detached {
-                    let local = try Self.copyToTemporaryFile(url)
+                    let local = try Self.copyToTemporaryFile(url, consuming: consuming)
                     do {
                         return try BackupImporter.plan(try BackupImporter.preflight(fileURL: local), container: container)
                     } catch {
@@ -113,6 +120,7 @@ final class BackupModel {
                 importPhase = .failed(error.localizedDescription)
             }
         }
+        return true
     }
 
     func runImport() async {
@@ -170,12 +178,17 @@ final class BackupModel {
         plan = nil
     }
 
-    private nonisolated static func copyToTemporaryFile(_ url: URL) throws -> URL {
+    private nonisolated static func copyToTemporaryFile(_ url: URL, consuming: Bool) throws -> URL {
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("\(BackupFormat.importDirectoryPrefix)\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let local = directory.appendingPathComponent("import.\(BackupFormat.fileExtension)")
+        if consuming {
+            try FileManager.default.moveItem(at: url, to: local)
+            try? FileManager.default.removeItem(at: url.deletingLastPathComponent())
+            return local
+        }
         try FileManager.default.copyItem(at: url, to: local)
         if isInOpenInInbox(url) {
             try? FileManager.default.removeItem(at: url)
@@ -195,9 +208,8 @@ final class BackupModel {
 
     /// Removes export and import folders an earlier run left behind (the app was killed mid-flow). Call at
     /// launch; does nothing while a flow is running or an export awaits sharing.
-    func removeStaleTemporaryFiles() {
+    func removeStaleTemporaryFiles(in temporary: URL = FileManager.default.temporaryDirectory) {
         guard !isBusy, exportedFile == nil else { return }
-        let temporary = FileManager.default.temporaryDirectory
         let contents = (try? FileManager.default.contentsOfDirectory(at: temporary, includingPropertiesForKeys: nil)) ?? []
         for url in contents where url.lastPathComponent.hasPrefix(BackupFormat.exportDirectoryPrefix) || url.lastPathComponent.hasPrefix(BackupFormat.importDirectoryPrefix) {
             try? FileManager.default.removeItem(at: url)

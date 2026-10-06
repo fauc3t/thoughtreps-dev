@@ -69,6 +69,8 @@ targets:
         com.apple.security.application-groups:
           - group.$(TR_BUNDLE_ID)
         com.apple.developer.devicecheck.appattest-environment: production
+        com.apple.developer.associated-domains:
+          - applinks:transfer.thoughtreps.com
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: $(TR_BUNDLE_ID)

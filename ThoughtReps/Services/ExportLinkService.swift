@@ -68,7 +68,7 @@ struct CreatedExportLink: Decodable, Equatable, Sendable {
     let upload: ExportUploadTarget
 }
 
-private extension KeyedDecodingContainer {
+extension KeyedDecodingContainer {
     /// The server's ISO 8601 timestamps carry fractional seconds only sometimes.
     func decodeISO8601(forKey key: Key) throws -> Date {
         let text = try decode(String.self, forKey: key)

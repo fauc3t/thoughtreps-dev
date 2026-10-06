@@ -18,6 +18,7 @@ struct SettingsView: View {
     @State private var showFeedbackThanks = false
     @State private var backup = BackupModel.shared
     @State private var exportLink = ExportLinkModel.shared
+    @State private var linkImport = ExportLinkImportModel.shared
     @State private var showImporter = false
 
     private var reminderTime: Binding<Date> {
@@ -87,13 +88,14 @@ struct SettingsView: View {
                     }
                     .disabled(backup.isBusy)
                     .accessibilityHint("Saves all thoughts and images to a file you can keep or share")
-                    Button {
-                        showImporter = true
+                    Menu {
+                        Button("From a File…") { showImporter = true }
+                        Button("From a Link…") { Task { await linkImport.present() } }
                     } label: {
                         Label("Import…", systemImage: "square.and.arrow.down")
                     }
                     .disabled(backup.isBusy)
-                    .accessibilityHint("Adds thoughts from a Thought Reps export file")
+                    .accessibilityHint("Adds thoughts from a Thought Reps export file or link")
                     ExportLinkRows(backup: backup, exportLink: exportLink, container: context.container)
                 } header: {
                     Text("Backup")

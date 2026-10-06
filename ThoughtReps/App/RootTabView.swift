@@ -17,6 +17,14 @@ struct RootTabView: View {
         inboxImporter.importPending(from: inbox, store: ThoughtStore(context: context))
     }
 
+    private func open(_ url: URL) {
+        if url.isFileURL {
+            backup.beginImport(from: url, container: context.container)
+        } else if ExportLinkImportModel.handles(url) {
+            Task { await ExportLinkImportModel.shared.present(opening: url) }
+        }
+    }
+
     var body: some View {
         TabView(selection: $navigation.selectedTab) {
             NavigationStack {
@@ -54,8 +62,9 @@ struct RootTabView: View {
         }
         .saveErrorAlert(saveErrors)
         .backupImportSheet(backup, host: .root)
-        .onOpenURL { url in
-            if url.isFileURL { backup.beginImport(from: url, container: context.container) }
+        .onOpenURL(perform: open)
+        .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { activity in
+            if let url = activity.webpageURL { open(url) }
         }
         .onChange(of: scenePhase, initial: true) { _, phase in
             switch phase {

@@ -82,23 +82,35 @@ struct BackupImportSheet: View {
     }
 }
 
+/// One sheet for both stages: the link sheet, which gives way to the review sheet in place when the file arrives.
 private struct BackupImportSheetModifier: ViewModifier {
     let model: BackupModel
+    let linkImport: ExportLinkImportModel
     let host: BackupModel.Host
+    @Environment(\.modelContext) private var context
 
     func body(content: Content) -> some View {
         content.sheet(isPresented: Binding(
-            get: { model.host == host && model.isPresentingImport },
-            set: { if !$0 { model.dismissImport() } }
+            get: { model.host == host && (model.isPresentingImport || linkImport.isPresented) },
+            set: {
+                if !$0 {
+                    model.dismissImport()
+                    linkImport.dismiss()
+                }
+            }
         )) {
-            BackupImportSheet(model: model)
+            if model.isPresentingImport {
+                BackupImportSheet(model: model)
+            } else {
+                ExportLinkImportSheet(model: linkImport, container: context.container)
+            }
         }
     }
 }
 
 extension View {
-    func backupImportSheet(_ model: BackupModel, host: BackupModel.Host) -> some View {
-        modifier(BackupImportSheetModifier(model: model, host: host))
+    func backupImportSheet(_ model: BackupModel, linkImport: ExportLinkImportModel = .shared, host: BackupModel.Host) -> some View {
+        modifier(BackupImportSheetModifier(model: model, linkImport: linkImport, host: host))
     }
 }
 

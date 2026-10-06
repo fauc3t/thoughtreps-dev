@@ -11,6 +11,8 @@ enum ExportLinkCrypto {
 
     enum Failure: Error, Equatable {
         case tooLarge
+        case badFormat
+        case decryptionFailed
     }
 
     struct EncryptedFile: Equatable, Sendable {
@@ -54,6 +56,24 @@ enum ExportLinkCrypto {
             throw error
         }
         return EncryptedFile(sizeBytes: written, sha256: Data(hasher.finalize()).base64EncodedString())
+    }
+
+    /// Inverse of `encrypt`. `badFormat` is a wrong prefix or a truncated file; `decryptionFailed` is a wrong
+    /// key or a file that was changed after sealing.
+    static func decrypt(_ file: Data, key: SymmetricKey) throws -> Data {
+        guard file.count >= overheadBytes, file.prefix(magic.count) == magic else { throw Failure.badFormat }
+        do {
+            return try AES.GCM.open(try AES.GCM.SealedBox(combined: file.dropFirst(magic.count)), using: key)
+        } catch {
+            throw Failure.decryptionFailed
+        }
+    }
+
+    static func key(fromBase64URL text: String) -> SymmetricKey? {
+        var base64 = text.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
+        base64 += String(repeating: "=", count: (4 - base64.count % 4) % 4)
+        guard let bytes = Data(base64Encoded: base64), bytes.count == 32 else { return nil }
+        return SymmetricKey(data: bytes)
     }
 
     private static func seal(_ plain: Data, key: SymmetricKey, emit: (Data) throws -> Void) throws {

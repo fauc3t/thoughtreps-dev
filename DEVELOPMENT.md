@@ -15,6 +15,7 @@ xcodegen && open ThoughtReps.xcodeproj
 - If Xcode says the bundle ID is unavailable, also set `TR_BUNDLE_ID` there to something unique, such as `com.yourname.thoughtreps`.
 - On a device, your team needs the App Group `group.<bundle id>` for the share extension (App ID `<bundle id>.share`). Automatic signing usually registers both; if not, add the group under Signing & Capabilities or at developer.apple.com. Simulator builds work without a team.
 - The main app has the App Attest entitlement (`appattest-environment: production`, needed for Send Feedback). If device signing complains, enable the App Attest capability on the App ID at developer.apple.com. The simulator can't send feedback or export links, and both need the Share stack deployed.
+- Importing from an export link needs a real device (App Attest) and the Universal Links entitlement `applinks:transfer.thoughtreps.com`; tapping a link only opens the app once the AASA file is deployed. Check with `curl -sI https://transfer.thoughtreps.com/.well-known/apple-app-site-association` (expect 200, `application/json`, no redirect). iOS caches it, so reinstall the app after changing it. Pasting a link in Settings > Import works without it.
 - A free Apple ID also works, with 7-day installs and no iCloud.
 
 ## Everyday commands
