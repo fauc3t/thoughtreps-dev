@@ -5,6 +5,7 @@ import {
   LandingPage,
   NotFoundPage,
   PrivacyPolicyPage,
+  SupportPage,
 } from './App';
 import {
   getFaqEntries,
@@ -21,6 +22,11 @@ import {
   PRIVACY_PATH,
   PRIVACY_TITLE,
 } from './content/privacy';
+import {
+  SUPPORT_DESCRIPTION,
+  SUPPORT_PATH,
+  SUPPORT_TITLE,
+} from './content/support';
 
 export const SITE_URL = 'https://thoughtreps.com';
 
@@ -53,6 +59,7 @@ export const ROUTES: Route[] = [
   { path: '/', file: 'index.html', hydrate: true },
   ...HELP_ROUTES,
   { path: PRIVACY_PATH, file: 'privacy/index.html', hydrate: false },
+  { path: SUPPORT_PATH, file: 'support/index.html', hydrate: false },
   { path: '/404', file: '404.html', hydrate: false, noindex: true },
 ];
 
@@ -113,6 +120,14 @@ export function getPageMeta(path: string): PageMeta {
       jsonLd: [],
     };
   }
+  if (path === SUPPORT_PATH) {
+    return {
+      title: SUPPORT_TITLE,
+      description: SUPPORT_DESCRIPTION,
+      canonical: SITE_URL + SUPPORT_PATH,
+      jsonLd: [],
+    };
+  }
   if (path === HELP_INDEX_PATH) {
     return {
       title: HELP_TITLE,
@@ -166,6 +181,7 @@ export function renderHead(meta: PageMeta): string {
 function renderPage(path: string): string {
   if (path === '/') return renderToString(<LandingPage />);
   if (path === PRIVACY_PATH) return renderToString(<PrivacyPolicyPage />);
+  if (path === SUPPORT_PATH) return renderToString(<SupportPage />);
   if (path === HELP_INDEX_PATH) return renderToString(<HelpIndexPage />);
   const article = helpArticleFor(path);
   if (article) return renderToString(<HelpArticlePage article={article} />);

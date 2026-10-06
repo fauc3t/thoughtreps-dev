@@ -1216,7 +1216,9 @@ export const HELP_ARTICLES: HelpArticle[] = [
       },
       {
         heading: 'Prefer email?',
-        paragraphs: ['You can always write to hello@thoughtreps.com.'],
+        paragraphs: [
+          'You can always write to hello@thoughtreps.com. See [Support](/support) for more ways to reach us.',
+        ],
       },
     ],
   },

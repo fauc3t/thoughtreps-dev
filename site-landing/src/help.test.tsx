@@ -36,6 +36,7 @@ const KNOWN_PATHS = new Set([
   '/',
   '/help',
   '/privacy',
+  '/support',
   ...HELP_ARTICLES.map((a) => helpArticlePath(a.slug)),
 ]);
 

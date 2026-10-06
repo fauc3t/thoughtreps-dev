@@ -234,6 +234,9 @@ export function HelpIndex() {
           </ul>
         </section>
       ))}
+      <p className="mt-12 text-[17px] text-muted">
+        Still stuck? <Inline text="[Contact support](/support)." />
+      </p>
       <HelpCta />
     </>
   );

@@ -8,6 +8,7 @@ import {
   HowItWorks,
   Privacy,
 } from './components/Sections';
+import { SupportPage as SupportPageView } from './components/SupportPage';
 import { Sprites } from './components/shared';
 import type { HelpArticle } from './content/help';
 
@@ -29,6 +30,10 @@ export function HelpArticlePage({ article }: { article: HelpArticle }) {
 
 export function PrivacyPolicyPage() {
   return <PrivacyPolicy />;
+}
+
+export function SupportPage() {
+  return <SupportPageView />;
 }
 
 export function LandingPage() {

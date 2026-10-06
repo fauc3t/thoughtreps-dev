@@ -407,8 +407,7 @@ export function Privacy() {
           title="Your thoughts stay on your phone."
         >
           There&apos;s no account and nothing to sign in to. Back it up whenever
-          you like, as files you own.
-          {' '}
+          you like, as files you own.{' '}
           <a
             className="font-medium text-ink underline decoration-2 underline-offset-[3px] hover:bg-hl"
             href="/privacy"
@@ -523,6 +522,9 @@ export function Footer({ base = '' }: { base?: string }) {
         </a>
         <a className={link} href="/help">
           Learn
+        </a>
+        <a className={link} href="/support">
+          Support
         </a>
         <a className={link} href="/third-party-licenses.txt">
           Licenses
