@@ -10,6 +10,13 @@
     <meta name="referrer" content="no-referrer" />
     <meta name="robots" content="noindex" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <!--
+      TODO(smart app banner): once the App Store ID exists, add
+      <meta name="apple-itunes-app" content="app-id=<ID>, app-argument=<full URL>">.
+      app-argument must include the #fragment, which a static tag can't know,
+      so set it at runtime from main.tsx (create the meta element with
+      location.href before first paint) rather than hardcoding it here.
+    -->
     <title>Your Thought Reps export</title>
   </head>
   <body>

@@ -31,6 +31,7 @@ echo "==> Building @thoughtreps/transfer-web"
 pnpm --filter @thoughtreps/transfer-web build
 
 [[ -f "$DIST/index.html" ]] || { echo "$DIST/index.html missing after build" >&2; exit 1; }
+[[ -f "$DIST/.well-known/apple-app-site-association" ]] || { echo "$DIST/.well-known/apple-app-site-association missing after build" >&2; exit 1; }
 
 echo "==> Syncing built page to s3://${SITE_BUCKET}/"
 # Content-hashed dist/assets/ is immutable and never pruned: old hashes are
@@ -39,7 +40,13 @@ echo "==> Syncing built page to s3://${SITE_BUCKET}/"
 aws s3 sync "$DIST/assets" "s3://${SITE_BUCKET}/assets/" "${AWS_ARGS[@]}" \
   --cache-control 'public, max-age=31536000, immutable'
 aws s3 sync "$DIST" "s3://${SITE_BUCKET}/" "${AWS_ARGS[@]}" \
-  --delete --exclude 'assets/*' --cache-control 'no-cache'
+  --delete --exclude 'assets/*' --exclude '.well-known/*' \
+  --cache-control 'no-cache'
+# The AASA file has no extension, so S3 can't infer its type; Apple requires
+# application/json, a 200 and no redirect. Short cache so edits propagate.
+aws s3 cp "$DIST/.well-known/apple-app-site-association" \
+  "s3://${SITE_BUCKET}/.well-known/apple-app-site-association" "${AWS_ARGS[@]}" \
+  --content-type 'application/json' --cache-control 'public, max-age=300'
 
 echo "==> Invalidating CloudFront distribution ${DISTRIBUTION_ID}"
 aws cloudfront create-invalidation \

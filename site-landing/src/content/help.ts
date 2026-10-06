@@ -75,6 +75,8 @@ export const HELP_EXAMPLE_KINDS = [
   'notification',
   'settings-backup',
   'export-link',
+  'import-link',
+  'import-menu',
 ] as const;
 
 export type HelpExampleKind = (typeof HELP_EXAMPLE_KINDS)[number];
@@ -1057,15 +1059,20 @@ export const HELP_ARTICLES: HelpArticle[] = [
       {
         heading: 'Restore from a backup',
         steps: [
-          'In Settings, under "Backup", tap {icon:import|decorative} "Import…". Then choose your `.thoughtreps` file.',
+          'In Settings, under "Backup", tap {icon:import|decorative} "Import…". Then choose "From a File…" and pick your `.thoughtreps` file.',
           'Thought Reps checks the file and shows a summary, like "12 thoughts · 3 images — 5 new, 2 newer, 5 already up to date".',
           'Tap "Import". When it is done, you see how many thoughts came in.',
         ],
       },
       {
         paragraphs: [
-          'You can also open a `.thoughtreps` file from Files or AirDrop and choose Thought Reps. That starts the same steps.',
+          'You can also open a `.thoughtreps` file from Files or AirDrop and choose Thought Reps. That starts the same steps. If you have an export link instead of a file, choose "From a Link…". See [Move to a new phone with an export link](/help/move-to-a-new-phone).',
         ],
+        example: {
+          kind: 'import-menu',
+          caption:
+            'Tapping "Import…" offers "From a File…" and "From a Link…".',
+        },
       },
       {
         heading: 'How importing merges',
@@ -1096,7 +1103,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
     sections: [
       {
         paragraphs: [
-          'An export link gets your thoughts onto another device when AirDrop or iCloud Drive is not handy. Maybe you are moving to a new phone. Maybe you want the file on a computer first. If you can AirDrop the file, [a regular backup](/help/backup-and-restore) is simpler.',
+          'An export link gets your thoughts onto another device when AirDrop or iCloud Drive is not handy. Maybe you are moving to a new phone. Maybe you want the file on a computer first. On an iPhone, Thought Reps can import the link directly, with no file to save. If you can AirDrop the file, [a regular backup](/help/backup-and-restore) is simpler.',
         ],
       },
       {
@@ -1113,22 +1120,47 @@ export const HELP_ARTICLES: HelpArticle[] = [
         },
       },
       {
-        heading: 'Open it on your new phone',
+        heading: 'Import it in the app',
         steps: [
-          'Open the link in a browser. The page is called "Your Thought Reps export".',
-          'Tap "Download". Your browser unlocks the file and saves it as a `.thoughtreps` file.',
-          'On an iPhone, open the saved file with Thought Reps and import it. If you downloaded on a computer, send the file to your phone first, with AirDrop or Files.',
+          'Install Thought Reps on the new phone and send yourself the link.',
+          'In Thought Reps, open Settings, then under "Backup" tap {icon:import|decorative} "Import…" and choose "From a Link…". The "Import from Link" sheet opens.',
+          'Paste the link into "Paste your export link". Or tap "Paste" to use what you copied. Then tap "Continue".',
+          'Thought Reps shows the size and when the link expires. Tap "Import". "Downloading…" shows the progress.',
+          'You then see the usual summary, like "12 thoughts · 3 images — 5 new, 2 newer, 5 already up to date". Tap "Import" on the summary to finish.',
         ],
+        example: {
+          kind: 'import-link',
+          caption:
+            'The "Import from Link" sheet: first the "Paste your export link" field with "Paste" and "Continue", then the size, expiry and "Import" button.',
+        },
       },
       {
         paragraphs: [
-          'Install Thought Reps on the new phone first. See [Back up and restore your thoughts](/help/backup-and-restore) for the import steps.',
+          'On an iPhone with Thought Reps installed, you can also just tap the link. It opens the app straight to "Import from Link". You still tap "Import" yourself. Nothing is imported until you do.',
+        ],
+      },
+      {
+        heading: 'If the link does not work',
+        list: [
+          '"This link was already used." The link works once. Make a new one on the old phone.',
+          '"This link has expired." Links last 24 hours. Make a new one.',
+          '"This link was turned off." It was revoked or replaced. Use the newest link.',
+          '"We couldn\'t find this link." Check that you copied all of it, including the part after the `#`.',
+          '"This doesn\'t look like a Thought Reps export link." Paste the whole link, which starts with `https://transfer.thoughtreps.com/x/`.',
+        ],
+      },
+      {
+        heading: 'Use a computer or another browser',
+        steps: [
+          'Open the link in a browser. The page is called "Your Thought Reps export".',
+          'Tap "Download". Your browser unlocks the file and saves it as a `.thoughtreps` file.',
+          'Send the file to your phone with AirDrop or Files, open it with Thought Reps and import it. See [Back up and restore your thoughts](/help/backup-and-restore) for the steps.',
         ],
       },
       {
         heading: 'How the link behaves',
         list: [
-          'It works once. The first download uses it up. Just opening the page does not.',
+          'It works once. The first download or import uses it up. Just opening the page does not.',
           'It expires after 24 hours if nobody uses it.',
           'You have one open link at a time. A new one replaces the old one, and you are asked to confirm.',
           'The exported file can be up to 100 MB. For something bigger, use "Export…" and send the file.',
@@ -1263,7 +1295,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
       {
         heading: 'Does it sync between my devices?',
         paragraphs: [
-          'No. To move your thoughts to another device, use a backup file or an export link. See [Back up and restore your thoughts](/help/backup-and-restore).',
+          'No. To move your thoughts to another device, use a backup file or an export link. In Settings, "Import…" takes either one, with "From a File…" or "From a Link…". See [Back up and restore your thoughts](/help/backup-and-restore).',
         ],
       },
       {

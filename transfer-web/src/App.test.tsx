@@ -246,4 +246,92 @@ describe('App', () => {
         .disabled,
     ).toBe(false);
   });
+
+  describe('iPhone import note', () => {
+    const IPHONE_UA =
+      'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15';
+
+    beforeEach(() => {
+      fetchMock.mockResolvedValue(json(200, READY));
+    });
+
+    it('is hidden off iOS', async () => {
+      renderLink('A'.repeat(43));
+      await screen.findByText('Your export is ready.');
+      expect(screen.queryByRole('button', { name: 'Copy link' })).toBeNull();
+    });
+
+    it('shows on iPod too', async () => {
+      vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(
+        IPHONE_UA.replace('iPhone', 'iPod touch'),
+      );
+      renderLink('A'.repeat(43));
+      expect(
+        await screen.findByRole('button', { name: 'Copy link' }),
+      ).toBeTruthy();
+    });
+
+    it.each([
+      ['used', 'This link has already been used.'],
+      ['expired', 'This link has expired.'],
+      ['revoked', 'This link was cancelled.'],
+    ])(
+      'is hidden when the link is %s',
+      async (status, copy) => {
+        vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(IPHONE_UA);
+        fetchMock.mockResolvedValue(json(200, { status }));
+        renderLink('A'.repeat(43));
+        await screen.findByText(copy);
+        expect(screen.queryByRole('button', { name: 'Copy link' })).toBeNull();
+      },
+    );
+
+    it('is hidden once the file is saved', async () => {
+      vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(IPHONE_UA);
+      const { file, key } = await encryptExport(makeZip());
+      await serveSuccessfulDownload(key, file);
+      renderLink(key);
+      fireEvent.click(await screen.findByRole('button', { name: 'Download' }));
+      expect(await screen.findByText('Saved.')).toBeTruthy();
+      expect(screen.queryByRole('button', { name: 'Copy link' })).toBeNull();
+    });
+
+    it('is hidden after a failed download', async () => {
+      vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(IPHONE_UA);
+      const { file, key } = await encryptExport(makeZip());
+      await serveSuccessfulDownload(key, file);
+      const serve = fetchMock.getMockImplementation()!;
+      fetchMock.mockImplementation(async (url: string, init?: RequestInit) =>
+        url === S3_URL ? new Response(new Uint8Array(file.length)) : serve(url, init),
+      );
+      renderLink(key);
+      fireEvent.click(await screen.findByRole('button', { name: 'Download' }));
+      expect(await screen.findByText(/downloaded file was damaged/)).toBeTruthy();
+      expect(screen.queryByRole('button', { name: 'Copy link' })).toBeNull();
+    });
+
+    it('copies the full URL and announces it', async () => {
+      vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(IPHONE_UA);
+      const writeText = vi.fn().mockResolvedValue(undefined);
+      Object.defineProperty(navigator, 'clipboard', {
+        value: { writeText },
+        configurable: true,
+      });
+      renderLink('A'.repeat(43));
+      fireEvent.click(await screen.findByRole('button', { name: 'Copy link' }));
+      expect(await screen.findByText('Copied')).toBeTruthy();
+      expect(writeText).toHaveBeenCalledWith(window.location.href);
+    });
+
+    it('falls back to a selectable field when the clipboard rejects', async () => {
+      vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(IPHONE_UA);
+      Object.defineProperty(navigator, 'clipboard', {
+        value: { writeText: vi.fn().mockRejectedValue(new Error('denied')) },
+        configurable: true,
+      });
+      renderLink('A'.repeat(43));
+      fireEvent.click(await screen.findByRole('button', { name: 'Copy link' }));
+      expect(await screen.findByLabelText('Export link')).toBeTruthy();
+    });
+  });
 });

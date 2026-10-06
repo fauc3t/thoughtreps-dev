@@ -708,6 +708,56 @@ function ExportLink() {
   );
 }
 
+function ImportMenu() {
+  return (
+    <div className="flex flex-col gap-2">
+      <span className="label">After tapping Import…</span>
+      <div className={`${panel} ${rows}`}>
+        <SettingRow icon="import" label="From a File…" />
+        <SettingRow icon="link" label="From a Link…" />
+      </div>
+    </div>
+  );
+}
+
+function SheetButton({ label, primary }: { label: string; primary?: boolean }) {
+  return (
+    <span
+      className={`inline-flex items-center justify-center rounded-[10px] border-2 border-ink px-3 py-1.5 text-[14px] font-bold ${primary ? 'bg-ink text-paper' : 'bg-paper'}`}
+    >
+      {label}
+    </span>
+  );
+}
+
+function ImportLink() {
+  return (
+    <div className="grid gap-2.5 xs:grid-cols-2">
+      <div className={`${panel} flex min-w-0 flex-col gap-3 p-3`}>
+        <b className="text-[15px]">Import from Link</b>
+        <span className="text-[12.5px] text-muted">Paste your export link</span>
+        <span className="line-clamp-2 rounded-lg border-2 border-ink px-2 py-1.5 font-mono text-[12px] leading-snug [overflow-wrap:anywhere]">
+          https://transfer.thoughtreps.com/x/Gh4mT9…#kB8w2Q…
+        </span>
+        <div className="flex gap-2">
+          <SheetButton label="Paste" />
+          <SheetButton label="Continue" primary />
+        </div>
+      </div>
+      <div className={`${panel} flex min-w-0 flex-col gap-3 p-3`}>
+        <b className="text-[15px]">Import from Link</b>
+        <span className="text-[14px]">1.5 MB</span>
+        <span className="text-[12.5px] text-muted">
+          Expires tomorrow at 9:41 AM
+        </span>
+        <div>
+          <SheetButton label="Import" primary />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const EXAMPLES: Record<
   HelpExampleKind,
   { Mock: () => ReactNode; interactive?: boolean }
@@ -731,6 +781,8 @@ const EXAMPLES: Record<
   notification: { Mock: Notification },
   'settings-backup': { Mock: SettingsBackup },
   'export-link': { Mock: ExportLink },
+  'import-link': { Mock: ImportLink },
+  'import-menu': { Mock: ImportMenu },
 };
 
 /** The mockup is hidden from screen readers; the caption stands in for it. Only the blurred block is real, focusable UI. */

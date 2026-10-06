@@ -1,0 +1,11 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": ["835DH8RD35.com.thoughtreps.app"],
+        "components": [{ "/": "/x/*" }],
+        "paths": ["/x/*"]
+      }
+    ]
+  }
+}

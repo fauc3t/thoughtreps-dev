@@ -1,4 +1,4 @@
-import { useEffect, useReducer, useRef, type ReactNode, type Ref } from 'react';
+import { useEffect, useReducer, useRef, useState, type ReactNode, type Ref } from 'react';
 import {
   ApiFailure,
   claimLink,
@@ -7,6 +7,8 @@ import {
   type Claim,
 } from './lib/api';
 import type { ParsedLink } from './lib/link';
+import { IosImportNote } from './IosImportNote';
+import { isIPhone } from './lib/platform';
 import { exportFilename, saveFile } from './lib/save';
 import {
   downloadAndDecrypt,
@@ -189,6 +191,7 @@ function Message({
 
 export function App({ link }: { link: ParsedLink }) {
   const [state, dispatch] = useReducer(reducer, { kind: 'loading' });
+  const [showIosNote] = useState(isIPhone);
   const [attempt, retryLoad] = useReducer((n: number) => n + 1, 0);
 
   const id = link.ok ? link.id : null;
@@ -358,6 +361,7 @@ export function App({ link }: { link: ParsedLink }) {
               aria-label="Download progress"
             />
           )}
+          {showIosNote && state.kind === 'ready' && <IosImportNote />}
         </section>
       </main>
     </div>
