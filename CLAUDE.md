@@ -8,7 +8,7 @@ Swift, SwiftUI, SwiftData, iOS 18+, Swift Testing. Two third-party dependencies,
 
 ## Workflow
 
-- Web/infra deploys are manual `cdk deploy` with `--profile thoughtreps-dev` (no CI), into an AWS account shared with strands prod. Read `infra/CLAUDE.md` first, and update `INTEGRATIONS.md` after every deploy.
+- Web/infra deploys are manual `cdk deploy` with `--profile thoughtreps-dev` (no CI), into an AWS account shared with strands prod. Read `infra/CLAUDE.md` first, and update `INTEGRATIONS.md` when a deploy changes a stack's status, outputs or ids (content-only deploys need no entry).
 
 - `project.yml` is the source of truth. `ThoughtReps.xcodeproj` is generated and gitignored: edit `project.yml`, run `xcodegen`, never hand-edit the project. Re-run after adding or removing files.
 - Signing lives in `Config/Local.xcconfig` (gitignored, copy from the `.example`).

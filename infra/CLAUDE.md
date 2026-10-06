@@ -1,6 +1,6 @@
 # infra/
 
-CDK app (`bin/thoughtreps.ts`, wired through `lib/app-stage.ts`) for the landing site, mail and the one-time export link (`ThoughtReps-prod-Share`, `lib/export-link/`, `lambda/export-link/`) at thoughtreps.com, plus `mail-web/` (inbox UI, Vite + React). The export download page is the separate `../transfer-web/` package. Mail is a replica of the separate `~/dev/simple-mail` project. Account, stack status and outputs live in `../INTEGRATIONS.md`; update it after every deploy. Deploy steps are in `../DEVELOPMENT.md`.
+CDK app (`bin/thoughtreps.ts`, wired through `lib/app-stage.ts`) for the landing site, mail and the one-time export link (`ThoughtReps-prod-Share`, `lib/export-link/`, `lambda/export-link/`) at thoughtreps.com, plus `mail-web/` (inbox UI, Vite + React). The export download page is the separate `../transfer-web/` package. Mail is a replica of the separate `~/dev/simple-mail` project. Account, stack status and outputs live in `../INTEGRATIONS.md`; update it when a deploy changes a stack's status, outputs or ids. Deploy steps are in `../DEVELOPMENT.md`.
 
 ## Shared-account rules
 

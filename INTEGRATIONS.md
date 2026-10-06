@@ -1,6 +1,6 @@
 # Integrations
 
-What exists in AWS for the web side of Thought Reps, and where. **Update this after every deploy** (status, outputs, ids). Rules for changing it are in [`infra/CLAUDE.md`](infra/CLAUDE.md); deploy steps are in [DEVELOPMENT.md](DEVELOPMENT.md).
+What exists in AWS for the web side of Thought Reps, and where. **Update this when a deploy changes a stack's status, outputs or ids**; content-only deploys (`deploy-landing.sh`, `deploy-transfer-web.sh`, `deploy-mail-web.sh`) need no entry. There's no deploy log; git history covers that. Rules for changing it are in [`infra/CLAUDE.md`](infra/CLAUDE.md); deploy steps are in [DEVELOPMENT.md](DEVELOPMENT.md).
 
 ## AWS account
 
@@ -17,7 +17,7 @@ All in one `cdk.Stage` named `prod` (`infra/lib/app-stage.ts`).
 | `ThoughtReps-prod-Dns` | Deployed 2026-10-05 | Route53 hosted zone `thoughtreps.com` (RETAIN) |
 | `ThoughtReps-prod-Landing` | Deployed 2026-10-05 | S3 bucket (OAC) + CloudFront for the apex, `www` -> apex 301 and `/x` -> `/x/index.html` rewrite (viewer-request function), `404.html`; ACM cert |
 | `ThoughtReps-prod-Mail` | Deployed 2026-10-05 | SES identity, MX, DMARC, mail bucket, receipt rule, ForwardFn, Cognito, HTTP API (ReplyFn/DeleteFn), mail web UI hosting |
-| `ThoughtReps-prod-Share` | Deployed 2026-10-05 (FeedbackFn added, placeholder `BucketDeployment` removed the same day) | Export-link backend: unversioned export bucket, DynamoDB link table, App Attest device/export-link/public/sweep Lambdas, FeedbackFn (`POST /feedback`, SES send), HTTP API, `transfer.thoughtreps.com` site (download page from `transfer-web/`, deployed by `scripts/deploy-transfer-web.sh`) |
+| `ThoughtReps-prod-Share` | Deployed 2026-10-05 | Export-link backend: unversioned export bucket, DynamoDB link table, App Attest device/export-link/public/sweep Lambdas, FeedbackFn (`POST /feedback`, SES send), HTTP API, `transfer.thoughtreps.com` site (download page from `transfer-web/`, deployed by `scripts/deploy-transfer-web.sh`) |
 
 ### DNS
 
@@ -35,7 +35,7 @@ All in one `cdk.Stage` named `prod` (`infra/lib/app-stage.ts`).
 
 ## Values filled in after deploy
 
-Last deploy: 2026-10-05 (Dns, Landing and Mail, plus `deploy-landing.sh` and `deploy-mail-web.sh`; Share redeployed the same day with the feedback route, and an unsigned `POST /api/v1/feedback` returns 400 `bad_request` as expected; Share redeployed again to drop the placeholder, then `deploy-transfer-web.sh`: `/x/<id>` serves "Your Thought Reps export" and an unknown id's status returns 404 `not_found`). Landing redeployed 2026-10-05 (`cdk deploy prod/LandingStack --exclusively`, function code only) for the directory-index rewrite, then `deploy-landing.sh` with the help center: `/help`, `/help/<slug>`, `/sitemap.xml` and `/robots.txt` return 200, an unknown slug 404, and `www.thoughtreps.com/help` 301s to the apex. `deploy-landing.sh` again the same day for the visual help pass (icons, mockups, rewrite); `/third-party-licenses.txt` returns 200. 2026-10-06 (link import): `deploy-transfer-web.sh` (AASA plus iPhone copy-link note; `/.well-known/apple-app-site-association` returns 200 `application/json` for `835DH8RD35.com.thoughtreps.app` `/x/*`) and `deploy-landing.sh` (help updates; `/help/move-to-a-new-phone` shows "From a Link…"); no stack changes. 2026-10-06 (new 3D bubble logo): `deploy-landing.sh` and `deploy-transfer-web.sh`; both `/favicon.svg` files match `design-assets/app-icon/light.svg` and the landing page serves the new `app-icon` symbol; no stack changes. 2026-10-06 (light/dark toggle): `deploy-landing.sh` and `deploy-transfer-web.sh`; `/theme.js` returns 200 `text/javascript` on both hosts, and the landing and help pages serve the toggle button; no stack changes. SES identity `thoughtreps.com` verified (DKIM and MAIL FROM `SUCCESS`); MX resolves to `inbound-smtp.us-east-1.amazonaws.com`; our rule sits first in `simple-mail-prod`, ahead of the three strands.io rules, which are unchanged.
+SES identity `thoughtreps.com` verified (DKIM and MAIL FROM `SUCCESS`); MX resolves to `inbound-smtp.us-east-1.amazonaws.com`; our rule sits first in `simple-mail-prod`, ahead of the three strands.io rules, which are unchanged.
 
 | Item | Value |
 | --- | --- |
