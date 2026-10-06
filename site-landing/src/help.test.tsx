@@ -35,6 +35,7 @@ const TEMPLATE = `<html><head><!--ssr-head--><title>x</title><!--/ssr-head-->
 const KNOWN_PATHS = new Set([
   '/',
   '/help',
+  '/privacy',
   ...HELP_ARTICLES.map((a) => helpArticlePath(a.slug)),
 ]);
 

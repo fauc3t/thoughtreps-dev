@@ -1,5 +1,6 @@
 import { HelpArticleView, HelpIndex, HelpShell } from './components/Help';
 import { Hero, Nav } from './components/Hero';
+import { PrivacyPolicy } from './components/PrivacyPolicy';
 import {
   Features,
   FinalCta,
@@ -24,6 +25,10 @@ export function HelpArticlePage({ article }: { article: HelpArticle }) {
       <HelpArticleView article={article} />
     </HelpShell>
   );
+}
+
+export function PrivacyPolicyPage() {
+  return <PrivacyPolicy />;
 }
 
 export function LandingPage() {

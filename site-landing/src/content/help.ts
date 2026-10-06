@@ -1022,7 +1022,9 @@ export const HELP_ARTICLES: HelpArticle[] = [
       },
       {
         heading: 'Questions',
-        paragraphs: ['Email hello@thoughtreps.com.'],
+        paragraphs: [
+          'Email hello@thoughtreps.com. You can read the full [privacy policy](/privacy) too.',
+        ],
       },
     ],
   },
