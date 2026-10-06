@@ -1,4 +1,6 @@
 // Writes light.svg, dark.svg and tinted.svg: the 3D thought-bubble app icon. Run: node gen.cjs
+// The app uses 1024 px no-alpha PNG renders of these in ThoughtReps/Resources/AppIcon.icon/Assets/
+// (Icon Composer format; glass, specular, shadow and translucency are off so iOS 26+ draws it flat).
 const fs=require('fs');
 const SW=3,R='stroke-linecap="round" stroke-linejoin="round"';
 const f2=n=>+n.toFixed(2),rad=x=>x*Math.PI/180;
