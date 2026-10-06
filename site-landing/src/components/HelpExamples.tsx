@@ -468,6 +468,46 @@ function TagRow({
   );
 }
 
+const COLOR_OPTIONS = [
+  { name: 'Automatic', hex: '#3352D1' },
+  { name: 'Blue', hex: '#3352D1' },
+  { name: 'Teal', hex: '#1F8A70' },
+  { name: 'Copper', hex: '#B56629' },
+  { name: 'Purple', hex: '#7A4FC4' },
+  { name: 'Rose', hex: '#BF4066' },
+  { name: 'Steel Blue', hex: '#2E80AD' },
+  { name: 'Green', hex: '#3F8F3A' },
+  { name: 'Slate', hex: '#5F6B7A' },
+];
+
+function ColorSheet() {
+  return (
+    <div className={panel}>
+      <div className="flex items-center justify-between gap-2 border-b-2 border-hl px-3 py-2.5 text-[14px]">
+        <span className="text-muted">Cancel</span>
+        <b>Color</b>
+        <span className="w-10" />
+      </div>
+      <div className="grid grid-cols-3 gap-2 p-3 text-center text-[12.5px]">
+        {COLOR_OPTIONS.map((option, i) => (
+          <span
+            key={option.name}
+            className="flex flex-col items-center gap-1.5"
+          >
+            <span
+              className="grid size-11 place-items-center rounded-full text-white"
+              style={{ backgroundColor: option.hex }}
+            >
+              {i === 0 && <IconGlyph name="check" className="size-5" />}
+            </span>
+            {option.name}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function ShareSheet() {
   const apps: { name: string; icon?: HelpIconName }[] = [
     { name: 'Notes', icon: 'list' },
@@ -773,6 +813,7 @@ const EXAMPLES: Record<
   gallery: { Mock: Gallery },
   'blurred-block': { Mock: BlurredBlock, interactive: true },
   'tag-list': { Mock: TagList },
+  'color-sheet': { Mock: ColorSheet },
   'share-sheet': { Mock: ShareSheet },
   'snooze-menu': { Mock: SnoozeMenu },
   'interval-menu': { Mock: IntervalMenu },

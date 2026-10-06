@@ -46,6 +46,7 @@ export const HELP_ICONS = {
   calendar: 'Calendar',
   copy: 'Copy',
   check: 'Selected',
+  palette: 'Change Color',
 } as const;
 
 export type HelpIconName = keyof typeof HELP_ICONS;
@@ -67,6 +68,7 @@ export const HELP_EXAMPLE_KINDS = [
   'gallery',
   'blurred-block',
   'tag-list',
+  'color-sheet',
   'share-sheet',
   'snooze-menu',
   'interval-menu',
@@ -666,7 +668,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
       'the-timeline',
       'search-your-thoughts',
       'write-your-first-thought',
-      'markdown-formatting',
+      'change-tag-color',
     ],
     sections: [
       {
@@ -701,6 +703,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
           '"Untagged" collects thoughts that have no tag.',
           'Use the search box, "Filter tags", to find a tag by name.',
           'Tap a tag to open its page. It works like the Timeline, but only for that tag. It has a "Due" and "All" switch at the top.',
+          "The dot next to each tag is its color. To change it, see [Change a tag's color](/help/change-tag-color).",
         ],
         example: {
           kind: 'tag-list',
@@ -718,6 +721,53 @@ export const HELP_ARTICLES: HelpArticle[] = [
       {
         paragraphs: [
           'Tag counts only include thoughts that are not archived. A tag leaves the list when no thought uses it any more.',
+        ],
+      },
+    ],
+  },
+  {
+    slug: 'change-tag-color',
+    category: 'writing',
+    title: "Change a tag's color",
+    description:
+      'Pick a color for any tag. It shows on the Tags tab, on tag chips and when you type a #tag.',
+    related: ['tags', 'the-timeline', 'backup-and-restore'],
+    sections: [
+      {
+        paragraphs: [
+          'Every tag gets a color on its own, picked from its name. You can choose a different one.',
+        ],
+      },
+      {
+        heading: 'Change it',
+        steps: [
+          'Open the {icon:hash} tab and press and hold a tag.',
+          'Tap "Change Color".',
+          'Tap the color you want. It saves right away and the sheet closes.',
+        ],
+        paragraphs: [
+          'You can also do it from a tag\'s page. Tap {icon:palette} next to the "Due" and "All" switch. "Untagged" has no color to change.',
+        ],
+        example: {
+          kind: 'color-sheet',
+          caption:
+            'The "Color" sheet. "Automatic" is the tag\'s own pick, and the checkmark shows the current color. Tap "Cancel" to leave it as it is.',
+        },
+      },
+      {
+        heading: 'Where the color shows',
+        list: [
+          'The dot next to the tag on the Tags tab.',
+          'Tag chips on your thoughts.',
+          'The tag list above the keyboard when you type a `#`.',
+        ],
+      },
+      {
+        heading: 'Good to know',
+        list: [
+          'Pick "Automatic" to go back to the color the tag started with.',
+          'Backups keep tag colors. When you import, a tag you already have keeps its own color.',
+          'A tag leaves the list when no thought uses it, and its color goes too. If you add it back later, it starts on "Automatic".',
         ],
       },
     ],
@@ -1038,7 +1088,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
     sections: [
       {
         paragraphs: [
-          'A backup is one file that ends in `.thoughtreps`. It holds all your thoughts, with their tags, blocks and images. It also remembers if each one is pinned or archived. It does not hold your app settings, like the default interval and reminder time.',
+          'A backup is one file that ends in `.thoughtreps`. It holds all your thoughts, with their tags, tag colors, blocks and images. It also remembers if each one is pinned or archived. It does not hold your app settings, like the default interval and reminder time.',
         ],
       },
       {

@@ -46,6 +46,10 @@ enum IntegrityChecker {
             if tag.displayName.isEmpty {
                 add("Tag '\(tag.name)' has an empty displayName", tag.name)
             }
+            // Any case is accepted on purpose (legacy and imported data); writers normalize to uppercase.
+            if let hex = tag.colorHex, !hex.hasPrefix("#") || TagColor.normalizedHex(hex) == nil {
+                add("Tag '\(tag.name)' has an invalid colorHex '\(hex)'", tag.name)
+            }
             for thought in tag.thoughts ?? [] where !(thought.tags ?? []).contains(where: { $0 === tag }) {
                 add("Tag '\(tag.name)' lists thought \(thought.id) which does not list it back", tag.name)
             }

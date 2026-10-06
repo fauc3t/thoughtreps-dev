@@ -27,6 +27,7 @@ struct ThoughtTimelineView: View {
     @State private var snapshot = Date.now
     @State private var showAll = false
     @State private var showSettings = false
+    @State private var showColorSheet = false
     @State private var navigation = AppNavigation.shared
 
     private var store: ThoughtStore {
@@ -124,6 +125,9 @@ struct ThoughtTimelineView: View {
         .sheet(isPresented: $showSettings) {
             SettingsView()
         }
+        .sheet(isPresented: $showColorSheet) {
+            if let tag { TagColorSheet(tag: tag) }
+        }
     }
 
     /// Runs while the main timeline is on screen. The delay lets a returning navigation or sheet
@@ -195,6 +199,16 @@ struct ThoughtTimelineView: View {
                 .accessibilityLabel("Settings")
             }
         } else {
+            if tag != nil {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        showColorSheet = true
+                    } label: {
+                        Image(systemName: "paintpalette")
+                    }
+                    .accessibilityLabel("Change Color")
+                }
+            }
             if #available(iOS 26, *) {
                 ToolbarItem(placement: .topBarTrailing) { showPicker }
                     .sharedBackgroundVisibility(.hidden)

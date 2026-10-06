@@ -33,6 +33,7 @@ struct RandomizedOperationTests {
         "#swift", "#Swift", "#SWIFT", "#caf\u{E9}", "#cafe\u{301}", "#CAF\u{C9}",
         "#\u{C9}tude", "#e\u{301}tude", "#work", "#a-b", "#Work_2", "#naïve",
     ]
+    static let colorChoices: [String?] = [nil, "#3352D1", "#5f6b7a", "5F6B7A", "#12345", "red", "#GGGGGG", ""]
     static let words = ["alpha", "beta", "gamma", "delta", "idea", "review", "note"]
 
     static func randomBody(_ rng: inout SeededGenerator) -> String {
@@ -156,8 +157,8 @@ struct RandomizedOperationTests {
 
         for step in 0..<Self.stepsPerSeed {
             let thoughts = try context.fetch(FetchDescriptor<Thought>(sortBy: [SortDescriptor(\.createdAt), SortDescriptor(\.id)]))
-            var op = Int.random(in: 0..<18, using: &rng)
-            if thoughts.isEmpty && op >= 2 && op != 11 && op != 12 { op = 0 }
+            var op = Int.random(in: 0..<19, using: &rng)
+            if thoughts.isEmpty && op >= 2 && op != 11 && op != 12 && op != 18 { op = 0 }
             let target = thoughts.randomElement(using: &rng)
             // About 5% of writes have one of their saves (1st to 6th) fail.
             let injectedStep: Int? = Int.random(in: 0..<20, using: &rng) == 0 ? Int.random(in: 1...6, using: &rng) : nil
@@ -256,6 +257,15 @@ struct RandomizedOperationTests {
                 var tally = ImportTally()
                 store.importThoughts(items, tags: [], tally: &tally)
                 description = "import(\(items.count), replacing: \(items.filter { $0.record.id == target?.id }.count), added: \(tally.added), replaced: \(tally.replaced))"
+            case 18:
+                let tags = try context.fetch(FetchDescriptor<ThoughtReps.Tag>(sortBy: [SortDescriptor(\.name)]))
+                let hex = Self.colorChoices.randomElement(using: &rng)!
+                if let tag = tags.randomElement(using: &rng) {
+                    store.setColor(tag, hex: hex)
+                    description = "setColor(\(tag.name), \(String(describing: hex)))"
+                } else {
+                    description = "setColor (no tags)"
+                }
             default:
                 now = now.addingTimeInterval(Double(Int.random(in: 1...20, using: &rng)) * 86_400)
                 description = "advance now to \(now)"

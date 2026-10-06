@@ -27,6 +27,50 @@ struct ThoughtStoreTests {
         try container.mainContext.fetch(FetchDescriptor<ThoughtReps.Tag>()).map(\.name).sorted()
     }
 
+    @Test func setColorSavesNormalizedHexAndResetsToAutomatic() throws {
+        let tag = try #require(store.create(body: "# A\n#swift", now: now).tags?.first)
+        #expect(store.setColor(tag, hex: "#3352d1"))
+        #expect(tag.colorHex == "#3352D1")
+        #expect(store.setColor(tag, hex: "5f6b7a"))
+        #expect(tag.colorHex == "#5F6B7A")
+        #expect(store.setColor(tag, hex: nil))
+        #expect(tag.colorHex == nil)
+        #expect(try IntegrityChecker.check(container.mainContext).isEmpty)
+    }
+
+    @Test(arguments: ["", "red", "#12345", "#1234567", "#GGGGGG", "##123456", "+123456", "#12345\u{FF16}"])
+    func setColorRejectsInvalidHex(hex: String) throws {
+        let tag = try #require(store.create(body: "# A\n#swift", now: now).tags?.first)
+        store.setColor(tag, hex: "#3352D1")
+        #expect(!store.setColor(tag, hex: hex))
+        #expect(tag.colorHex == "#3352D1")
+    }
+
+    @Test func failedSetColorRollsBack() throws {
+        let errors = SaveErrorCenter()
+        let tag = try #require(store.create(body: "# A\n#swift", now: now).tags?.first)
+        store.setColor(tag, hex: "#3352D1")
+        let failing = ThoughtStore(context: container.mainContext, defaultIntervalDays: 7, saveErrors: errors, save: { _ in throw InjectedSaveFailure() })
+        #expect(!failing.setColor(tag, hex: "#BF4066"))
+        #expect(tag.colorHex == "#3352D1")
+        #expect(errors.message != nil)
+    }
+
+    @Test(arguments: ["red", "3352D1", "#12345"])
+    func integrityCheckerFlagsBadColorHex(hex: String) throws {
+        let tag = try #require(store.create(body: "# A\n#swift", now: now).tags?.first)
+        tag.colorHex = hex
+        #expect(try IntegrityChecker.check(container.mainContext).count == 1)
+        tag.colorHex = "#3352d1"
+        #expect(try IntegrityChecker.check(container.mainContext).isEmpty)
+    }
+
+    @Test func automaticPaletteIsTheOriginalSix() {
+        #expect(TagColor.palette.count == 6)
+        #expect(TagColor.swatches.prefix(6).map(\.hex) == ["#3352D1", "#1F8A70", "#B56629", "#7A4FC4", "#BF4066", "#2E80AD"])
+        #expect(TagColor.swatches.count == 8)
+    }
+
     @Test func newThoughtWaitsForItsInterval() {
         let thought = store.create(body: "Hello", now: now)
         #expect(thought.nextDueAt == days(7, from: now))

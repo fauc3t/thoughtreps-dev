@@ -217,6 +217,29 @@ struct BackupTests {
         }
     }
 
+    @Test func importNormalizesTagColors() throws {
+        let record = ThoughtRecord(
+            id: UUID(), body: "# T\n#a #b #c #d", createdAt: now, updatedAt: now, nextDueAt: now,
+            lastViewedAt: nil, viewCount: 0, intervalDays: nil, intervalModeRaw: IntervalMode.fixed.rawValue,
+            isPinned: false, isArchived: false, archivedAt: nil, tags: [], blocks: [], images: []
+        )
+        let info = [
+            TagRecord(name: "a", displayName: "a", colorHex: "#ff8800"),
+            TagRecord(name: "b", displayName: "b", colorHex: "3352d1"),
+            TagRecord(name: "c", displayName: "c", colorHex: "red"),
+            TagRecord(name: "d", displayName: "d", colorHex: nil),
+        ]
+        var tally = ImportTally()
+        #expect(destinationStore.importThoughts([ImportedThought(record: record, images: [:])], tags: info, tally: &tally))
+        let tags = try destination.mainContext.fetch(FetchDescriptor<ThoughtReps.Tag>())
+        let colors = Dictionary(uniqueKeysWithValues: tags.map { ($0.name, $0.colorHex) })
+        #expect(colors["a"] == "#FF8800")
+        #expect(colors["b"] == "#3352D1")
+        #expect(colors["c"] == .some(nil))
+        #expect(colors["d"] == .some(nil))
+        #expect(try IntegrityChecker.check(destination.mainContext).isEmpty)
+    }
+
     @Test func reimportingTheSameFileChangesNothing() async throws {
         try populate()
         let file = try export(from: source)

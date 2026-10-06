@@ -459,6 +459,19 @@ struct ThoughtStore {
         )
     }
 
+    /// `nil` restores the automatic color. Invalid hex is rejected without writing.
+    @discardableResult
+    func setColor(_ tag: Tag, hex: String?) -> Bool {
+        var normalized: String?
+        if let hex {
+            guard let valid = TagColor.normalizedHex(hex) else { return false }
+            normalized = valid
+        }
+        guard tag.colorHex != normalized else { return true }
+        tag.colorHex = normalized
+        return persist()
+    }
+
     @discardableResult
     func setPinned(_ thought: Thought, _ pinned: Bool) -> Bool {
         thought.isPinned = pinned && !thought.isArchived
@@ -659,7 +672,7 @@ struct ThoughtStore {
         var inserted = false
         for tag in parsed where byName[tag.key] == nil {
             let created = Tag(name: tag.key, displayName: known[tag.key]?.displayName ?? tag.display)
-            created.colorHex = known[tag.key]?.colorHex
+            created.colorHex = known[tag.key]?.colorHex.flatMap(TagColor.normalizedHex)
             context.insert(created)
             byName[tag.key] = created
             inserted = true

@@ -15,6 +15,7 @@ struct TagListView: View {
     @State private var now = Date.now
     @State private var tagCounts: [String: Counts] = [:]
     @State private var untaggedCounts = Counts()
+    @State private var colorTag: Tag?
 
     private var visible: [Tag] {
         tags.filter { tag in
@@ -32,6 +33,13 @@ struct TagListView: View {
             ForEach(visible) { tag in
                 NavigationLink(value: tag) {
                     TagRow(tag: tag, counts: tagCounts[tag.name] ?? Counts())
+                }
+                .contextMenu {
+                    Button {
+                        colorTag = tag
+                    } label: {
+                        Label("Change Color", systemImage: "paintpalette")
+                    }
                 }
             }
             if showsUntagged {
@@ -58,6 +66,7 @@ struct TagListView: View {
         .contentMargins(.bottom, 88, for: .scrollContent)
         .searchable(text: $filter, prompt: "Filter tags")
         .navigationTitle("Tags")
+        .sheet(item: $colorTag) { TagColorSheet(tag: $0) }
         .onAppear {
             now = .now
             refreshCounts()

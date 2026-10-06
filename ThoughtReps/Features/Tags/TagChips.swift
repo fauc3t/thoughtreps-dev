@@ -33,24 +33,51 @@ struct TagChips: View {
     }
 }
 
+/// A named color a user can pick for a tag.
+struct TagSwatch: Identifiable, Equatable {
+    let name: String
+    let hex: String
+
+    var id: String { hex }
+    var color: Color { Color(hex: hex) ?? .gray }
+}
+
 /// A tag's color: its saved hex, or a stable pick from a small palette.
 enum TagColor {
-    static let palette: [Color] = [
-        Color(red: 0.20, green: 0.32, blue: 0.82),
-        Color(red: 0.12, green: 0.54, blue: 0.44),
-        Color(red: 0.71, green: 0.40, blue: 0.16),
-        Color(red: 0.48, green: 0.31, blue: 0.77),
-        Color(red: 0.75, green: 0.25, blue: 0.40),
-        Color(red: 0.18, green: 0.50, blue: 0.68),
+    /// The first `automaticCount` swatches are the automatic palette; reordering or inserting
+    /// among them shifts the automatic color of existing tags.
+    static let swatches: [TagSwatch] = [
+        TagSwatch(name: "Blue", hex: "#3352D1"),
+        TagSwatch(name: "Teal", hex: "#1F8A70"),
+        TagSwatch(name: "Copper", hex: "#B56629"),
+        TagSwatch(name: "Purple", hex: "#7A4FC4"),
+        TagSwatch(name: "Rose", hex: "#BF4066"),
+        TagSwatch(name: "Steel Blue", hex: "#2E80AD"),
+        TagSwatch(name: "Green", hex: "#3F8F3A"),
+        TagSwatch(name: "Slate", hex: "#5F6B7A"),
     ]
+    static let automaticCount = 6
+
+    static let palette: [Color] = swatches.prefix(automaticCount).map(\.color)
 
     static func color(for tag: Tag) -> Color {
         if let hex = tag.colorHex, let color = Color(hex: hex) {
             return color
         }
+        return automaticColor(for: tag)
+    }
+
+    static func automaticColor(for tag: Tag) -> Color {
         // Stable across launches (unlike `hashValue`).
         let sum = tag.name.unicodeScalars.reduce(0) { $0 + Int($1.value) }
         return palette[sum % palette.count]
+    }
+
+    /// "#RRGGBB" or "RRGGBB" in any case, as uppercase "#RRGGBB"; nil if it is neither.
+    static func normalizedHex(_ hex: String) -> String? {
+        let digits = hex.hasPrefix("#") ? String(hex.dropFirst()) : hex
+        guard digits.count == 6, digits.allSatisfy({ $0.isASCII && $0.isHexDigit }) else { return nil }
+        return "#" + digits.uppercased()
     }
 }
 
