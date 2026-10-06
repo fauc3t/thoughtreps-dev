@@ -51,6 +51,16 @@ Before launch, a schema change means regenerating `ThoughtRepsTests/Fixtures/def
 
 With a paid developer account the install lasts a year.
 
+## Releasing to the App Store
+
+Before uploading a build to App Store Connect (TestFlight or release), check every item. The privacy items must match each other, so change them together (see the privacy rule in CLAUDE.md).
+
+1. **Privacy manifests are current.** `ThoughtReps/Resources/PrivacyInfo.xcprivacy` and `ThoughtRepsShare/PrivacyInfo.xcprivacy` declare every required-reason API in use and every data type collected. After archiving, open Xcode's Organizer, right-click the archive and choose Generate Privacy Report to confirm the merged result (it includes ZIPFoundation's own manifest).
+2. **App Store Connect privacy answers match the manifest.** Under App Privacy: email address, customer support, other diagnostic data and device ID, each used for App Functionality, linked to the user, not used for tracking. Nothing else is collected; the export-link file is encrypted on device and not declared.
+3. **Export compliance is answered.** The app uses only standard encryption (HTTPS and CryptoKit AES-GCM for export links), which qualifies for the exemption. Answer the questionnaire once, then set `ITSAppUsesNonExemptEncryption: false` under the app target's `info:` in `project.yml` so uploads stop asking. Revisit if any non-standard encryption is added.
+4. **URLs are live.** Privacy policy `https://thoughtreps.com/privacy` and support `https://thoughtreps.com/support`, and the policy's "Last updated" date reflects any data change since the last release.
+5. **Age rating** is 4+, consistent with the policy's under-13 line.
+
 ## Web and infrastructure
 
 The landing site (`site-landing/`), the CDK app (`infra/`), the mail inbox UI (`infra/mail-web/`) and the export download page (`transfer-web/`) are a pnpm workspace (Node 24+, pnpm 11) separate from the iOS app. What's deployed is recorded in [INTEGRATIONS.md](INTEGRATIONS.md); infra rules are in `infra/CLAUDE.md`.
