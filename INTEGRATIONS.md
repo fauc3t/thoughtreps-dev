@@ -53,4 +53,5 @@ SES identity `thoughtreps.com` verified (DKIM and MAIL FROM `SUCCESS`); MX resol
 | Export API URL (`ExportApiUrl`) | https://transfer.thoughtreps.com/api/v1 |
 | Transfer site bucket / distribution (`TransferSiteBucketName`, `TransferDistributionId`) | `thoughtreps-prod-share-transfersitebucket6a3fef50-bl0j1eymkxco` / `E622TVJW5S9HN` |
 | Transfer URL (`TransferUrl`) | https://transfer.thoughtreps.com |
-| Export link real-device App Attest test | _pending_ (iOS `AppAttestClient` exists; needs the deploy and a device build; first check is Settings > Send Feedback) |
+| Export link real-device App Attest test | Passed 2026-10-06: link created on a device, and tapping it opens the app (Universal Link) |
+| Feedback real-device App Attest test | _pending_ (Settings > Send Feedback on a device) |
