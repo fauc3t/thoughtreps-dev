@@ -19,6 +19,23 @@
       location.href before first paint) rather than hardcoding it here.
     -->
     <title>Your Thought Reps export</title>
+    <!--
+      Link preview. No og:url: every link is one-time, and its key is in the
+      #fragment, which unfurlers never see. The image is rendered and
+      published by site-landing's prerender (EXPORT_LINK_OG_IMAGE).
+    -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Thought Reps" />
+    <meta property="og:title" content="Your Thought Reps export" />
+    <meta
+      property="og:description"
+      content="A one-time link to thoughts exported from Thought Reps. Open it on your iPhone to import them. It works once."
+    />
+    <meta property="og:image" content="https://thoughtreps.com/og/export-link.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Your Thought Reps export" />
+    <meta name="twitter:card" content="summary_large_image" />
   </head>
   <body>
     <div id="root"></div>

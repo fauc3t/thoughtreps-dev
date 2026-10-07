@@ -18,6 +18,12 @@ import {
 } from './content/help';
 
 import {
+  OG_IMAGE_HEIGHT,
+  OG_IMAGE_WIDTH,
+  SITE_HOST,
+  type OgCard,
+} from './og-image';
+import {
   PRIVACY_DESCRIPTION,
   PRIVACY_PATH,
   PRIVACY_TITLE,
@@ -28,7 +34,7 @@ import {
   SUPPORT_TITLE,
 } from './content/support';
 
-export const SITE_URL = 'https://thoughtreps.com';
+export const SITE_URL = `https://${SITE_HOST}`;
 
 const TITLE = 'Thought Reps: write it down, it comes back';
 const DESCRIPTION =
@@ -69,7 +75,28 @@ export interface PageMeta {
   canonical?: string;
   noindex?: boolean;
   jsonLd: object[];
+  /** The link-preview card; prerender renders it to the page's og:image. */
+  ogCard: OgCard;
 }
+
+const HOME_OG_CARD: OgCard = { kind: 'home' };
+
+// The export download page (transfer-web) is static, so its og:image can't
+// carry a content hash. Prerender writes this card to EXPORT_LINK_OG_IMAGE
+// on the landing site, and transfer-web/index.html links it there.
+export const EXPORT_LINK_OG_CARD: OgCard = {
+  kind: 'page',
+  title: 'Your Thought Reps export',
+  host: `transfer.${SITE_HOST}`,
+  path: '',
+};
+
+function pageCard(title: string, path: string): OgCard {
+  return { kind: 'page', title, host: SITE_HOST, path };
+}
+export const EXPORT_LINK_OG_IMAGE = 'og/export-link.png';
+
+export { renderOgImage } from './og-image';
 
 export function breadcrumbJsonLd(article: HelpArticle): object {
   return {
@@ -110,6 +137,7 @@ export function getPageMeta(path: string): PageMeta {
       description: DESCRIPTION,
       canonical: `${SITE_URL}/`,
       jsonLd: [],
+      ogCard: HOME_OG_CARD,
     };
   }
   if (path === PRIVACY_PATH) {
@@ -118,6 +146,7 @@ export function getPageMeta(path: string): PageMeta {
       description: PRIVACY_DESCRIPTION,
       canonical: SITE_URL + PRIVACY_PATH,
       jsonLd: [],
+      ogCard: pageCard('Privacy policy', PRIVACY_PATH),
     };
   }
   if (path === SUPPORT_PATH) {
@@ -126,6 +155,7 @@ export function getPageMeta(path: string): PageMeta {
       description: SUPPORT_DESCRIPTION,
       canonical: SITE_URL + SUPPORT_PATH,
       jsonLd: [],
+      ogCard: pageCard('Get help with Thought Reps', SUPPORT_PATH),
     };
   }
   if (path === HELP_INDEX_PATH) {
@@ -134,6 +164,7 @@ export function getPageMeta(path: string): PageMeta {
       description: HELP_DESCRIPTION,
       canonical: SITE_URL + HELP_INDEX_PATH,
       jsonLd: [],
+      ogCard: pageCard('Help center', HELP_INDEX_PATH),
     };
   }
   const article = helpArticleFor(path);
@@ -146,9 +177,15 @@ export function getPageMeta(path: string): PageMeta {
         breadcrumbJsonLd(article),
         ...(article.faq ? [faqJsonLd(article)] : []),
       ],
+      ogCard: pageCard(article.title, helpArticlePath(article.slug)),
     };
   }
-  return { title: NOT_FOUND_TITLE, noindex: true, jsonLd: [] };
+  return {
+    title: NOT_FOUND_TITLE,
+    noindex: true,
+    jsonLd: [],
+    ogCard: HOME_OG_CARD,
+  };
 }
 
 function escapeHtml(value: string): string {
@@ -159,7 +196,45 @@ function escapeHtml(value: string): string {
     .replace(/"/g, '&quot;');
 }
 
-export function renderHead(meta: PageMeta): string {
+/** og:image URL for a card file under dist/ (e.g. `og/help-abc123.png`). */
+export function ogImageUrl(file: string): string {
+  return `${SITE_URL}/${file}`;
+}
+
+/**
+ * Open Graph and Twitter tags. Without an image URL (tests, dev) the tags
+ * still render but no image is linked.
+ */
+export function renderOgTags(meta: PageMeta, imageUrl?: string): string[] {
+  const title = escapeHtml(meta.title);
+  const tags = [
+    '<meta property="og:type" content="website" />',
+    '<meta property="og:site_name" content="Thought Reps" />',
+    `<meta property="og:title" content="${title}" />`,
+  ];
+  if (meta.description) {
+    tags.push(
+      `<meta property="og:description" content="${escapeHtml(meta.description)}" />`,
+    );
+  }
+  if (meta.canonical) {
+    tags.push(
+      `<meta property="og:url" content="${escapeHtml(meta.canonical)}" />`,
+    );
+  }
+  if (imageUrl) {
+    tags.push(
+      `<meta property="og:image" content="${escapeHtml(imageUrl)}" />`,
+      `<meta property="og:image:width" content="${OG_IMAGE_WIDTH}" />`,
+      `<meta property="og:image:height" content="${OG_IMAGE_HEIGHT}" />`,
+      `<meta property="og:image:alt" content="${title}" />`,
+      '<meta name="twitter:card" content="summary_large_image" />',
+    );
+  }
+  return tags;
+}
+
+export function renderHead(meta: PageMeta, ogImage?: string): string {
   const tags = [`<title>${escapeHtml(meta.title)}</title>`];
   if (meta.description) {
     tags.push(
@@ -170,6 +245,7 @@ export function renderHead(meta: PageMeta): string {
     tags.push(`<link rel="canonical" href="${escapeHtml(meta.canonical)}" />`);
   }
   if (meta.noindex) tags.push('<meta name="robots" content="noindex" />');
+  tags.push(...renderOgTags(meta, ogImage));
   for (const data of meta.jsonLd) {
     tags.push(
       `<script type="application/ld+json">${JSON.stringify(data).replace(/</g, '\\u003c')}</script>`,
@@ -188,8 +264,14 @@ function renderPage(path: string): string {
   return renderToString(<NotFoundPage />);
 }
 
-export function renderRoute(path: string): { html: string; head: string } {
-  return { html: renderPage(path), head: renderHead(getPageMeta(path)) };
+export function renderRoute(
+  path: string,
+  ogImage?: string,
+): { html: string; head: string } {
+  return {
+    html: renderPage(path),
+    head: renderHead(getPageMeta(path), ogImage),
+  };
 }
 
 export function sitemapXml(routes: readonly Route[] = ROUTES): string {
@@ -222,13 +304,14 @@ const OUTLET_MARKER = '<!--ssr-outlet-->';
 export function buildPage(
   template: string,
   route: { path: string; hydrate: boolean },
+  ogImage?: string,
 ): string {
   if (!HEAD_MARKER.test(template) || !template.includes(OUTLET_MARKER)) {
     throw new Error(
       'index.html is missing the ssr-head/ssr-outlet markers. Run `vite build` first; prerender is not re-runnable on its own output.',
     );
   }
-  const { html, head } = renderRoute(route.path);
+  const { html, head } = renderRoute(route.path, ogImage);
   let page = template
     .replace(HEAD_MARKER, () => head)
     .replace(OUTLET_MARKER, () => html);

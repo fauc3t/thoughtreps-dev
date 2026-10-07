@@ -507,12 +507,16 @@ describe('structured data', () => {
 
   it('escapes hostile page metadata in the head', () => {
     const hostile = '</script><img onerror=x> "quoted" & <b>';
-    const head = renderHead({
-      title: hostile,
-      description: hostile,
-      canonical: `https://thoughtreps.com/"><script>x</script>`,
-      jsonLd: [{ name: hostile }],
-    });
+    const head = renderHead(
+      {
+        title: hostile,
+        description: hostile,
+        canonical: `https://thoughtreps.com/"><script>x</script>`,
+        jsonLd: [{ name: hostile }],
+        ogCard: { kind: 'home' },
+      },
+      `https://thoughtreps.com/og/"><script>x</script>.png`,
+    );
     const ld = head.match(
       /<script type="application\/ld\+json">([\s\S]*?)<\/script>/,
     )!;
@@ -532,6 +536,9 @@ describe('structured data', () => {
     );
     expect(outside).toContain(
       'href="https://thoughtreps.com/&quot;&gt;&lt;script&gt;x&lt;/script&gt;"',
+    );
+    expect(outside).toContain(
+      'property="og:image" content="https://thoughtreps.com/og/&quot;&gt;&lt;script&gt;x&lt;/script&gt;.png"',
     );
   });
 });
