@@ -139,7 +139,7 @@ private struct StatRow: View {
                 }
             }
             Spacer(minLength: 8)
-            Text(value, format: .number)
+            Text(ThoughtStats.compactCount(value))
                 .font(.archivo(28, weight: .bold, relativeTo: .title))
                 .foregroundStyle(Color.ink)
         }

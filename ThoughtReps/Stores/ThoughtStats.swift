@@ -59,6 +59,19 @@ enum ThoughtStats {
         return min(4, max(1, Int((Double(count) / Double(busiest) * 4).rounded(.up))))
     }
 
+    /// Short display form: 999, 1.2k, 12k, 123k, 1.2M. One decimal below 10 of a unit, none above.
+    static func compactCount(_ value: Int, locale: Locale = .current) -> String {
+        guard abs(value) >= 1_000 else { return value.formatted(.number.locale(locale)) }
+        var scaled = Double(value) / 1_000
+        var suffix = "k"
+        if abs(scaled) >= 999.5 {
+            scaled /= 1_000
+            suffix = "M"
+        }
+        let digits = abs(scaled) < 9.95 ? 0...1 : 0...0
+        return scaled.formatted(.number.locale(locale).grouping(.never).precision(.fractionLength(digits))) + suffix
+    }
+
     static func compute(container: ModelContainer, now: Date, calendar: Calendar) -> Snapshot {
         let context = ModelContext(container)
         var snapshot = Snapshot()
