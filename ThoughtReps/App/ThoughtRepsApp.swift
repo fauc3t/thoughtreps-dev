@@ -6,6 +6,10 @@ struct ThoughtRepsApp: App {
     @UIApplicationDelegateAdaptor private var appDelegate: AppDelegate
     private static let container = Result { try ModelContainer.thoughtReps() }
 
+    init() {
+        InkAppearance.install()
+    }
+
     var body: some Scene {
         WindowGroup {
             switch Self.container {

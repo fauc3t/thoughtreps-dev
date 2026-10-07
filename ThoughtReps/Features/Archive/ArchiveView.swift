@@ -63,6 +63,7 @@ struct ArchiveView: View {
                 }
             }
         }
+        .inkList()
         .overlay {
             SearchOutcomeView(model: model, text: search)
         }
@@ -73,16 +74,19 @@ struct ArchiveView: View {
             NavigationLink(value: thought) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(thought.title)
-                        .font(.headline)
+                        .font(.archivo(17))
+                        .foregroundStyle(Color.ink)
                         .lineLimit(2)
                     if let archivedAt = thought.archivedAt {
                         Text("Archived \(archivedAt.formatted(date: .abbreviated, time: .omitted))")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .font(.mono(11))
+                            .foregroundStyle(Color.muted)
                     }
                 }
-                .padding(.vertical, 4)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .inkCard()
             }
+            .inkRow()
             .swipeActions(edge: .leading) {
                 Button {
                     store.restore(thought, now: .now)
@@ -99,13 +103,16 @@ struct ArchiveView: View {
                 }
             }
         }
+        .inkList()
         .overlay {
             if archived.isEmpty {
-                ContentUnavailableView(
-                    "Archive is empty",
-                    systemImage: "archivebox",
-                    description: Text("Swipe left on a thought to archive it.")
-                )
+                ContentUnavailableView {
+                    Label("Archive is empty", systemImage: "archivebox")
+                        .font(.archivo(22, weight: .bold, relativeTo: .title2))
+                } description: {
+                    Text("Swipe left on a thought to archive it.")
+                        .font(.mono(13, relativeTo: .footnote))
+                }
             }
         }
     }

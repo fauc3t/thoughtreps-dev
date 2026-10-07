@@ -80,23 +80,30 @@ struct ThoughtTimelineView: View {
     var body: some View {
         List {
             if !pinned.isEmpty {
-                Section("Pinned") {
+                Section {
                     ForEach(pinned) { row($0) }
+                } header: {
+                    Text("Pinned").inkSectionHeader()
                 }
             }
             if !listed.isEmpty {
-                Section(showAll ? "All" : "Due") {
+                Section {
                     ForEach(listed) { row($0) }
+                } header: {
+                    Text(showAll ? "All" : "Due").inkSectionHeader()
                 }
             } else if !pinned.isEmpty {
-                Section("Due") {
+                Section {
                     Text(nextUpText)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .font(.mono(12))
+                        .foregroundStyle(Color.muted)
+                        .inkRow()
+                } header: {
+                    Text("Due").inkSectionHeader()
                 }
             }
         }
-        .listStyle(.insetGrouped)
+        .inkList()
         .contentMargins(.bottom, 88, for: .scrollContent) // room for the + button
         .overlay {
             if pinned.isEmpty && listed.isEmpty {
@@ -145,6 +152,7 @@ struct ThoughtTimelineView: View {
         NavigationLink(value: thought) {
             ThoughtCard(thought: thought, now: snapshot)
         }
+        .inkRow()
         .swipeActions(edge: .leading) {
             Button {
                 store.setPinned(thought, !thought.isPinned)
@@ -232,21 +240,27 @@ struct ThoughtTimelineView: View {
         if scoped.isEmpty {
             ContentUnavailableView {
                 Label("No thoughts yet", systemImage: "lightbulb")
+                    .font(.archivo(22, weight: .bold, relativeTo: .title2))
             } description: {
-                switch scope {
-                case .all:
-                    Text("Tap + to capture your first thought.")
-                case .tag(let tag):
-                    Text("Thoughts tagged #\(tag.displayName) show up here.")
-                case .untagged:
-                    Text("Thoughts without a tag show up here.")
+                Group {
+                    switch scope {
+                    case .all:
+                        Text("Tap + to capture your first thought.")
+                    case .tag(let tag):
+                        Text("Thoughts tagged #\(tag.displayName) show up here.")
+                    case .untagged:
+                        Text("Thoughts without a tag show up here.")
+                    }
                 }
+                .font(.mono(13, relativeTo: .footnote))
             }
         } else {
             ContentUnavailableView {
                 Label("All caught up", systemImage: "checkmark.circle")
+                    .font(.archivo(22, weight: .bold, relativeTo: .title2))
             } description: {
                 Text(nextUpText)
+                    .font(.mono(13, relativeTo: .footnote))
             }
         }
     }

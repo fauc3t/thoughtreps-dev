@@ -37,18 +37,20 @@ private struct SearchContent: View {
                 }
                 .pickerStyle(.segmented)
                 .listRowBackground(Color.clear)
-                .listRowInsets(EdgeInsets())
+                .listRowSeparator(.hidden)
+                .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
             }
             if indexStatus.isIndexing {
                 Text("Indexing… results may be incomplete.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .font(.mono(12, relativeTo: .footnote))
+                    .foregroundStyle(Color.muted)
+                    .inkRow()
             }
             ForEach(model.liveRows) { row in
                 SearchResultLink(row: row, model: model, now: now)
             }
         }
-        .listStyle(.insetGrouped)
+        .inkList()
         .overlay { emptyState }
         .searchable(text: $text, prompt: "Search thoughts")
         .searchFocused($searchFocused)

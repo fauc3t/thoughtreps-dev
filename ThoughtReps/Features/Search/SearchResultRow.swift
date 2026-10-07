@@ -35,33 +35,31 @@ struct SearchResultRow: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(thought.title)
-                    .font(.headline)
+                    .font(.archivo(17))
+                    .foregroundStyle(Color.ink)
                     .lineLimit(2)
                 Spacer(minLength: 0)
                 if thought.isPinned {
                     Image(systemName: "pin.fill")
                         .font(.caption)
-                        .foregroundStyle(.tint)
+                        .foregroundStyle(Color.muted)
                         .accessibilityLabel("Pinned")
+                }
+                if let status = SearchStatus.of(
+                    isArchived: thought.isArchived, isPinned: thought.isPinned, nextDueAt: thought.nextDueAt, now: now
+                ) {
+                    InkBadge(text: status.text, style: status == .due ? .overdue : .plain)
                 }
             }
             Text(row.result.attributedSnippet)
                 .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.muted)
                 .lineLimit(2)
-            HStack(spacing: 8) {
+            if !thought.sortedTags.isEmpty {
                 TagChips(tags: thought.sortedTags, linked: false)
-                Spacer(minLength: 0)
-                if let status = SearchStatus.of(
-                    isArchived: thought.isArchived, isPinned: thought.isPinned, nextDueAt: thought.nextDueAt, now: now
-                ) {
-                    Text(status.text)
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(status == .due ? Color.orange : Color.secondary)
-                }
             }
         }
-        .padding(.vertical, 4)
+        .inkCard()
     }
 }
 
@@ -75,6 +73,7 @@ struct SearchResultLink: View {
         NavigationLink(value: row.thought) {
             SearchResultRow(row: row, now: now)
         }
+        .inkRow()
         .task { await model.loadMoreIfNeeded(after: row) }
     }
 }

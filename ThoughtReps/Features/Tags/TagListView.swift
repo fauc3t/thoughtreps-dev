@@ -34,6 +34,7 @@ struct TagListView: View {
                 NavigationLink(value: tag) {
                     TagRow(tag: tag, counts: tagCounts[tag.name] ?? Counts())
                 }
+                .inkRow()
                 .contextMenu {
                     Button {
                         colorTag = tag
@@ -47,17 +48,21 @@ struct TagListView: View {
                     NavigationLink(value: UntaggedRoute()) {
                         UntaggedRow(counts: untaggedCounts)
                     }
+                    .inkRow()
                 }
             }
         }
+        .inkList()
         .overlay {
             if visible.isEmpty && !showsUntagged {
                 if filter.isEmpty {
-                    ContentUnavailableView(
-                        "No tags yet",
-                        systemImage: "number",
-                        description: Text("Add #tags to a thought and they show up here.")
-                    )
+                    ContentUnavailableView {
+                        Label("No tags yet", systemImage: "number")
+                            .font(.archivo(22, weight: .bold, relativeTo: .title2))
+                    } description: {
+                        Text("Add #tags to a thought and they show up here.")
+                            .font(.mono(13, relativeTo: .footnote))
+                    }
                 } else {
                     ContentUnavailableView.search(text: filter)
                 }
@@ -108,22 +113,17 @@ struct TagRow: View {
                 .fill(TagColor.color(for: tag))
                 .frame(width: 10, height: 10)
             Text("#\(tag.displayName)")
-                .font(.body.weight(.medium))
+                .font(.archivo(17, relativeTo: .body))
+                .foregroundStyle(Color.ink)
             Spacer()
             if due > 0 {
-                Text("\(due) due")
-                    .font(.caption.weight(.semibold))
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 2)
-                    .background(Capsule().fill(Color.orange.opacity(0.15)))
-                    .foregroundStyle(.orange)
+                InkBadge(text: "\(due) due", style: .overdue)
             }
             Text("\(counts.active)")
-                .font(.subheadline)
-                .monospacedDigit()
-                .foregroundStyle(.secondary)
+                .font(.mono(12, relativeTo: .footnote))
+                .foregroundStyle(Color.muted)
         }
-        .padding(.vertical, 6)
+        .inkCard()
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
             RowAccessibility.label(title: "#\(tag.displayName)", due: due, count: counts.active)
@@ -149,22 +149,17 @@ struct UntaggedRow: View {
                 .fill(.secondary)
                 .frame(width: 10, height: 10)
             Text("Untagged")
-                .font(.body.weight(.medium))
+                .font(.archivo(17, relativeTo: .body))
+                .foregroundStyle(Color.ink)
             Spacer()
             if due > 0 {
-                Text("\(due) due")
-                    .font(.caption.weight(.semibold))
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 2)
-                    .background(Capsule().fill(Color.orange.opacity(0.15)))
-                    .foregroundStyle(.orange)
+                InkBadge(text: "\(due) due", style: .overdue)
             }
             Text("\(counts.active)")
-                .font(.subheadline)
-                .monospacedDigit()
-                .foregroundStyle(.secondary)
+                .font(.mono(12, relativeTo: .footnote))
+                .foregroundStyle(Color.muted)
         }
-        .padding(.vertical, 6)
+        .inkCard()
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(RowAccessibility.label(title: "Untagged", due: due, count: counts.active))
     }

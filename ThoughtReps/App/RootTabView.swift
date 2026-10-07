@@ -128,10 +128,14 @@ struct CaptureButton: View {
         Button(action: action) {
             Image(systemName: "plus")
                 .font(.title2.weight(.semibold))
-                .foregroundStyle(.white)
-                .frame(width: 60, height: 60)
-                .background(Circle().fill(Color.accentColor))
-                .shadow(color: Color.accentColor.opacity(0.35), radius: 8, y: 4)
+                .foregroundStyle(Color.paper)
+                .frame(width: 56, height: 56)
+                .background {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 16).fill(Color.hl).offset(x: 3, y: 3)
+                        RoundedRectangle(cornerRadius: 16).fill(Color.ink)
+                    }
+                }
         }
         .accessibilityLabel(hasTag ? "New thought with this tag" : "New thought")
     }

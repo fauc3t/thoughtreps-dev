@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// One row on a timeline: title, a two-line preview, tags and when it's due.
+/// One row on a timeline: title, a two-line preview, tags and when it's due. Pinned thoughts
+/// get a compact card with just the pin and the title.
 struct ThoughtCard: View {
     let thought: Thought
     let now: Date
@@ -8,59 +9,68 @@ struct ThoughtCard: View {
     private static let thumbnailSize: CGFloat = 56
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            content
-            if let image = thought.firstImage {
-                DataImage(id: image.id) { image.thumbnailData }
-                    .frame(width: Self.thumbnailSize, height: Self.thumbnailSize)
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
-                    .accessibilityHidden(true)
+        if thought.isPinned {
+            pinned
+        } else {
+            HStack(alignment: .top, spacing: 12) {
+                content
+                if let image = thought.firstImage {
+                    DataImage(id: image.id) { image.thumbnailData }
+                        .frame(width: Self.thumbnailSize, height: Self.thumbnailSize)
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                        .accessibilityHidden(true)
+                }
             }
+            .inkCard()
         }
+    }
+
+    private var pinned: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "pin.fill")
+                .font(.caption2)
+                .foregroundStyle(Color.muted)
+                .accessibilityLabel("Pinned")
+            Text(thought.title)
+                .font(.archivo(16))
+                .foregroundStyle(Color.ink)
+                .lineLimit(1)
+            Spacer(minLength: 0)
+        }
+        .inkCard(filled: true)
     }
 
     private var content: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(thought.title)
-                    .font(.headline)
+                    .font(.archivo(17))
+                    .foregroundStyle(Color.ink)
                     .lineLimit(2)
                 Spacer(minLength: 0)
-                if thought.isPinned {
-                    Image(systemName: "pin.fill")
-                        .font(.caption)
-                        .foregroundStyle(.tint)
-                        .accessibilityLabel("Pinned")
-                }
+                DueLabel(date: thought.nextDueAt, now: now)
             }
             if !thought.preview.isEmpty {
                 Text(thought.preview)
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.muted)
                     .lineLimit(2)
             }
-            HStack(spacing: 8) {
+            if !thought.sortedTags.isEmpty {
                 TagChips(tags: thought.sortedTags, linked: false)
-                Spacer(minLength: 0)
-                if !thought.isPinned {
-                    DueLabel(date: thought.nextDueAt, now: now)
-                }
             }
         }
-        .padding(.vertical, 4)
     }
 }
 
-/// "due today", "due 2d ago" (highlighted), or "in 5 days".
+/// "due today" (hl badge), "due 2d ago" (ink badge), or "in 5 days".
 struct DueLabel: View {
     let date: Date
     let now: Date
 
     var body: some View {
         let days = RelativeDay.daysBetween(date, and: now)
-        Text(text(days: days))
-            .font(.caption.weight(.medium))
-            .foregroundStyle(days > 0 ? Color.orange : Color.secondary)
+        InkBadge(text: text(days: days), style: days > 0 ? .overdue : days == 0 ? .today : .plain)
     }
 
     private func text(days: Int) -> String {

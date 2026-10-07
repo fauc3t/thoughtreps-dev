@@ -26,40 +26,40 @@ extension Theme {
             .heading1 { configuration in
                 configuration.label
                     .markdownTextStyle {
+                        FontFamily(.custom(InkFontName.archivoBold))
                         FontSize(.em(1.65))
-                        FontWeight(.bold)
                     }
                     .markdownMargin(top: .rem(0.25), bottom: gap)
             }
             .heading2 { configuration in
                 configuration.label
                     .markdownTextStyle {
+                        FontFamily(.custom(InkFontName.archivoBold))
                         FontSize(.em(1.3))
-                        FontWeight(.bold)
                     }
                     .markdownMargin(top: .rem(0.25), bottom: gap)
             }
             .heading3 { configuration in
                 configuration.label
                     .markdownTextStyle {
+                        FontFamily(.custom(InkFontName.archivoSemiBold))
                         FontSize(.em(1.18))
-                        FontWeight(.semibold)
                     }
                     .markdownMargin(top: .zero, bottom: gap)
             }
             .heading4 { configuration in
                 configuration.label
-                    .markdownTextStyle { FontWeight(.semibold) }
+                    .markdownTextStyle { FontFamily(.custom(InkFontName.archivoSemiBold)) }
                     .markdownMargin(top: .zero, bottom: gap)
             }
             .heading5 { configuration in
                 configuration.label
-                    .markdownTextStyle { FontWeight(.semibold) }
+                    .markdownTextStyle { FontFamily(.custom(InkFontName.archivoSemiBold)) }
                     .markdownMargin(top: .zero, bottom: gap)
             }
             .heading6 { configuration in
                 configuration.label
-                    .markdownTextStyle { FontWeight(.semibold) }
+                    .markdownTextStyle { FontFamily(.custom(InkFontName.archivoSemiBold)) }
                     .markdownMargin(top: .zero, bottom: gap)
             }
             .paragraph { configuration in
@@ -69,9 +69,9 @@ extension Theme {
             }
             .blockquote { configuration in
                 HStack(spacing: 10) {
-                    RoundedRectangle(cornerRadius: 1.5)
-                        .fill(Color.secondary.opacity(0.4))
-                        .frame(width: 3)
+                    Rectangle()
+                        .fill(Color.ink)
+                        .frame(width: 2)
                     configuration.label
                         .markdownTextStyle { ForegroundColor(.secondary) }
                 }

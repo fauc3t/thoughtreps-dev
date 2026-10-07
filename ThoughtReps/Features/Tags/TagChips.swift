@@ -20,16 +20,18 @@ struct TagChips: View {
     }
 
     private func chip(_ tag: Tag) -> some View {
-        Text("#\(tag.displayName)")
-            .font(.caption.weight(.medium))
-            .lineLimit(1)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-            .background(
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(TagColor.color(for: tag).opacity(0.15))
-            )
-            .foregroundStyle(.primary)
+        HStack(spacing: 5) {
+            Circle()
+                .fill(TagColor.color(for: tag))
+                .frame(width: 5, height: 5)
+            Text("#\(tag.displayName)")
+                .font(.mono(11))
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
+        .background(RoundedRectangle(cornerRadius: 6).fill(Color.soft))
+        .foregroundStyle(Color.ink)
     }
 }
 

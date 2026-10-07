@@ -46,6 +46,12 @@ targets:
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         TRAppGroupIdentifier: group.$(TR_BUNDLE_ID)
         LSSupportsOpeningDocumentsInPlace: false
+        UIAppFonts:
+          - Archivo-SemiBold.ttf
+          - Archivo-Bold.ttf
+          - Archivo-ExtraBold.ttf
+          - PaperMono-Regular.ttf
+          - PaperMono-SemiBold.ttf
         UTExportedTypeDeclarations:
           - UTTypeIdentifier: com.thoughtreps.export
             UTTypeDescription: Thought Reps export

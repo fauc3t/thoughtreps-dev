@@ -29,8 +29,16 @@ struct ThoughtDetailView: View {
                         TagChips(tags: thought.sortedTags, linked: true)
                     }
                 }
+                let parts = ThoughtTitleSplit.split(thought.body)
+                if let parts {
+                    Text(parts.title)
+                        .font(.archivo(30, weight: .bold, relativeTo: .largeTitle))
+                        .tracking(-0.5)
+                        .foregroundStyle(Color.ink)
+                        .textSelection(.enabled)
+                }
                 VStack(alignment: .leading, spacing: 16) {
-                    ThoughtRenderer(markdown: thought.body, images: thought.images ?? []) { viewingImage = ImageViewerStart(id: $0) }
+                    ThoughtRenderer(markdown: parts?.rest ?? thought.body, images: thought.images ?? []) { viewingImage = ImageViewerStart(id: $0) }
                     ForEach(thought.sortedBlocks) { block in
                         BlockView(block: block, images: thought.images ?? []) { viewingImage = ImageViewerStart(id: $0) }
                     }
@@ -43,6 +51,20 @@ struct ThoughtDetailView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .contentMargins(.bottom, 88, for: .scrollContent) // room for the + button
+        .background(Color.paper)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if !thought.isArchived {
+                intervalBar
+            }
+        }
+        .sheet(isPresented: $isPickingInterval) {
+            IntervalPickerSheet(
+                initialDays: thought.effectiveIntervalDays(defaultDays: defaultIntervalDays)
+            ) { days in
+                if thought.intervalDays == nil && days == defaultIntervalDays { return }
+                store.setInterval(thought, days: days, now: .now)
+            }
+        }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { toolbarContent }
         .imageViewer(item: $viewingImage, images: { thought.orderedImages })
@@ -68,15 +90,9 @@ struct ThoughtDetailView: View {
     // MARK: Pieces
 
     private var footer: some View {
-        HStack(alignment: .firstTextBaseline) {
-            Text(statusText)
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-            Spacer()
-            if !thought.isArchived {
-                intervalMenu
-            }
-        }
+        Text(statusText)
+            .font(.mono(12, relativeTo: .footnote))
+            .foregroundStyle(Color.muted)
     }
 
     private var statusText: String {
@@ -89,12 +105,65 @@ struct ThoughtDetailView: View {
         return "\(back) · \(views)"
     }
 
-    private var intervalMenu: some View {
+    private static let quickIntervals = [1, 3, 7, 30]
+
+    /// Clears the floating + button, which sits over the lower trailing corner of this bar.
+    private static let captureButtonClearance: CGFloat = 84
+
+    private var intervalBar: some View {
+        let current = thought.effectiveIntervalDays(defaultDays: defaultIntervalDays)
+        return VStack(spacing: 8) {
+            HStack {
+                Text("Back in")
+                Spacer()
+                if !thought.isPinned {
+                    Text("next: \(thought.nextDueAt.formatted(.dateTime.month(.abbreviated).day()))")
+                }
+            }
+            .font(.mono(12, relativeTo: .footnote))
+            .foregroundStyle(Color.muted)
+            HStack(spacing: 8) {
+                ForEach(Self.quickIntervals, id: \.self) { days in
+                    Button {
+                        store.setInterval(thought, days: days, now: .now)
+                    } label: {
+                        intervalChip("\(days)d", selected: current == days)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(IntervalDuration(days: days).label)
+                    .accessibilityAddTraits(current == days ? .isSelected : [])
+                }
+                intervalMenu(selected: !Self.quickIntervals.contains(current))
+            }
+            .padding(.trailing, Self.captureButtonClearance - 16)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity)
+        .background(Color.paper)
+        .overlay(alignment: .top) {
+            Rectangle().fill(Color.hl).frame(height: 1)
+        }
+    }
+
+    private func intervalChip(_ text: String, selected: Bool) -> some View {
+        Text(text)
+            .font(.mono(13, semibold: true, relativeTo: .footnote))
+            .foregroundStyle(selected ? Color.paper : Color.ink)
+            .frame(maxWidth: .infinity, minHeight: 36)
+            .background(RoundedRectangle(cornerRadius: 10).fill(selected ? Color.ink : Color.paper))
+            .overlay {
+                if !selected {
+                    RoundedRectangle(cornerRadius: 10).strokeBorder(Color.hl, lineWidth: 1)
+                }
+            }
+    }
+
+    private func intervalMenu(selected: Bool) -> some View {
         let selection = Binding<Int?>(
             get: { thought.intervalDays },
             set: { store.setInterval(thought, days: $0, now: .now) }
         )
-        let current = IntervalDuration(days: thought.effectiveIntervalDays(defaultDays: defaultIntervalDays))
         return Menu {
             Picker("Interval", selection: selection) {
                 Text("Default (\(defaultIntervalDays) days)").tag(Int?.none)
@@ -105,17 +174,9 @@ struct ThoughtDetailView: View {
             .pickerStyle(.inline)
             Button("Custom…") { isPickingInterval = true }
         } label: {
-            Text("Every \(current.phrase)")
-                .font(.footnote.weight(.semibold))
+            intervalChip("…", selected: selected)
         }
-        .sheet(isPresented: $isPickingInterval) {
-            IntervalPickerSheet(
-                initialDays: thought.effectiveIntervalDays(defaultDays: defaultIntervalDays)
-            ) { days in
-                if thought.intervalDays == nil && days == defaultIntervalDays { return }
-                store.setInterval(thought, days: days, now: .now)
-            }
-        }
+        .accessibilityLabel("More intervals")
     }
 
     @ToolbarContentBuilder
