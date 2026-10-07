@@ -11,6 +11,7 @@ enum AppSettings {
         static let ratingDueOpenCount = "ratingDueOpenCount"
         static let ratingPromptPending = "ratingPromptPending"
         static let ratingPromptAsked = "ratingPromptAsked"
+        static let reminderPromptAsked = "reminderPromptAsked"
         static let thoughtFont = "thoughtFont"
     }
 
