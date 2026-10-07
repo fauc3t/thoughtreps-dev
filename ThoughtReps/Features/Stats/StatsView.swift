@@ -111,7 +111,7 @@ private struct StatRow: View {
 
     var body: some View {
         LabeledContent {
-            Text(value, format: .number)
+            Text(value, format: .number.notation(.compactName))
                 .font(.title3.weight(.semibold))
                 .monospacedDigit()
         } label: {
