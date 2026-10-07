@@ -9,6 +9,7 @@ struct EditorView: View {
     }
 
     let mode: Mode
+    var onCreated: (() -> Void)?
 
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
@@ -364,6 +365,7 @@ struct EditorView: View {
         case .new:
             let thought = store.create(body: trimmedText, blocks: drafts, images: inlineDrafts, intervalDays: intervalDays, now: .now)
             saved = thought.modelContext != nil
+            if saved { onCreated?() }
         case let .edit(thought):
             saveErrors.note = "Some changes may have been saved. Tap Save to finish."
             saved = store.update(thought, body: trimmedText, blocks: drafts, images: inlineDrafts, intervalDays: intervalDays, now: .now)

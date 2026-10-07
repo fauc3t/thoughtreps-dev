@@ -1045,6 +1045,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
           'Under "Reminder", turn on "Daily reminder".',
           'The first time, iOS asks if Thought Reps can send notifications. Choose Allow.',
           'Pick a time with the "Time" row. The default is 8:00 AM.',
+          'You may not need to do this yourself. After you save your first thought, the app offers to turn reminders on, once. You can always change it here later.',
         ],
       },
       {
@@ -1401,7 +1402,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
       {
         heading: 'Do I get a notification for every thought?',
         paragraphs: [
-          'No. You can turn on one reminder a day, at the time you pick. It says how many thoughts are back. Pinned thoughts are not counted, and the app never shows a badge on its icon. See [Set up a daily reminder](/help/daily-reminders).',
+          'No. Reminders are off until you turn them on. The app offers once after your first thought, and you can change it any time in Settings. You get one reminder a day, at the time you pick. It says how many thoughts are back. Pinned thoughts are not counted, and the app never shows a badge on its icon. See [Set up a daily reminder](/help/daily-reminders).',
         ],
       },
       {

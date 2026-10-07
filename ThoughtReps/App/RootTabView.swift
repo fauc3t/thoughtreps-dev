@@ -10,6 +10,8 @@ struct RootTabView: View {
     @Environment(\.modelContext) private var context
     @State private var captureContext = CaptureContext()
     @State private var capture: CaptureRequest?
+    @State private var createdThought = false
+    @State private var showReminderPrompt = false
     @State private var saveErrors = SaveErrorCenter.shared
     @State private var navigation = AppNavigation.shared
     @State private var inboxImporter = InboxImporter()
@@ -26,6 +28,17 @@ struct RootTabView: View {
             backup.beginImport(from: url, container: context.container)
         } else if ExportLinkImportModel.handles(url) {
             Task { await ExportLinkImportModel.shared.present(opening: url) }
+        }
+    }
+
+    /// Runs after the editor sheet is gone so the prompt never stacks on it.
+    private func offerReminders() {
+        guard createdThought else { return }
+        createdThought = false
+        Task {
+            let prompt = ReminderPrompt()
+            guard prompt.shouldOffer(status: await NotificationScheduler.authorizationStatus()) else { return }
+            showReminderPrompt = true
         }
     }
 
@@ -71,8 +84,11 @@ struct RootTabView: View {
                 .accessibilityHidden(captureContext.hidesButton)
                 .animation(.easeOut(duration: 0.2), value: captureContext.hidesButton)
         }
-        .sheet(item: $capture) { request in
-            EditorView(mode: .new(prefillTag: request.prefillTag))
+        .sheet(item: $capture, onDismiss: offerReminders) { request in
+            EditorView(mode: .new(prefillTag: request.prefillTag), onCreated: { createdThought = true })
+        }
+        .sheet(isPresented: $showReminderPrompt) {
+            ReminderPromptSheet()
         }
         .saveErrorAlert(saveErrors)
         .backupImportSheet(backup, host: .root)
