@@ -48,6 +48,7 @@ export const HELP_ICONS = {
   copy: 'Copy',
   check: 'Selected',
   palette: 'Change Color',
+  stats: 'Stats',
 } as const;
 
 export type HelpIconName = keyof typeof HELP_ICONS;
@@ -80,6 +81,7 @@ export const HELP_EXAMPLE_KINDS = [
   'export-link',
   'import-link',
   'import-menu',
+  'stats',
 ] as const;
 
 export type HelpExampleKind = (typeof HELP_EXAMPLE_KINDS)[number];
@@ -184,6 +186,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
           'Tags, with a timeline for each tag.',
           'Pin, snooze and archive, so you choose what stays in front of you.',
           'An optional daily reminder.',
+          'A calm Stats tab that shows how much you write and revisit.',
           'A share option, so you can save text and links from other apps.',
           'Backup files you own, and a one-time link for moving to a new device.',
         ],
@@ -326,7 +329,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
     sections: [
       {
         paragraphs: [
-          'The app has three tabs: Timeline, Tags and Archive. The Timeline comes first. It only shows what needs your attention today.',
+          'The app has four tabs: Timeline, Tags, Archive and Stats. The Timeline comes first. It only shows what needs your attention today. The Stats tab is a summary of your notebook. See [Stats](/help/stats).',
         ],
         example: {
           kind: 'timeline',
@@ -958,6 +961,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
           'Use the "Search archive" box to find an old thought. See [Search your thoughts](/help/search-your-thoughts).',
           'Swipe right on one to restore it.',
           'Opening an archived thought does not requeue it.',
+          'Archived thoughts show in the counts on the {icon:stats} tab. See [Stats](/help/stats).',
         ],
         example: {
           kind: 'pinned-archived',
@@ -975,6 +979,53 @@ export const HELP_ARTICLES: HelpArticle[] = [
         heading: 'Delete',
         paragraphs: [
           'Delete removes a thought for good, with its images and blocks. In the Archive, swipe left on a thought and tap {icon:trash|decorative} "Delete". Inside a thought, {icon:more} also has "Delete", and it asks you to confirm. You cannot undo a delete. Archive instead if you might want it back.',
+        ],
+      },
+    ],
+  },
+  {
+    slug: 'stats',
+    category: 'reviewing',
+    title: 'Stats: how you use the app',
+    description:
+      'The Stats tab shows how many thoughts you wrote, how often you revisit them and how much you write each week. It is all worked out on your phone.',
+    related: [
+      'the-timeline',
+      'how-resurfacing-works',
+      'pin-and-archive',
+      'privacy',
+    ],
+    sections: [
+      {
+        paragraphs: [
+          'Open the {icon:stats} tab at the bottom to see a quiet summary of your notebook. There are no streaks, goals or badges. It is just a look at what you have done.',
+          'Everything is worked out on your phone from your own thoughts. Nothing is sent anywhere. The numbers refresh each time you open the tab.',
+        ],
+        example: {
+          kind: 'stats',
+          caption:
+            'The Stats tab, with the basics, the most revisited thought and the writing rhythm.',
+        },
+      },
+      {
+        heading: 'Basics',
+        list: [
+          '"Thoughts written" is every thought you have made, with how many are from this month.',
+          '"Revisits" adds up how many times you have opened your thoughts. It also tells you how many thoughts you have seen at least once. Opening a thought from anywhere counts, since opening it sends it on another lap.',
+          '"Active" is the thoughts that are not archived.',
+          '"Archived" is the thoughts in your Archive.',
+        ],
+      },
+      {
+        heading: 'Most revisited',
+        paragraphs: [
+          'Once a thought has been opened 10 times or more, the thought you open most often shows up here as a card, like "Seen 14 times". Tap it to open the thought. Archived thoughts are left out.',
+        ],
+      },
+      {
+        heading: 'Writing rhythm',
+        paragraphs: [
+          'The grid has one square for each of the last 52 weeks, with the newest last. A darker square means you wrote more that week. An empty outline means you wrote nothing. Archived thoughts count too. Under the grid, you see the total for the last year, like "42 thoughts in the last year".',
         ],
       },
     ],

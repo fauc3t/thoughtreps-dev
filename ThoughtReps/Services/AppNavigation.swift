@@ -2,7 +2,7 @@ import Foundation
 import Observation
 
 enum AppTab: Hashable {
-    case timeline, tags, archive
+    case timeline, tags, archive, stats
 }
 
 /// App-wide navigation state that outside callers (the notification delegate) can drive.

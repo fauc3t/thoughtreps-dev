@@ -63,6 +63,14 @@ const GLYPHS: Record<HelpIconName, ReactNode> = {
       <path d="m7 10 5 5 5-5" />
     </>
   ),
+  stats: (
+    <>
+      <path d="M3 3v16a2 2 0 0 0 2 2h16" />
+      <path d="M18 17V9" />
+      <path d="M13 17V5" />
+      <path d="M8 17v-3" />
+    </>
+  ),
   hash: (
     <>
       <line x1="4" x2="20" y1="9" y2="9" />
