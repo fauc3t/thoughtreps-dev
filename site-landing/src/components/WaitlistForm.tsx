@@ -32,7 +32,15 @@ async function submitWaitlist(
   }
 }
 
-export function WaitlistForm({ className = '' }: { className?: string }) {
+// `compact` (the hero) hides the label and hint visually; both stay in the
+// accessibility tree, and the hero's mono line carries the hint's promise.
+export function WaitlistForm({
+  className = '',
+  compact = false,
+}: {
+  className?: string;
+  compact?: boolean;
+}) {
   const uid = useId();
   const emailId = `${uid}-email`;
   const betaId = `${uid}-beta`;
@@ -110,31 +118,29 @@ export function WaitlistForm({ className = '' }: { className?: string }) {
       noValidate
       className={`flex w-full max-w-[460px] flex-col gap-2.5 text-left ${className}`}
     >
+      <label htmlFor={emailId} className={compact ? 'sr-only' : 'label -mb-1'}>
+        Email
+      </label>
       <div className="flex flex-col gap-2.5 xs:flex-row">
-        <div className="flex min-w-0 flex-1 flex-col gap-1">
-          <label htmlFor={emailId} className="label">
-            Email
-          </label>
-          <input
-            ref={emailRef}
-            id={emailId}
-            type="email"
-            name="email"
-            autoComplete="email"
-            required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            aria-invalid={error === 'invalid' ? true : undefined}
-            aria-describedby={error ? `${errorId} ${hintId}` : hintId}
-            placeholder="you@example.com"
-            readOnly={submitting}
-            className="w-full min-w-0 rounded-[10px] border-2 border-ink bg-paper px-3 py-2.5 text-[16px] text-ink shadow-sticker-sm transition-[background,box-shadow] duration-[120ms] placeholder:text-muted hover:bg-soft focus-visible:bg-paper read-only:opacity-60 aria-[invalid=true]:border-dashed"
-          />
-        </div>
+        <input
+          ref={emailRef}
+          id={emailId}
+          type="email"
+          name="email"
+          autoComplete="email"
+          required
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          aria-invalid={error === 'invalid' ? true : undefined}
+          aria-describedby={error ? `${errorId} ${hintId}` : hintId}
+          placeholder="you@example.com"
+          readOnly={submitting}
+          className="w-full min-w-0 flex-1 rounded-[10px] border-2 border-ink bg-paper px-3 py-2.5 text-[16px] leading-tight text-ink shadow-sticker-sm transition-[background,box-shadow] duration-[120ms] placeholder:text-muted hover:bg-soft focus-visible:bg-paper read-only:opacity-60 aria-[invalid=true]:border-dashed"
+        />
         <button
           type="submit"
           aria-disabled={submitting}
-          className="cursor-pointer rounded-[10px] border-2 border-ink bg-ink px-4 py-2.5 text-[16px] leading-tight font-semibold text-paper shadow-sticker-sm transition-[transform,box-shadow,background,color] duration-[120ms] hover:-translate-px hover:bg-accent hover:text-accent-ink hover:shadow-[3px_3px_0_var(--ink)] active:translate-[2px] active:shadow-none aria-disabled:cursor-not-allowed aria-disabled:opacity-60 aria-disabled:hover:translate-0 aria-disabled:hover:bg-ink aria-disabled:hover:text-paper aria-disabled:hover:shadow-sticker-sm xs:self-end"
+          className="cursor-pointer rounded-[10px] border-2 border-ink bg-ink px-4 py-2.5 text-[16px] leading-tight font-semibold text-paper shadow-sticker-sm transition-[transform,box-shadow,background,color] duration-[120ms] hover:-translate-px hover:bg-accent hover:text-accent-ink hover:shadow-[3px_3px_0_var(--ink)] active:translate-[2px] active:shadow-none aria-disabled:cursor-not-allowed aria-disabled:opacity-60 aria-disabled:hover:translate-0 aria-disabled:hover:bg-ink aria-disabled:hover:text-paper aria-disabled:hover:shadow-sticker-sm"
         >
           {submitting ? 'Adding you...' : 'Notify me'}
         </button>
@@ -173,7 +179,10 @@ export function WaitlistForm({ className = '' }: { className?: string }) {
           {ERROR_COPY[error]}
         </p>
       )}
-      <p id={hintId} className="text-[14px] leading-snug text-muted">
+      <p
+        id={hintId}
+        className={compact ? 'sr-only' : 'text-[14px] leading-snug text-muted'}
+      >
         One email at launch, plus a beta invite if you ask. Then we delete your
         address.
       </p>

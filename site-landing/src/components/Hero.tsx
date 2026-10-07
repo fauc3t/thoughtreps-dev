@@ -211,9 +211,9 @@ export function Hero() {
             How it works
           </a>
         </div>
-        <WaitlistForm />
+        <WaitlistForm compact />
         <p className="mono text-muted">
-          No account · Stays on your phone · iOS 18 or later
+          One email at launch · No account · Stays on your phone · iOS 18+
         </p>
       </div>
       <Deck />
