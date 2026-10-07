@@ -2,6 +2,7 @@ import * as cdk from 'aws-cdk-lib/core';
 import * as route53 from 'aws-cdk-lib/aws-route53';
 import { Match, Template } from 'aws-cdk-lib/assertions';
 import { ShareStack } from '../lib/export-link/share-stack.js';
+import { securityHeaders } from './helpers.js';
 
 function synthShareStack() {
   const app = new cdk.App();
@@ -470,6 +471,40 @@ describe('ShareStack', () => {
     });
     template.hasOutput('ExportApiUrl', {
       Value: 'https://transfer.example.test/api/v1',
+    });
+  });
+
+  it('attaches a custom security-headers policy to the default behavior', () => {
+    const {
+      policyId,
+      csp,
+      hsts,
+      frameOption,
+      contentTypeOptions,
+      referrerPolicy,
+    } = securityHeaders(template);
+    expect(hsts).toMatchObject({
+      IncludeSubdomains: true,
+      Override: true,
+    });
+    expect(hsts.AccessControlMaxAgeSec).toBeGreaterThanOrEqual(31536000);
+    expect(contentTypeOptions).toEqual({ Override: true });
+    expect(frameOption).toEqual({ FrameOption: 'DENY', Override: true });
+    expect(referrerPolicy).toBe('no-referrer');
+    expect(csp).toContain("script-src 'self'");
+    const connect = csp.find((d) => d.startsWith('connect-src '));
+    expect(connect).toMatch(
+      /^connect-src 'self' https:\/\/\{ExportBucket\w+\}\.s3\.us-east-1\.amazonaws\.com$/,
+    );
+    expect(csp).toContain("form-action 'none'");
+    expect(csp).toContain("frame-ancestors 'none'");
+    expect(csp.join(';')).not.toContain('unsafe-eval');
+    template.hasResourceProperties('AWS::CloudFront::Distribution', {
+      DistributionConfig: Match.objectLike({
+        DefaultCacheBehavior: Match.objectLike({
+          ResponseHeadersPolicyId: { Ref: policyId },
+        }),
+      }),
     });
   });
 });

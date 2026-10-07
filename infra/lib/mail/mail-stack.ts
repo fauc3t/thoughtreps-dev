@@ -297,7 +297,13 @@ export class MailStack extends cdk.Stack {
       mailboxAddresses,
     });
 
-    const web = new MailWebHosting(this, 'Web', { zone, domainName });
+    const web = new MailWebHosting(this, 'Web', {
+      zone,
+      domainName,
+      apiUrl: api.apiUrl,
+      mailBucket: this.bucket,
+      attachmentBucket,
+    });
 
     // Outputs live on the stack, not the constructs above, so their keys
     // stay exactly these names for scripts/deploy-mail-web.sh to read.

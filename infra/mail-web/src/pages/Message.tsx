@@ -7,6 +7,7 @@ import { useReply } from '../lib/queries/reply';
 import { useDeleteMessage } from '../lib/queries/delete';
 import AttachmentList from '../components/AttachmentList';
 import { formatAttachmentSize, validateReplyFiles } from '../lib/attachments';
+import { withEmailCsp } from '../lib/emailCsp';
 
 function formatAddress(address: Address | undefined): string {
   if (!address) return '(unknown sender)';
@@ -223,7 +224,8 @@ export default function Message() {
             <iframe
               title="Message body"
               sandbox=""
-              srcDoc={query.data.html}
+              srcDoc={withEmailCsp(query.data.html)}
+              referrerPolicy="no-referrer"
               className="h-[60vh] w-full rounded border border-gray-200"
             />
           ) : (

@@ -2,6 +2,7 @@ import { Match } from 'aws-cdk-lib/assertions';
 import { inboxPrefix } from '../lib/mail/inbox.js';
 import {
   SHARED_RULE_SET,
+  securityHeaders,
   defaultPolicyFor,
   forwardFnLogicalIds,
   statementActions,
@@ -526,6 +527,56 @@ describe('MailStack outputs', () => {
       mailboxAddresses: ['a@example.test', 'b@example.test'],
     }).hasOutput('MailboxAddresses', {
       Value: 'a@example.test,b@example.test',
+    });
+  });
+});
+
+describe('MailStack web hosting headers', () => {
+  const template = synthMailStack();
+
+  it('serves the SPA with a custom security-headers policy and a scoped CSP', () => {
+    const {
+      policyId,
+      csp,
+      hsts,
+      frameOption,
+      contentTypeOptions,
+      referrerPolicy,
+    } = securityHeaders(template);
+    expect(hsts).toMatchObject({
+      IncludeSubdomains: true,
+      Override: true,
+    });
+    expect(frameOption).toEqual({ FrameOption: 'DENY', Override: true });
+    expect(contentTypeOptions).toEqual({ Override: true });
+    expect(referrerPolicy).toBe('strict-origin-when-cross-origin');
+    expect(csp).toContain("default-src 'none'");
+    expect(csp).toContain("script-src 'self'");
+    const connect = (csp.find((d) => d.startsWith('connect-src ')) ?? '').split(
+      ' ',
+    );
+    expect(connect).toContain('https://cognito-idp.us-east-1.amazonaws.com');
+    expect(connect).toContain(
+      'https://cognito-identity.us-east-1.amazonaws.com',
+    );
+    for (const bucket of ['MailBucket', 'AttachmentBucket']) {
+      const hosts = connect.filter((source) =>
+        new RegExp(`^https://\\{${bucket}\\w+\\}\\.s3\\.`).test(source),
+      );
+      expect(hosts.map((h) => h.replace(/\{\w+\}/, 'B')).sort()).toEqual([
+        'https://B.s3.amazonaws.com',
+        'https://B.s3.us-east-1.amazonaws.com',
+      ]);
+    }
+    expect(csp).toContain('frame-src about:');
+    expect(csp).toContain("frame-ancestors 'none'");
+    expect(csp.join(';')).not.toContain('unsafe-eval');
+    template.hasResourceProperties('AWS::CloudFront::Distribution', {
+      DistributionConfig: Match.objectLike({
+        DefaultCacheBehavior: Match.objectLike({
+          ResponseHeadersPolicyId: { Ref: policyId },
+        }),
+      }),
     });
   });
 });

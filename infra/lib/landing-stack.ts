@@ -10,6 +10,7 @@ import { Construct } from 'constructs';
 export interface LandingStackProps extends cdk.StackProps {
   zone: route53.IHostedZone;
   domainName: string;
+  exportLinkSubdomain: string;
 }
 
 export class LandingStack extends cdk.Stack {
@@ -19,7 +20,7 @@ export class LandingStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: LandingStackProps) {
     super(scope, id, props);
 
-    const { zone, domainName } = props;
+    const { zone, domainName, exportLinkSubdomain } = props;
     const wwwDomainName = `www.${domainName}`;
 
     // DESTROY: holds nothing but the landing site's build output, which
@@ -78,6 +79,52 @@ export class LandingStack extends cdk.Stack {
 `),
     });
 
+    // Everything is same-origin (bundled script, self-hosted fonts, prerendered
+    // pages):
+    //  style-src 'unsafe-inline'  style attributes in the prerendered HTML
+    //  img-src data:              inlined SVG/image assets
+    //  font-src data:             small fonts the bundler may inline
+    //  connect-src                the waitlist form POSTs to the transfer API
+    //  script-src 'self'          theme.js and the bundle; JSON-LD blocks are
+    //                             data, not executed
+    const contentSecurityPolicy = [
+      "default-src 'self'",
+      "script-src 'self'",
+      "style-src 'self' 'unsafe-inline'",
+      "img-src 'self' data:",
+      "font-src 'self' data:",
+      `connect-src 'self' https://${exportLinkSubdomain}.${domainName}`,
+      "base-uri 'none'",
+      "form-action 'none'",
+      "object-src 'none'",
+      "frame-ancestors 'none'",
+    ].join('; ');
+
+    const responseHeadersPolicy = new cloudfront.ResponseHeadersPolicy(
+      this,
+      'LandingHeadersPolicy',
+      {
+        securityHeadersBehavior: {
+          contentSecurityPolicy: { contentSecurityPolicy, override: true },
+          strictTransportSecurity: {
+            accessControlMaxAge: cdk.Duration.days(730),
+            includeSubdomains: true,
+            override: true,
+          },
+          contentTypeOptions: { override: true },
+          frameOptions: {
+            frameOption: cloudfront.HeadersFrameOption.DENY,
+            override: true,
+          },
+          referrerPolicy: {
+            referrerPolicy:
+              cloudfront.HeadersReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN,
+            override: true,
+          },
+        },
+      },
+    );
+
     // Static site, not an SPA: a missing key (S3 returns 403 on an OAC
     // bucket without list permission, 404 otherwise) shows the site's own
     // 404 page with a real 404 status.
@@ -89,6 +136,7 @@ export class LandingStack extends cdk.Stack {
           origin: origins.S3BucketOrigin.withOriginAccessControl(this.bucket),
           viewerProtocolPolicy:
             cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+          responseHeadersPolicy,
           functionAssociations: [
             {
               function: wwwRedirect,

@@ -53,6 +53,7 @@ export class AppStage extends cdk.Stage {
       env,
       zone: this.dns.zone,
       domainName,
+      exportLinkSubdomain,
       stackName: stackId('Landing'),
       tags,
     });

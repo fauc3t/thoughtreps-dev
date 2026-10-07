@@ -75,3 +75,61 @@ export function forwardFnLogicalIds(template: Template): string[] {
     }),
   );
 }
+
+export interface SecurityHeaders {
+  policyId: string;
+  csp: string[];
+  hsts: {
+    AccessControlMaxAgeSec: number;
+    IncludeSubdomains: boolean;
+    Override: boolean;
+  };
+  frameOption: { FrameOption: string; Override: boolean };
+  contentTypeOptions: { Override: boolean };
+  referrerPolicy: string;
+}
+
+export function securityHeaders(template: Template): SecurityHeaders {
+  const [policyId, policy] = Object.entries(
+    template.findResources('AWS::CloudFront::ResponseHeadersPolicy'),
+  )[0];
+  const config = (
+    policy.Properties as {
+      ResponseHeadersPolicyConfig: {
+        SecurityHeadersConfig: {
+          ContentSecurityPolicy: { ContentSecurityPolicy: unknown };
+          StrictTransportSecurity: SecurityHeaders['hsts'];
+          FrameOptions: SecurityHeaders['frameOption'];
+          ContentTypeOptions: SecurityHeaders['contentTypeOptions'];
+          ReferrerPolicy: { ReferrerPolicy: string };
+        };
+      };
+    }
+  ).ResponseHeadersPolicyConfig.SecurityHeadersConfig;
+  return {
+    policyId,
+    csp: resolveCsp(config.ContentSecurityPolicy.ContentSecurityPolicy).split(
+      '; ',
+    ),
+    hsts: config.StrictTransportSecurity,
+    frameOption: config.FrameOptions,
+    contentTypeOptions: config.ContentTypeOptions,
+    referrerPolicy: config.ReferrerPolicy.ReferrerPolicy,
+  };
+}
+
+function resolveCsp(value: unknown): string {
+  if (typeof value === 'string') return value;
+  const node = value as {
+    'Fn::Join'?: [string, unknown[]];
+    'Fn::GetAtt'?: string[];
+    Ref?: string;
+  };
+  if (node['Fn::Join']) {
+    const [sep, parts] = node['Fn::Join'];
+    return parts.map(resolveCsp).join(sep);
+  }
+  if (node.Ref) return `{${node.Ref}}`;
+  if (node['Fn::GetAtt']) return `{${node['Fn::GetAtt'].join('.')}}`;
+  throw new Error(`Unexpected CSP node: ${JSON.stringify(value)}`);
+}
