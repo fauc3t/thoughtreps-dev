@@ -224,7 +224,7 @@ final class MarkdownStyleApplier {
     private func checkboxGlyph(checked: Bool) -> UIImage {
         let name = checked ? "checkmark.square.fill" : "square"
         if let cached = glyphs[name] { return cached }
-        let configuration = UIImage.SymbolConfiguration(font: UIFont.systemFont(ofSize: bodySize))
+        let configuration = UIImage.SymbolConfiguration(font: UIFont.systemFont(ofSize: baseFont.pointSize))
         let image = (UIImage(systemName: name, withConfiguration: configuration) ?? UIImage()).withRenderingMode(.alwaysTemplate)
         glyphs[name] = image
         return image

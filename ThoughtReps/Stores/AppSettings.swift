@@ -54,5 +54,5 @@ enum ThoughtFont: String, CaseIterable, Identifiable {
     }
 
     /// Paper Mono sets wider and taller than the system font, so it runs a little smaller to match.
-    static let monoScale: CGFloat = 0.92
+    static let monoScale: CGFloat = 0.88
 }
