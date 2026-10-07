@@ -186,16 +186,19 @@ export function Hero() {
       <div className="flex min-w-0 flex-col gap-6">
         <h1
           id="hero-h"
-          className="text-[clamp(46px,7.4vw,92px)] leading-[0.92] font-black tracking-[-0.035em] [font-variation-settings:'wdth'_112]"
+          className="text-[clamp(46px,7.4vw,92px)] leading-[0.92] min-[921px]:text-[clamp(46px,5vw,64px)] font-black tracking-[-0.035em] [font-variation-settings:'wdth'_112]"
         >
-          Write it down. It comes{' '}
-          <span className="bg-[linear-gradient(transparent_60%,var(--hl)_60%,var(--hl)_92%,transparent_92%)] px-[0.04em]">
-            back
+          Write it down.{' '}
+          <span className="block">
+            It comes{' '}
+            <span className="bg-[linear-gradient(transparent_60%,var(--hl)_60%,var(--hl)_92%,transparent_92%)] px-[0.04em]">
+              back
+            </span>
+            <Use
+              id="loop"
+              className="ml-[0.06em] inline-block size-[0.7em] align-[-0.02em] text-accent"
+            />
           </span>
-          <Use
-            id="loop"
-            className="ml-[0.06em] inline-block size-[0.7em] align-[-0.02em] text-accent"
-          />
         </h1>
         <p className="max-w-[33em] text-[19px] text-muted">
           Thought Reps is a notebook that hands your ideas back to you. Jot

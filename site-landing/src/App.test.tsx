@@ -97,7 +97,8 @@ describe('landing page', () => {
   const html = renderToString(<LandingPage />);
 
   it('renders the key copy', () => {
-    expect(html).toContain('Write it down. It comes');
+    expect(html).toContain('Write it down.');
+    expect(html).toContain('It comes');
     expect(html).toContain('Write it once. See it again in a week.');
     expect(html).toContain('Your thoughts stay on your phone.');
     expect(html).toContain('Start with one thought.');
