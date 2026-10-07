@@ -98,6 +98,24 @@ private struct InkCard: ViewModifier {
     }
 }
 
+/// Press feedback for cards and ink buttons: a slight shrink plus an ink wash over the shape.
+struct InkPressStyle: ButtonStyle {
+    var cornerRadius: CGFloat = 12
+    var pressedScale: CGFloat = 0.98
+
+    func makeBody(configuration: Configuration) -> some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius)
+        configuration.label
+            .contentShape(shape)
+            .overlay {
+                shape.fill(Color.ink.opacity(configuration.isPressed ? 0.06 : 0))
+                    .allowsHitTesting(false)
+            }
+            .scaleEffect(configuration.isPressed ? pressedScale : 1)
+            .animation(.easeOut(duration: configuration.isPressed ? 0.08 : 0.2), value: configuration.isPressed)
+    }
+}
+
 extension View {
     /// A 12pt-radius card with a 1pt `hl` border and no shadow; `filled` swaps the border for a soft fill.
     func inkCard(filled: Bool = false) -> some View {
@@ -112,8 +130,10 @@ extension View {
     }
 
     /// A list row that is just its card: no separator, no row background, no disclosure chevron.
+    /// The press style replaces the row highlight, which the clear background would hide.
     func inkRow() -> some View {
-        navigationLinkIndicatorVisibility(.hidden)
+        buttonStyle(InkPressStyle())
+            .navigationLinkIndicatorVisibility(.hidden)
             .listRowSeparator(.hidden)
             .listRowBackground(Color.clear)
             .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))

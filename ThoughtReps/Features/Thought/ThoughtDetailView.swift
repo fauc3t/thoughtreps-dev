@@ -131,13 +131,14 @@ struct ThoughtDetailView: View {
                     } label: {
                         intervalChip("\(days)d", selected: current == days)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(InkPressStyle(cornerRadius: 10, pressedScale: 0.94))
                     .accessibilityLabel(IntervalDuration(days: days).label)
                     .accessibilityAddTraits(current == days ? .isSelected : [])
                 }
                 intervalMenu(selected: !Self.quickIntervals.contains(current))
             }
         }
+        .sensoryFeedback(.selection, trigger: current)
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
         .frame(maxWidth: .infinity)

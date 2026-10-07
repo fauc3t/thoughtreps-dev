@@ -134,9 +134,13 @@ private final class BackgroundAssertion {
 struct CaptureButton: View {
     var hasTag = false
     let action: () -> Void
+    @State private var pressCount = 0
 
     var body: some View {
-        Button(action: action) {
+        Button {
+            pressCount += 1
+            action()
+        } label: {
             Image(systemName: "plus")
                 .font(.title2.weight(.semibold))
                 .foregroundStyle(Color.paper)
@@ -148,6 +152,8 @@ struct CaptureButton: View {
                     }
                 }
         }
+        .buttonStyle(InkPressStyle(cornerRadius: 16, pressedScale: 0.92))
+        .sensoryFeedback(.impact(weight: .light), trigger: pressCount)
         .accessibilityLabel(hasTag ? "New thought with this tag" : "New thought")
     }
 }
