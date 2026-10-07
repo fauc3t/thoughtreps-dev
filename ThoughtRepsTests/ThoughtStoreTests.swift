@@ -1,6 +1,8 @@
 import Foundation
 import SwiftData
+import SwiftUI
 import Testing
+import UIKit
 @testable import ThoughtReps
 
 /// Store behavior against an in-memory SwiftData container, with a fixed clock.
@@ -69,6 +71,41 @@ struct ThoughtStoreTests {
         #expect(TagColor.palette.count == 6)
         #expect(TagColor.swatches.prefix(6).map(\.hex) == ["#3352D1", "#1F8A70", "#B56629", "#7A4FC4", "#BF4066", "#2E80AD"])
         #expect(TagColor.swatches.count == 8)
+    }
+
+    @Test func customColorHexRoundsAndClamps() throws {
+        #expect(TagColor.hex(red: 1, green: 0.5, blue: 0) == "#FF8000")
+        #expect(TagColor.hex(red: 1.2, green: -0.1, blue: 0.2) == "#FF0033")
+        let srgb = UIColor(red: 0x12 / 255, green: 0x34 / 255, blue: 0x56 / 255, alpha: 0.5)
+        #expect(TagColor.hex(for: srgb) == "#123456")
+        let p3 = UIColor(displayP3Red: 1, green: 0, blue: 0, alpha: 1)
+        let hex = try #require(TagColor.hex(for: p3))
+        #expect(TagColor.normalizedHex(hex) == hex)
+        #expect(hex.hasPrefix("#FF"))
+    }
+
+    @Test func customMeansNeitherAutomaticNorASwatch() {
+        #expect(!TagColor.isCustom(nil))
+        #expect(!TagColor.isCustom("#3352d1"))
+        #expect(TagColor.isCustom("#123456"))
+        #expect(!TagColor.isCustom("not a color"))
+    }
+
+    @Test func setColorKeepsACustomHex() throws {
+        let tag = try #require(store.create(body: "# A\n#swift", now: now).tags?.first)
+        #expect(store.setColor(tag, hex: "#abcdef"))
+        #expect(tag.colorHex == "#ABCDEF")
+        #expect(TagColor.isCustom(tag.colorHex))
+        // A custom pick that matches a swatch shows as that swatch.
+        #expect(store.setColor(tag, hex: "#1f8a70"))
+        #expect(!TagColor.isCustom(tag.colorHex))
+    }
+
+    @Test func grayAndLightCustomColors() {
+        #expect(TagColor.hex(for: UIColor(white: 1, alpha: 1)) == "#FFFFFF")
+        #expect(TagColor.checkmarkColor(onHex: "#FFFFFF") == .black)
+        #expect(TagColor.checkmarkColor(onHex: "#3352D1") == .white)
+        #expect(TagColor.checkmarkColor(onHex: nil) == .white)
     }
 
     @Test func newThoughtWaitsForItsInterval() {

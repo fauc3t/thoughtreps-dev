@@ -469,15 +469,19 @@ function TagRow({
 }
 
 const COLOR_OPTIONS = [
-  { name: 'Automatic', hex: '#3352D1' },
-  { name: 'Blue', hex: '#3352D1' },
-  { name: 'Teal', hex: '#1F8A70' },
-  { name: 'Copper', hex: '#B56629' },
-  { name: 'Purple', hex: '#7A4FC4' },
-  { name: 'Rose', hex: '#BF4066' },
-  { name: 'Steel Blue', hex: '#2E80AD' },
-  { name: 'Green', hex: '#3F8F3A' },
-  { name: 'Slate', hex: '#5F6B7A' },
+  { name: 'Automatic', fill: '#3352D1' },
+  { name: 'Blue', fill: '#3352D1' },
+  { name: 'Teal', fill: '#1F8A70' },
+  { name: 'Copper', fill: '#B56629' },
+  { name: 'Purple', fill: '#7A4FC4' },
+  { name: 'Rose', fill: '#BF4066' },
+  { name: 'Steel Blue', fill: '#2E80AD' },
+  { name: 'Green', fill: '#3F8F3A' },
+  { name: 'Slate', fill: '#5F6B7A' },
+  {
+    name: 'Custom',
+    fill: 'conic-gradient(red, yellow, lime, cyan, blue, magenta, red)',
+  },
 ];
 
 function ColorSheet() {
@@ -496,7 +500,7 @@ function ColorSheet() {
           >
             <span
               className="grid size-11 place-items-center rounded-full text-white"
-              style={{ backgroundColor: option.hex }}
+              style={{ background: option.fill }}
             >
               {i === 0 && <IconGlyph name="check" className="size-5" />}
             </span>

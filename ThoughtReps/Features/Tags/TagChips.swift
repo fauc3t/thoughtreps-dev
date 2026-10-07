@@ -79,6 +79,35 @@ enum TagColor {
         guard digits.count == 6, digits.allSatisfy({ $0.isASCII && $0.isHexDigit }) else { return nil }
         return "#" + digits.uppercased()
     }
+
+    /// sRGB components in 0...1 (out-of-range values, e.g. from Display P3, are clamped) as "#RRGGBB".
+    static func hex(red: Double, green: Double, blue: Double) -> String {
+        func byte(_ value: Double) -> Int { Int((min(max(value, 0), 1) * 255).rounded()) }
+        return String(format: "#%02X%02X%02X", byte(red), byte(green), byte(blue))
+    }
+
+    /// A picked color as "#RRGGBB" in sRGB, ignoring alpha; nil if it can't be converted.
+    static func hex(for color: UIColor) -> String? {
+        guard let space = CGColorSpace(name: CGColorSpace.sRGB),
+              let converted = color.cgColor.converted(to: space, intent: .defaultIntent, options: nil),
+              let c = converted.components, c.count >= 3
+        else { return nil }
+        return hex(red: Double(c[0]), green: Double(c[1]), blue: Double(c[2]))
+    }
+
+    /// Black on light colors (a custom pick can be near white), white otherwise.
+    static func checkmarkColor(onHex hex: String?) -> Color {
+        guard let digits = hex.flatMap(normalizedHex)?.dropFirst(),
+              let value = UInt32(digits, radix: 16) else { return .white }
+        let r = Double((value >> 16) & 0xFF), g = Double((value >> 8) & 0xFF), b = Double(value & 0xFF)
+        return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.7 ? .black : .white
+    }
+
+    /// True when a saved color is neither "Automatic" nor one of the swatches.
+    static func isCustom(_ hex: String?) -> Bool {
+        guard let normalized = hex.flatMap(normalizedHex) else { return false }
+        return !swatches.contains { $0.hex == normalized }
+    }
 }
 
 extension Color {

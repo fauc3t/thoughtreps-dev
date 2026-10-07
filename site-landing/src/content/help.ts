@@ -746,12 +746,13 @@ export const HELP_ARTICLES: HelpArticle[] = [
           'Tap the color you want. It saves right away and the sheet closes.',
         ],
         paragraphs: [
+          'Want a color that isn\'t in the list? Tap "Custom" and pick any color. It saves when you close the picker.',
           'You can also do it from a tag\'s page. Tap {icon:palette} next to the "Due" and "All" switch. "Untagged" has no color to change.',
         ],
         example: {
           kind: 'color-sheet',
           caption:
-            'The "Color" sheet. "Automatic" is the tag\'s own pick, and the checkmark shows the current color. Tap "Cancel" to leave it as it is.',
+            'The "Color" sheet. "Automatic" is the tag\'s own pick, "Custom" opens a color picker, and the checkmark shows the current color. Tap "Cancel" to leave it as it is.',
         },
       },
       {
