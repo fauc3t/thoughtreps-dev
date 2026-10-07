@@ -34,6 +34,7 @@ export class AppStage extends cdk.Stage {
       appAttestAppId,
       feedbackFromAddress,
       feedbackToAddress,
+      waitlistFromAddress,
     } = props.config;
     const env = { account, region };
     super(scope, id, { ...props, env });
@@ -77,6 +78,7 @@ export class AppStage extends cdk.Stage {
       appAttestAppId,
       feedbackFromAddress,
       feedbackToAddress,
+      waitlistFromAddress,
       stackName: stackId('Share'),
       tags,
     });

@@ -16,8 +16,20 @@ describe('privacy policy', () => {
       '<link rel="canonical" href="https://thoughtreps.com/privacy" />',
     );
     expect(html).toContain('<h1');
-    expect(html).toContain('October 6, 2026');
+    expect(html).toContain('October 7, 2026');
     expect(html).toContain('href="mailto:hello@thoughtreps.com"');
+  });
+
+  it('discloses the launch list', () => {
+    const { html } = renderRoute('/privacy');
+    expect(html).toContain('launch list');
+    expect(html).toContain('Amazon DynamoDB');
+    expect(html).toContain('when you joined');
+    expect(html).toContain('We get an email notice with your address');
+    expect(html).toContain('We delete the list and those notices after launch');
+    expect(html).toContain(
+      'your thoughts, your feedback or your email address',
+    );
   });
 
   it('is in the sitemap', () => {

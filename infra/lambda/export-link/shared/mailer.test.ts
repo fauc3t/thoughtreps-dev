@@ -28,4 +28,16 @@ describe('SesMailer', () => {
       },
     });
   });
+
+  it('omits ReplyToAddresses when there is no replyTo', async () => {
+    const send = jest.fn().mockResolvedValue({});
+    await new SesMailer({ send } as unknown as SESv2Client).send({
+      from: 'waitlist@example.test',
+      to: 'hello@example.test',
+      subject: 's',
+      text: 'body',
+    });
+    const [command] = send.mock.calls[0] as [{ input: object }];
+    expect(command.input).not.toHaveProperty('ReplyToAddresses');
+  });
 });

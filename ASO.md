@@ -110,9 +110,11 @@ Review these weekly for the first month, then monthly. Record each metadata or s
 
 **Launch window**
 
+- [ ] Email the launch list (and send TestFlight invites to the beta requests)
 - [ ] Turn on pre-order, then link the App Store badge and add the Smart App Banner on the landing site and transfer-web
 - [ ] Ask TestFlight testers to rate the public build
 - [ ] Start Apple Ads on our name and 5 to 10 generic terms
+- [ ] After the launch email and invites, delete all WaitlistTable rows and the `[Waitlist]` notification emails (the privacy policy promises it)
 
 **After launch (weeks 2 to 6)**
 
@@ -124,6 +126,6 @@ Review these weekly for the first month, then monthly. Record each metadata or s
 ## Open decisions
 
 1. **Subtitle.** Recommended: **Notes that come back to you** (27). It describes 1.0 accurately, since thoughts come back on a fixed interval. "Spaced repetition thought log" ranks for a term with real search volume, but Anki users will expect growing intervals. A third option keeps both: use the recommended subtitle and put `spaced,repetition` in the keywords. To fit 100 characters, drop `notes` (now in the subtitle) and `brain`, which uses exactly 100 characters.
-2. **Price on the website.** Decided: $6.99, bought once (Oct 7, 2026). The landing hero now shows it.
+2. **Price on the website.** Decided: $6.99, bought once (Oct 7, 2026). The landing hero shows a "Coming soon to the App Store" badge, not the price yet.
 3. **Pre-order.** Recommended: yes, for about 2 weeks. The cost is that the 1.0 build has to pass review before the pre-order starts.
 4. **Apple Ads budget.** Recommended: $10 to $20 a day for the first 30 days, then keep only the terms with a cost per download under about half the price.

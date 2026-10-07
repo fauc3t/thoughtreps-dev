@@ -25,6 +25,8 @@ export interface ExportApiProps {
   appAttestAppId: string;
   feedbackFromAddress: string;
   feedbackToAddress: string;
+  waitlistTable: dynamodb.ITableV2;
+  waitlistFromAddress: string;
 }
 
 // Routes carry the full /api/v1 path: CloudFront forwards /api/* to this API
@@ -41,6 +43,8 @@ export class ExportApi extends Construct {
       appAttestAppId,
       feedbackFromAddress,
       feedbackToAddress,
+      waitlistTable,
+      waitlistFromAddress,
     } = props;
 
     const environment = {
@@ -49,6 +53,8 @@ export class ExportApi extends Construct {
       APP_ATTEST_APP_ID: appAttestAppId,
       FEEDBACK_FROM_ADDRESS: feedbackFromAddress,
       FEEDBACK_TO_ADDRESS: feedbackToAddress,
+      WAITLIST_TABLE_NAME: waitlistTable.tableName,
+      WAITLIST_FROM_ADDRESS: waitlistFromAddress,
     };
     const fn = (name: string, dir: string) =>
       new NodejsFunction(this, name, {
@@ -108,6 +114,26 @@ export class ExportApi extends Construct {
       }),
     );
 
+    // Public signup: the signup row (Put, plus Update to upgrade an existing
+    // row to beta) in the waitlist table, and one pinned-sender notification
+    // mail. No access to the shared table.
+    const waitlistFn = fn('WaitlistFn', 'waitlist');
+    waitlistFn.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ['dynamodb:PutItem', 'dynamodb:UpdateItem'],
+        resources: [waitlistTable.tableArn],
+      }),
+    );
+    waitlistFn.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ['ses:SendEmail'],
+        resources: ['*'],
+        conditions: {
+          StringEquals: { 'ses:FromAddress': waitlistFromAddress },
+        },
+      }),
+    );
+
     // Unauthenticated: the link id is the only credential. s3:GetObject is
     // only used to sign the download URL.
     const publicFn = fn('PublicFn', 'public');
@@ -129,16 +155,33 @@ export class ExportApi extends Construct {
       targets: [new targets.LambdaFunction(sweepFn)],
     });
 
-    // No CORS: the page and the API share one CloudFront origin.
+    // CORS is only for the landing site's waitlist signup. The download page
+    // and the app share the API's origin or send no Origin at all.
     this.httpApi = new apigwv2.HttpApi(this, 'HttpApi', {
       createDefaultStage: false,
+      corsPreflight: {
+        allowOrigins: ['https://thoughtreps.com'],
+        allowMethods: [apigwv2.CorsHttpMethod.POST],
+        allowHeaders: ['content-type'],
+      },
     });
-    new apigwv2.HttpStage(this, 'DefaultStage', {
+    const stage = new apigwv2.HttpStage(this, 'DefaultStage', {
       httpApi: this.httpApi,
       stageName: '$default',
       autoDeploy: true,
       throttle: { rateLimit: 10, burstLimit: 20 },
     });
+    // Anonymous signups get their own small budget so a flood can't use up the
+    // stage-wide limit that feedback and exports depend on.
+    (stage.node.defaultChild as apigwv2.CfnStage).addPropertyOverride(
+      'RouteSettings',
+      {
+        'POST /api/v1/waitlist': {
+          ThrottlingRateLimit: 2,
+          ThrottlingBurstLimit: 5,
+        },
+      },
+    );
 
     const route = (
       method: apigwv2.HttpMethod,
@@ -177,6 +220,8 @@ export class ExportApi extends Construct {
     );
 
     route(POST, '/api/v1/feedback', 'FeedbackIntegration', feedbackFn);
+
+    route(POST, '/api/v1/waitlist', 'WaitlistIntegration', waitlistFn);
 
     route(GET, '/api/v1/export-links/{id}', 'StatusIntegration', publicFn);
     route(

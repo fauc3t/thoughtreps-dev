@@ -71,6 +71,13 @@ export const FeedbackRequest = Signed.extend({
 }).strict();
 export const FeedbackResponse = z.object({ sent: z.literal(true) });
 
+export const WaitlistRequest = z.strictObject({
+  email: z.string().trim().toLowerCase().max(254).pipe(z.email()),
+  beta: z.boolean(),
+  honeypot: z.string().max(200),
+});
+export const WaitlistResponse = z.object({ ok: z.literal(true) });
+
 export const CreateExportLinkRequest = Signed.extend({
   sizeBytes: z.int().positive().max(MAX_UPLOAD_BYTES),
   sha256: Sha256,

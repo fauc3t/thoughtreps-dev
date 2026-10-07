@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useDateFromToday } from '../useDateFromToday';
 import { AppStoreButton, SectionHead, Use } from './shared';
+import { WaitlistForm } from './WaitlistForm';
 
 const block = 'border-t-[2.5px] border-ink py-20 max-[620px]:py-[60px]';
 
@@ -501,6 +502,7 @@ export function FinalCta() {
         )}
       </p>
       <AppStoreButton />
+      <WaitlistForm />
     </section>
   );
 }

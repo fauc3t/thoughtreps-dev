@@ -4,7 +4,7 @@
 
 export const PRIVACY_PATH = '/privacy';
 
-export const LAST_UPDATED = '2026-10-06';
+export const LAST_UPDATED = '2026-10-07';
 
 export const PRIVACY_TITLE = 'Privacy policy | Thought Reps';
 
@@ -93,13 +93,14 @@ export const PRIVACY_SECTIONS: PrivacySection[] = [
     paragraphs: [
       'thoughtreps.com and transfer.thoughtreps.com use no cookies, no analytics, and no ad or tracking scripts. Fonts are served from our own site, not from a third party.',
       'If you pick light or dark mode, your browser remembers the choice on your device. It is never sent to us.',
-      'Our hosting provider may process standard request data, like your IP address and browser (user agent), to serve pages. We do not turn on access logs for the website, the download page or our API. Our API keeps only error logs. They do not include your thoughts or your feedback.',
+      'Our hosting provider may process standard request data, like your IP address and browser (user agent), to serve pages. We do not turn on access logs for the website, the download page or our API. Our API keeps only error logs. They do not include your thoughts, your feedback or your email address.',
+      'If you join the launch list on the website, we store your email address, when you joined, and whether you asked for a beta invite, in Amazon DynamoDB. We use it to email you when Thought Reps launches, and to send a TestFlight invite if you asked. We get an email notice with your address when you join. We delete the list and those notices after launch. You can ask us to remove you any time at [hello@thoughtreps.com](mailto:hello@thoughtreps.com).',
     ],
   },
   {
     heading: 'Service providers',
     paragraphs: [
-      'We use Amazon Web Services for hosting, the API, storage of encrypted export files, and email delivery (Amazon SES). Error logs go to Amazon CloudWatch. Data is stored and processed in the United States. We use Apple for the App Store and App Attest. Notifications are delivered locally by your phone.',
+      'We use Amazon Web Services for hosting, the API, storage of encrypted export files, the launch list (Amazon DynamoDB), and email delivery (Amazon SES). Error logs go to Amazon CloudWatch. Data is stored and processed in the United States. We use Apple for the App Store and App Attest. Notifications are delivered locally by your phone.',
       "We don't sell or share personal information, as those terms are defined in US state privacy laws like California's.",
     ],
   },
@@ -107,7 +108,7 @@ export const PRIVACY_SECTIONS: PrivacySection[] = [
     heading: 'Your choices and rights',
     paragraphs: [
       'You can use the app without ever sending anything.',
-      'Email [hello@thoughtreps.com](mailto:hello@thoughtreps.com) to ask what we hold, or to delete your feedback or link records. We respond within 30 days.',
+      'Email [hello@thoughtreps.com](mailto:hello@thoughtreps.com) to ask what we hold, or to delete your feedback, link records or launch list entry. We respond within 30 days.',
       'People in some places, like California and the EU and UK, have extra rights. We honor these requests for everyone.',
     ],
   },

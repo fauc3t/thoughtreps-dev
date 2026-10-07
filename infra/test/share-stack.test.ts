@@ -19,6 +19,7 @@ function synthShareStack() {
     appAttestAppId: 'TEAM.com.example.app',
     feedbackFromAddress: 'feedback@example.test',
     feedbackToAddress: 'hello@example.test',
+    waitlistFromAddress: 'waitlist@example.test',
   });
   return Template.fromStack(stack);
 }
@@ -158,6 +159,7 @@ describe('ShareStack', () => {
       'ApiDeviceFn',
       'ApiExportLinkFn',
       'ApiFeedbackFn',
+      'ApiWaitlistFn',
       'ApiPublicFn',
       'ApiSweepFn',
     ]) {
@@ -176,6 +178,7 @@ describe('ShareStack', () => {
       actionsOf(s3Statements(statementsFor(template, fnId)));
     expect(s3Of('ApiDeviceFn')).toEqual([]);
     expect(s3Of('ApiFeedbackFn')).toEqual([]);
+    expect(s3Of('ApiWaitlistFn')).toEqual([]);
     expect(s3Of('ApiExportLinkFn')).toEqual([
       's3:DeleteObject',
       's3:GetObject',
@@ -232,6 +235,57 @@ describe('ShareStack', () => {
     });
   });
 
+  it('lets WaitlistFn send only as the waitlist address and write only to WaitlistTable', () => {
+    const statements = statementsFor(template, 'ApiWaitlistFn');
+    const send = statements.filter((s) =>
+      [s.Action].flat().some((a) => a.startsWith('ses:')),
+    );
+    expect(send).toHaveLength(1);
+    expect(send[0]).toMatchObject({
+      Action: 'ses:SendEmail',
+      Effect: 'Allow',
+      Resource: '*',
+      Condition: {
+        StringEquals: { 'ses:FromAddress': 'waitlist@example.test' },
+      },
+    });
+    const dynamo = statements.filter((s) =>
+      [s.Action].flat().some((a) => a.startsWith('dynamodb:')),
+    );
+    expect(dynamo).toHaveLength(1);
+    expect(dynamo[0].Action).toEqual([
+      'dynamodb:PutItem',
+      'dynamodb:UpdateItem',
+    ]);
+    expect(JSON.stringify(dynamo[0].Resource)).toContain('WaitlistTable');
+    template.hasResourceProperties('AWS::Lambda::Function', {
+      Environment: {
+        Variables: Match.objectLike({
+          WAITLIST_FROM_ADDRESS: 'waitlist@example.test',
+          WAITLIST_TABLE_NAME: Match.anyValue(),
+        }),
+      },
+    });
+  });
+
+  it('keeps the waitlist table on-demand, point-in-time recoverable and retained', () => {
+    template.hasResource('AWS::DynamoDB::GlobalTable', {
+      Properties: Match.objectLike({
+        KeySchema: [{ AttributeName: 'email', KeyType: 'HASH' }],
+        BillingMode: 'PAY_PER_REQUEST',
+        Replicas: [
+          Match.objectLike({
+            PointInTimeRecoverySpecification: {
+              PointInTimeRecoveryEnabled: true,
+            },
+          }),
+        ],
+      }),
+      DeletionPolicy: 'Retain',
+      UpdateReplacePolicy: 'Retain',
+    });
+  });
+
   it('limits the sweeper Query to the openIndex index', () => {
     const query = statementsFor(template, 'ApiSweepFn').find((s) =>
       [s.Action].flat().includes('dynamodb:Query'),
@@ -246,11 +300,12 @@ describe('ShareStack', () => {
     });
   });
 
-  it('runs all five functions on Node 24', () => {
+  it('runs all six functions on Node 24', () => {
     for (const name of [
       'DeviceFn',
       'ExportLinkFn',
       'FeedbackFn',
+      'WaitlistFn',
       'PublicFn',
       'SweepFn',
     ]) {
@@ -281,11 +336,12 @@ describe('ShareStack', () => {
         'POST /api/v1/export-links/{id}/claim',
         'POST /api/v1/export-links/{id}/done',
         'POST /api/v1/feedback',
+        'POST /api/v1/waitlist',
       ].sort(),
     );
   });
 
-  it('throttles the default stage to rate 10 / burst 20 and sets no CORS', () => {
+  it('throttles the default stage to rate 10 / burst 20 and allows CORS only from the landing site', () => {
     template.hasResourceProperties('AWS::ApiGatewayV2::Stage', {
       StageName: '$default',
       DefaultRouteSettings: {
@@ -296,9 +352,26 @@ describe('ShareStack', () => {
     const [api] = Object.values(
       template.findResources('AWS::ApiGatewayV2::Api'),
     );
-    expect((api.Properties as Record<string, unknown>).CorsConfiguration).toBe(
-      undefined,
-    );
+    expect(
+      (api.Properties as Record<string, unknown>).CorsConfiguration,
+    ).toEqual({
+      AllowOrigins: ['https://thoughtreps.com'],
+      AllowMethods: ['POST'],
+      AllowHeaders: ['content-type'],
+    });
+    expect(JSON.stringify(api.Properties)).not.toContain('AllowCredentials');
+  });
+
+  it('gives the waitlist route its own throttle of rate 2 / burst 5', () => {
+    template.hasResourceProperties('AWS::ApiGatewayV2::Stage', {
+      StageName: '$default',
+      RouteSettings: {
+        'POST /api/v1/waitlist': {
+          ThrottlingRateLimit: 2,
+          ThrottlingBurstLimit: 5,
+        },
+      },
+    });
   });
 
   it('serves the site and /api/* from one distribution on transfer.example.test', () => {
@@ -386,6 +459,7 @@ describe('ShareStack', () => {
     for (const key of [
       'ExportBucketName',
       'ExportLinkTableName',
+      'WaitlistTableName',
       'TransferSiteBucketName',
       'TransferDistributionId',
     ]) {

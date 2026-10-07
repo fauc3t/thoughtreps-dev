@@ -12,6 +12,8 @@ import {
   MAX_UPLOAD_BYTES,
   RegisterDeviceRequest,
   Sha256,
+  WaitlistRequest,
+  WaitlistResponse,
 } from '../lib/export-link/schemas.js';
 
 const key = Buffer.alloc(32, 1).toString('base64');
@@ -164,5 +166,31 @@ describe('response and record schemas', () => {
     expect(
       ExportLinkRecord.safeParse({ ...record, status: 'weird' }).success,
     ).toBe(false);
+  });
+});
+
+describe('WaitlistRequest', () => {
+  const valid = { email: 'a@example.com', beta: true, honeypot: '' };
+
+  it('trims and lowercases the email', () => {
+    expect(
+      WaitlistRequest.parse({ ...valid, email: '  A@Example.COM ' }).email,
+    ).toBe('a@example.com');
+  });
+
+  it.each([
+    ['bad email', { email: 'nope' }],
+    ['email over 254 chars', { email: `${'a'.repeat(250)}@example.com` }],
+    ['honeypot over 200 chars', { honeypot: 'x'.repeat(201) }],
+    ['string beta', { beta: 'true' }],
+    ['extra key', { extra: 1 }],
+  ])('rejects %s', (_name, override) => {
+    expect(WaitlistRequest.safeParse({ ...valid, ...override }).success).toBe(
+      false,
+    );
+  });
+
+  it('accepts the response shape', () => {
+    expect(WaitlistResponse.parse({ ok: true })).toEqual({ ok: true });
   });
 });

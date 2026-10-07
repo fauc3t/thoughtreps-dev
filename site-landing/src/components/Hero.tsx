@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { AppStoreButton, ThemeToggle, Use } from './shared';
+import { WaitlistForm } from './WaitlistForm';
 
 export function Nav({
   base = '',
@@ -210,6 +211,7 @@ export function Hero() {
             How it works
           </a>
         </div>
+        <WaitlistForm />
         <p className="mono text-muted">
           No account · Stays on your phone · iOS 18 or later
         </p>

@@ -14,10 +14,12 @@ import type { HttpApiEvent } from './http.js';
 import type { Mailer, OutgoingMail } from './mailer.js';
 import type { ObjectStore } from './objects.js';
 import type { Store } from './store.js';
+import type { Waitlist } from './waitlist.js';
 
 export const APP_ID = 'TEAMID1234.com.example.app';
 export const FEEDBACK_FROM = 'feedback@example.test';
 export const FEEDBACK_TO = 'hello@example.test';
+export const WAITLIST_FROM = 'waitlist@example.test';
 export const T0_MS = Date.UTC(2026, 0, 15, 12, 0, 0);
 
 const sha256 = (...parts: Uint8Array[]) =>
@@ -171,6 +173,20 @@ export class FakeStore implements Store {
   }
 }
 
+export class FakeWaitlist implements Waitlist {
+  rows = new Map<string, { beta: boolean; createdAt: string }>();
+
+  async signUp(email: string, beta: boolean, createdAt: string) {
+    const row = this.rows.get(email);
+    if (!row) {
+      this.rows.set(email, { beta, createdAt });
+      return true;
+    }
+    if (beta) row.beta = true;
+    return false;
+  }
+}
+
 export class FakeObjects implements ObjectStore {
   stored = new Map<string, { sizeBytes: number; sha256: string }>();
   deleted: string[] = [];
@@ -214,6 +230,7 @@ export class FakeMailer implements Mailer {
 
 export interface TestEnv extends Deps {
   store: FakeStore;
+  waitlist: FakeWaitlist;
   objects: FakeObjects;
   mailer: FakeMailer;
   clock: { ms: number };
@@ -223,10 +240,12 @@ export function makeEnv(): TestEnv {
   const clock = { ms: T0_MS };
   return {
     store: new FakeStore(),
+    waitlist: new FakeWaitlist(),
     objects: new FakeObjects(),
     mailer: new FakeMailer(),
     feedbackFrom: FEEDBACK_FROM,
     feedbackTo: FEEDBACK_TO,
+    waitlistFrom: WAITLIST_FROM,
     appId: APP_ID,
     nowMs: () => clock.ms,
     randomBytes,

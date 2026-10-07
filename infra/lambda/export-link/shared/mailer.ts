@@ -3,7 +3,7 @@ import { SendEmailCommand, type SESv2Client } from '@aws-sdk/client-sesv2';
 export interface OutgoingMail {
   from: string;
   to: string;
-  replyTo: string;
+  replyTo?: string;
   subject: string;
   text: string;
 }
@@ -20,7 +20,7 @@ export class SesMailer implements Mailer {
       new SendEmailCommand({
         FromEmailAddress: mail.from,
         Destination: { ToAddresses: [mail.to] },
-        ReplyToAddresses: [mail.replyTo],
+        ...(mail.replyTo && { ReplyToAddresses: [mail.replyTo] }),
         Content: {
           Simple: {
             Subject: { Data: mail.subject, Charset: 'UTF-8' },

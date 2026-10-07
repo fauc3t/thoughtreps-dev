@@ -16,6 +16,7 @@ export interface ShareStackProps extends cdk.StackProps {
   appAttestAppId: string;
   feedbackFromAddress: string;
   feedbackToAddress: string;
+  waitlistFromAddress: string;
 }
 
 // Every /x/<id> URL serves the same static page; the page reads the id from
@@ -32,6 +33,7 @@ const SPA_REWRITE_CODE = `function handler(event) {
 export class ShareStack extends cdk.Stack {
   public readonly exportBucket: s3.Bucket;
   public readonly table: dynamodb.Table;
+  public readonly waitlistTable: dynamodb.TableV2;
   public readonly siteBucket: s3.Bucket;
   public readonly distribution: cloudfront.Distribution;
 
@@ -45,6 +47,7 @@ export class ShareStack extends cdk.Stack {
       appAttestAppId,
       feedbackFromAddress,
       feedbackToAddress,
+      waitlistFromAddress,
     } = props;
     const hostname = `${exportLinkSubdomain}.${domainName}`;
 
@@ -92,12 +95,21 @@ export class ShareStack extends cdk.Stack {
       projectionType: dynamodb.ProjectionType.ALL,
     });
 
+    this.waitlistTable = new dynamodb.TableV2(this, 'WaitlistTable', {
+      partitionKey: { name: 'email', type: dynamodb.AttributeType.STRING },
+      billing: dynamodb.Billing.onDemand(),
+      pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: true },
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+    });
+
     const api = new ExportApi(this, 'Api', {
       exportBucket: this.exportBucket,
       table: this.table,
       appAttestAppId,
       feedbackFromAddress,
       feedbackToAddress,
+      waitlistTable: this.waitlistTable,
+      waitlistFromAddress,
     });
 
     this.siteBucket = new s3.Bucket(this, 'TransferSiteBucket', {
@@ -145,8 +157,9 @@ export class ShareStack extends cdk.Stack {
             viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.HTTPS_ONLY,
             allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
             cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
-            // Forwards x-tr-* headers and the body untouched; the API
-            // origin needs its own Host, so that one is excluded.
+            // Forwards x-tr-* headers, Origin (for the waitlist's CORS) and
+            // the body untouched; the API origin needs its own Host, so that
+            // one is excluded. ALLOW_ALL lets OPTIONS preflights through.
             originRequestPolicy:
               cloudfront.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER,
           },
@@ -176,6 +189,9 @@ export class ShareStack extends cdk.Stack {
     });
     new cdk.CfnOutput(this, 'ExportLinkTableName', {
       value: this.table.tableName,
+    });
+    new cdk.CfnOutput(this, 'WaitlistTableName', {
+      value: this.waitlistTable.tableName,
     });
     new cdk.CfnOutput(this, 'TransferSiteBucketName', {
       value: this.siteBucket.bucketName,

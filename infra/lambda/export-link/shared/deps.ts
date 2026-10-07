@@ -7,13 +7,16 @@ import type { HttpApiEvent, HttpApiResult } from './http.js';
 import { SesMailer, type Mailer } from './mailer.js';
 import { S3ObjectStore, type ObjectStore } from './objects.js';
 import { DynamoStore, type Store } from './store.js';
+import { DynamoWaitlist, type Waitlist } from './waitlist.js';
 
 export interface Deps {
   store: Store;
+  waitlist: Waitlist;
   objects: ObjectStore;
   mailer: Mailer;
   feedbackFrom: string;
   feedbackTo: string;
+  waitlistFrom: string;
   appId: string;
   // Tests only: production never sets it, so attestations are always
   // validated against Apple's root.
@@ -28,10 +31,12 @@ export function defaultDeps(): Deps {
   });
   return {
     store: new DynamoStore(db, process.env.TABLE_NAME ?? ''),
+    waitlist: new DynamoWaitlist(db, process.env.WAITLIST_TABLE_NAME ?? ''),
     objects: new S3ObjectStore(new S3Client({}), process.env.BUCKET_NAME ?? ''),
     mailer: new SesMailer(new SESv2Client({})),
     feedbackFrom: process.env.FEEDBACK_FROM_ADDRESS ?? '',
     feedbackTo: process.env.FEEDBACK_TO_ADDRESS ?? '',
+    waitlistFrom: process.env.WAITLIST_FROM_ADDRESS ?? '',
     appId: process.env.APP_ATTEST_APP_ID ?? '',
     nowMs: () => Date.now(),
     randomBytes,

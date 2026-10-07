@@ -29,6 +29,8 @@ export interface EnvConfig {
   // the Mail stack) to a received mailbox, so it lands in the normal inbox.
   feedbackFromAddress: string;
   feedbackToAddress: string;
+  // Launch waitlist notification: sent to feedbackToAddress.
+  waitlistFromAddress: string;
 }
 
 const ENV_CONFIGS: Record<EnvName, EnvConfig> = {
@@ -48,6 +50,7 @@ const ENV_CONFIGS: Record<EnvName, EnvConfig> = {
     appAttestAppId: '835DH8RD35.com.thoughtreps.app',
     feedbackFromAddress: 'feedback@thoughtreps.com',
     feedbackToAddress: 'hello@thoughtreps.com',
+    waitlistFromAddress: 'waitlist@thoughtreps.com',
   },
 };
 

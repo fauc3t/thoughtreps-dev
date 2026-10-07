@@ -139,3 +139,11 @@ describe('prerender routes', () => {
     expect(renderToString(<NotFoundPage />)).toContain('404');
   });
 });
+
+describe('waitlist form placement', () => {
+  it('renders in the hero and the final CTA', () => {
+    const html = renderToString(<LandingPage />);
+    expect(html.match(/Notify me/g)).toHaveLength(2);
+    expect(html).toMatch(/id="get"[\s\S]*Notify me/);
+  });
+});
