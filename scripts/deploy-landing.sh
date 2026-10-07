@@ -31,7 +31,7 @@ LANDING_DISTRIBUTION_ID=$(get_output LandingDistributionId)
 : "${LANDING_DISTRIBUTION_ID:?LandingDistributionId not found on $STACK_NAME — deploy infra first}"
 
 echo "==> Building @thoughtreps/site-landing"
-pnpm --filter @thoughtreps/site-landing build
+pnpm -C "$REPO_ROOT" --filter @thoughtreps/site-landing build
 
 [[ -f "$DIST/index.html" ]] || { echo "$DIST/index.html missing after build" >&2; exit 1; }
 [[ -f "$DIST/404.html" ]] || { echo "$DIST/404.html missing after build" >&2; exit 1; }
