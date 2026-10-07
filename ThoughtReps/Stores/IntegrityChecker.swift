@@ -94,15 +94,15 @@ enum IntegrityChecker {
                 if !(gallery.images ?? []).contains(where: { $0 === image }) {
                     add("Image \(image.id) points to block \(gallery.id) which does not list it", image.id.uuidString)
                 }
-            } else if !ImageToken.references(in: owner.body).contains(image.id) {
-                add("Inline image \(image.id) has no token in the body of thought \(owner.id)", image.id.uuidString)
+            } else if !owner.inlineImageReferences.contains(image.id) {
+                add("Inline image \(image.id) has no token in the body or a markdown block of thought \(owner.id)", image.id.uuidString)
             }
         }
 
         for thought in thoughts {
             let id = thought.id.uuidString
 
-            let expectedTags = Set(TagParser.parse(thought.body).map(\.key))
+            let expectedTags = Set(TagParser.parse(all: thought.markdownTexts).map(\.key))
             let actualTags = (thought.tags ?? []).map(\.name)
             if Set(actualTags) != expectedTags || actualTags.count != expectedTags.count {
                 add("Thought \(id) tags \(actualTags.sorted()) != parsed \(expectedTags.sorted())", id)
@@ -118,16 +118,22 @@ enum IntegrityChecker {
             }
 
             let inlineIDs = Set((thought.images ?? []).filter { $0.block == nil }.map(\.id))
-            for imageID in Set(ImageToken.references(in: thought.body)) where !inlineIDs.contains(imageID) {
-                add("Thought \(id) body references image \(imageID) which is not one of its inline images", id)
+            for imageID in Set(thought.inlineImageReferences) where !inlineIDs.contains(imageID) {
+                add("Thought \(id) text references image \(imageID) which is not one of its inline images", id)
             }
             for block in thought.blocks ?? [] {
                 let galleryOrders = (block.images ?? []).map(\.order).sorted()
                 if galleryOrders != Array(0..<galleryOrders.count) {
                     add("Block \(block.id) image orders \(galleryOrders) are not 0..<\(galleryOrders.count)", block.id.uuidString)
                 }
-                if block.kind == .blurred && !(block.images ?? []).isEmpty {
-                    add("Blurred block \(block.id) has images", block.id.uuidString)
+                if block.kind == .markdown && !(block.images ?? []).isEmpty {
+                    add("Markdown block \(block.id) has images", block.id.uuidString)
+                }
+                if block.kindRaw == BlockKind.legacyBlurredRaw {
+                    add("Block \(block.id) still has the legacy blurred kind", block.id.uuidString)
+                }
+                if block.kind == .gallery && block.isBlurred {
+                    add("Gallery block \(block.id) is blurred", block.id.uuidString)
                 }
             }
 

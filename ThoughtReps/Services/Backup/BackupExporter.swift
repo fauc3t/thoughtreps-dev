@@ -197,19 +197,24 @@ extension ThoughtRecord {
             ImageRecord(id: image.id, width: image.width, height: image.height, order: image.order)
         }
         // An inline image with no bytes isn't exported, so its token would dangle.
-        var body = thought.body
-        for image in thought.images ?? [] where image.block == nil && !hasImage(image.id) {
-            body = body.replacingOccurrences(of: ImageToken.token(for: image.id), with: "")
+        let missing = (thought.images ?? []).filter { $0.block == nil && !hasImage($0.id) }
+        func stripped(_ text: String) -> String {
+            missing.reduce(text) { $0.replacingOccurrences(of: ImageToken.token(for: $1.id), with: "") }
         }
+        let body = stripped(thought.body)
         self.init(
             id: thought.id, body: body, createdAt: thought.createdAt, updatedAt: thought.updatedAt,
             nextDueAt: thought.nextDueAt, lastViewedAt: thought.lastViewedAt, viewCount: thought.viewCount,
             intervalDays: thought.intervalDays, intervalModeRaw: thought.intervalModeRaw,
             isPinned: thought.isPinned, isArchived: thought.isArchived, archivedAt: thought.archivedAt,
             tags: thought.sortedTags.map(\.name),
-            blocks: thought.sortedBlocks.map { block in
-                BlockRecord(
-                    id: block.id, kindRaw: block.kindRaw, title: block.title, content: block.content, order: block.order,
+            blocks: thought.sortedBlocks.compactMap { block in
+                let isMarkdown = block.kind == .markdown
+                let content = isMarkdown ? stripped(block.content) : block.content
+                if isMarkdown, content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return nil }
+                return BlockRecord(
+                    id: block.id, kindRaw: block.kind.rawValue, title: block.title, content: content, order: block.order,
+                    isBlurred: block.kind == .markdown && (block.isBlurred || block.kindRaw == BlockKind.legacyBlurredRaw),
                     images: block.sortedImages.filter { hasImage($0.id) }.map(record)
                 )
             },

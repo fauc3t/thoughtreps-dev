@@ -2,7 +2,7 @@
 
 `default.store` is a SwiftData store written by the app's pre-launch V1 schema (Thought, Tag, Block,
 ImageAsset, with image pixels stored in the database). It holds four thoughts (pinned with two
-blurred blocks, viewed twice with an inline image, archived with a two-image gallery, plain), three
+blurred markdown blocks, viewed twice with an inline image, archived with a two-image gallery, plain), three
 tags and three images. The images are small, so SwiftData keeps them inside the file (larger ones go
 to a `.default_SUPPORT/_EXTERNAL_DATA` folder beside the store). The WAL was checkpointed when it was
 copied, so the single file is complete.

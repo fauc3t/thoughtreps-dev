@@ -23,9 +23,11 @@ struct ImageDraft: Identifiable, Equatable {
 /// Draft of a block being edited, before it is written to the store.
 struct BlockDraft: Identifiable, Equatable {
     var id = UUID()
-    var kind: BlockKind = .blurred
+    var kind: BlockKind = .markdown
     var title: String = ""
     var content: String = ""
+    /// Markdown blocks only: hidden until tapped.
+    var isBlurred = false
     /// Gallery blocks only: the images in display order, new or already stored.
     var images: [ImageDraft] = []
 }
@@ -46,9 +48,9 @@ struct ThoughtStore {
 
     // MARK: Create & edit
 
-    /// `images` are the new inline images; one is saved only if its token is in `body`. Existing
-    /// inline images are kept while their token stays in the body. Gallery images travel in the
-    /// gallery's `BlockDraft`.
+    /// `images` are the new inline images; one is saved only if its token is in `body` or a markdown
+    /// block's content. Existing inline images are kept while their token stays in either. Gallery
+    /// images travel in the gallery's `BlockDraft`.
     ///
     /// If the save fails, the change is rolled back and the returned thought is detached
     /// (`modelContext == nil`). That is how callers tell a save failed; the other writers return a Bool.
@@ -64,8 +66,8 @@ struct ThoughtStore {
             intervalDays: intervalDays
         )
         context.insert(thought)
-        syncTags(for: thought)
         let plan = plan(for: thought, body: body, blocks: blocks, images: images)
+        syncTags(for: thought, texts: plan.texts)
         insertNewBlocks(of: plan, into: thought, firstOrder: 0)
         insertNewInlineImages(of: plan, into: thought)
         removeStaleInlineImages(of: plan)
@@ -91,8 +93,8 @@ struct ThoughtStore {
         if pendingImageSaves.ids.contains(thought.id), !removeTokenlessInlineImages(of: thought) {
             return false
         }
-        guard saveNewTags(for: body) else { return false }
         let plan = plan(for: thought, body: body, blocks: blocks, images: images)
+        guard saveNewTags(for: plan.texts) else { return false }
         let addedInline = insertNewInlineImages(of: plan, into: thought)
         let hasPendingImages = !addedInline.isEmpty
         if hasPendingImages {
@@ -109,7 +111,7 @@ struct ThoughtStore {
             reanchor(thought)
         }
         thought.updatedAt = now
-        syncTags(for: thought)
+        syncTags(for: thought, texts: plan.textsWhileSurplusRemains)
         editKeptBlocks(of: plan)
         removeStaleInlineImages(of: plan)
         guard persist() else {
@@ -123,10 +125,12 @@ struct ThoughtStore {
         }
 
         removeStale(plan)
+        syncTags(for: thought, texts: plan.keptTexts)
         if context.hasChanges {
             guard persist() else { return false }
         }
         insertNewBlocks(of: plan, into: thought, firstOrder: plan.blocks.filter { $0.existing != nil }.count)
+        syncTags(for: thought, texts: plan.texts)
         if context.hasChanges {
             guard persist() else { return false }
         }
@@ -139,6 +143,7 @@ struct ThoughtStore {
         let kind: BlockKind
         let title: String?
         let content: String
+        var isBlurred = false
         /// Gallery blocks: the images wanted, in display order.
         var images: [ImageDraft] = []
         var existing: Block?
@@ -148,14 +153,30 @@ struct ThoughtStore {
         var blocks: [PlannedBlock] = []
         var surplusBlocks: [Block] = []
         var staleGalleryImages: [ImageAsset] = []
+        /// Inline images no longer referenced by the body, a kept block or a block about to be
+        /// removed; deleted with the body edit.
         var staleInlineImages: [ImageAsset] = []
+        /// Inline images whose only remaining reference is a block about to be removed; deleted with it.
+        var staleInlineImagesOfSurplusBlocks: [ImageAsset] = []
+        /// New inline images referenced by the body or a kept block; saved before the body edit.
         var newInlineImages: [ImageDraft] = []
+        /// New inline images referenced only by new blocks; saved with those blocks so no image is
+        /// ever stored without a token.
+        var newInlineImagesOfNewBlocks: [ImageDraft] = []
+
+        /// The body and every markdown block's content, as they will be once the plan is applied.
+        var texts: [String] = []
+        /// The texts stored after the body edit, before surplus blocks are removed and new ones added.
+        var textsWhileSurplusRemains: [String] = []
+        /// The texts stored once surplus blocks are removed, before new ones are added.
+        var keptTexts: [String] = []
     }
 
     /// Works out what the drafts mean for the thought's current blocks and images, without
-    /// changing anything: which blocks to edit in place, delete or add (blank blurred blocks and
-    /// empty galleries are dropped), and which images to delete or add. Blurred drafts reuse the
-    /// existing blurred blocks by position; a gallery draft matches the existing gallery with its id.
+    /// changing anything: which blocks to edit in place, delete or add (blank markdown blocks and
+    /// empty galleries are dropped), and which images to delete or add. Markdown drafts reuse the
+    /// existing markdown blocks by position; a gallery draft matches the existing gallery with its id.
+    /// An inline image is kept while its token is in the body or any markdown block.
     ///
     /// Ids stay unique: a draft block repeating an earlier draft's id is dropped, a draft image
     /// whose id is already taken is skipped, and a new block colliding with an existing block's id
@@ -164,7 +185,7 @@ struct ThoughtStore {
     /// is empty.
     private func plan(for thought: Thought, body: String, blocks drafts: [BlockDraft], images inline: [ImageDraft]) -> Plan {
         var plan = Plan()
-        var reusableBlurred = thought.sortedBlocks.filter { $0.kind == .blurred }[...]
+        var reusableMarkdown = thought.sortedBlocks.filter { $0.kind == .markdown }[...]
         var reusableGalleries = Dictionary(
             (thought.blocks ?? []).filter { $0.kind == .gallery }.map { ($0.id, $0) },
             uniquingKeysWith: { first, _ in first }
@@ -179,12 +200,14 @@ struct ThoughtStore {
             let trimmedTitle = draft.title.trimmingCharacters(in: .whitespacesAndNewlines)
             let title = trimmedTitle.isEmpty ? nil : trimmedTitle
             switch draft.kind {
-            case .blurred:
+            case .markdown:
                 let content = draft.content.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !content.isEmpty else { continue }
-                let reused = reusableBlurred.popFirst()
+                let reused = reusableMarkdown.popFirst()
                 let id = reused?.id == draft.id || !existingBlockIDs.contains(draft.id) ? draft.id : UUID()
-                plan.blocks.append(PlannedBlock(id: id, kind: .blurred, title: title, content: content, existing: reused))
+                plan.blocks.append(PlannedBlock(
+                    id: id, kind: .markdown, title: title, content: content, isBlurred: draft.isBlurred, existing: reused
+                ))
             case .gallery:
                 let existing = reusableGalleries[draft.id]
                 let stored = Dictionary(
@@ -211,12 +234,33 @@ struct ThoughtStore {
                 plan.blocks.append(PlannedBlock(id: id, kind: .gallery, title: title, content: "", images: wanted, existing: existing))
             }
         }
-        plan.surplusBlocks = Array(reusableBlurred) + Array(reusableGalleries.values)
+        plan.surplusBlocks = Array(reusableMarkdown) + Array(reusableGalleries.values)
 
-        let tokens = Set(ImageToken.references(in: body))
-        plan.staleInlineImages = (thought.images ?? []).filter { $0.block == nil && !tokens.contains($0.id) }
-        plan.newInlineImages = inline.filter {
-            $0.processed != nil && tokens.contains($0.id) && !storedImageIDs.contains($0.id) && claimedImageIDs.insert($0.id).inserted
+        let markdown = plan.blocks.filter { $0.kind == .markdown }
+        plan.texts = [body] + markdown.map(\.content)
+        plan.keptTexts = [body] + markdown.filter { $0.existing != nil }.map(\.content)
+        plan.textsWhileSurplusRemains = plan.keptTexts + reusableMarkdown.map(\.content)
+        func tokens(in texts: [String]) -> Set<UUID> {
+            Set(texts.flatMap { ImageToken.references(in: $0) })
+        }
+        let earlyTokens = tokens(in: [body] + markdown.filter { $0.existing != nil }.map(\.content))
+        let newBlockTokens = tokens(in: markdown.filter { $0.existing == nil }.map(\.content))
+        let surplusTokens = tokens(in: reusableMarkdown.map(\.content))
+        let wanted = earlyTokens.union(newBlockTokens)
+        for image in thought.images ?? [] where image.block == nil && !wanted.contains(image.id) {
+            if surplusTokens.contains(image.id) {
+                plan.staleInlineImagesOfSurplusBlocks.append(image)
+            } else {
+                plan.staleInlineImages.append(image)
+            }
+        }
+        for draft in inline where draft.processed != nil && wanted.contains(draft.id) && !storedImageIDs.contains(draft.id) {
+            guard claimedImageIDs.insert(draft.id).inserted else { continue }
+            if earlyTokens.contains(draft.id) {
+                plan.newInlineImages.append(draft)
+            } else {
+                plan.newInlineImagesOfNewBlocks.append(draft)
+            }
         }
         return plan
     }
@@ -227,13 +271,14 @@ struct ThoughtStore {
             block.id = planned.id
             block.title = planned.title
             block.content = planned.content
+            block.isBlurred = planned.isBlurred
         }
     }
 
     /// Deletes stale images and surplus blocks (with their images) explicitly, then renumbers the
     /// survivors so orders stay contiguous.
     private func removeStale(_ plan: Plan) {
-        for image in plan.staleGalleryImages {
+        for image in plan.staleGalleryImages + plan.staleInlineImagesOfSurplusBlocks {
             remove(image)
         }
         for block in plan.surplusBlocks {
@@ -252,9 +297,12 @@ struct ThoughtStore {
         }
     }
 
-    /// Adds the blocks that are new (ordered from `firstOrder`) and the new images of kept galleries,
-    /// after the images already there.
+    /// Adds the blocks that are new (ordered from `firstOrder`), the new images of kept galleries,
+    /// after the images already there, and the inline images only the new blocks reference.
     private func insertNewBlocks(of plan: Plan, into thought: Thought, firstOrder: Int) {
+        for draft in plan.newInlineImagesOfNewBlocks {
+            insertImage(draft, order: 0, into: thought, block: nil)
+        }
         var order = firstOrder
         for planned in plan.blocks {
             if let block = planned.existing {
@@ -264,7 +312,10 @@ struct ThoughtStore {
                     position += 1
                 }
             } else {
-                let block = Block(id: planned.id, kind: planned.kind, content: planned.content, title: planned.title, order: order)
+                let block = Block(
+                    id: planned.id, kind: planned.kind, content: planned.content, title: planned.title,
+                    isBlurred: planned.isBlurred, order: order
+                )
                 order += 1
                 context.insert(block)
                 block.thought = thought
@@ -326,11 +377,31 @@ struct ThoughtStore {
         return allSucceeded
     }
 
-    /// Deletes the thought's inline images whose token is not in its body and, once that is
-    /// saved, clears its marker. `update` runs this first on a marked thought: editing a thought
+    /// Run at launch. Turns blocks stored with the old "blurred" kind into blurred markdown blocks.
+    /// Reads nothing but those blocks, so it is cheap once none are left.
+    @discardableResult
+    func migrateLegacyBlurredBlocks() -> Bool {
+        let legacy = BlockKind.legacyBlurredRaw
+        let found: [Block]
+        do {
+            found = try context.fetch(FetchDescriptor<Block>(predicate: #Predicate { $0.kindRaw == legacy }))
+        } catch {
+            Self.logger.error("Legacy block fetch failed: \(error)")
+            return false
+        }
+        guard !found.isEmpty else { return true }
+        for block in found {
+            block.kindRaw = BlockKind.markdown.rawValue
+            block.isBlurred = true
+        }
+        return persist()
+    }
+
+    /// Deletes the thought's inline images whose token is not in its body or a markdown block and,
+    /// once that is saved, clears its marker. `update` runs this first on a marked thought: editing a thought
     /// that still holds such images crashes after a later rollback.
     private func removeTokenlessInlineImages(of thought: Thought) -> Bool {
-        let tokens = Set(ImageToken.references(in: thought.body))
+        let tokens = Set(thought.inlineImageReferences)
         let orphans = (thought.images ?? []).filter { $0.block == nil && !tokens.contains($0.id) }
         for image in orphans {
             remove(image)
@@ -384,9 +455,13 @@ struct ThoughtStore {
         if image.order != order { image.order = order }
     }
 
-    /// Rebuilds the thought's tags from its body, creating `Tag`s as needed.
+    /// Rebuilds the thought's tags from its body and markdown blocks, creating `Tag`s as needed.
     func syncTags(for thought: Thought) {
-        let wanted = TagParser.parse(thought.body).map(tag(for:))
+        syncTags(for: thought, texts: thought.markdownTexts)
+    }
+
+    private func syncTags(for thought: Thought, texts: [String]) {
+        let wanted = TagParser.parse(all: texts).map(tag(for:))
         let wantedNames = Set(wanted.map(\.name))
         thought.tags?.removeAll { !wantedNames.contains($0.name) }
         let existing = Set((thought.tags ?? []).map(\.name))
@@ -395,10 +470,10 @@ struct ThoughtStore {
         }
     }
 
-    /// Saves tags the body needs that don't exist yet, before the thought is edited; see `persist()`.
-    private func saveNewTags(for body: String) -> Bool {
+    /// Saves tags the texts need that don't exist yet, before the thought is edited; see `persist()`.
+    private func saveNewTags(for texts: [String]) -> Bool {
         var inserted = false
-        for parsed in TagParser.parse(body) where existingTag(named: parsed.key) == nil {
+        for parsed in TagParser.parse(all: texts) where existingTag(named: parsed.key) == nil {
             context.insert(Tag(name: parsed.key, displayName: parsed.display))
             inserted = true
         }
@@ -654,7 +729,7 @@ struct ThoughtStore {
 
     /// Saves the tags the bodies need that don't exist yet, before any thought links to them.
     private func saveTags(for items: [ImportedThought], info: [TagRecord]) -> [String: Tag]? {
-        let parsed = items.flatMap { TagParser.parse($0.record.body) }
+        let parsed = TagParser.parse(all: items.flatMap { $0.record.markdownTexts })
         let names = Set(parsed.map(\.key))
         guard !names.isEmpty else { return [:] }
         var byName: [String: Tag]
@@ -686,9 +761,9 @@ struct ThoughtStore {
         thought.id = record.id
         apply(record, to: thought)
         context.insert(thought)
-        thought.tags = TagParser.parse(record.body).compactMap { tags[$0.key] }
+        thought.tags = TagParser.parse(all: record.markdownTexts).compactMap { tags[$0.key] }
 
-        let tokens = Set(ImageToken.references(in: record.body))
+        let tokens = Set(record.inlineImageReferences)
         for ref in record.images where tokens.contains(ref.id) {
             insertImported(ref, from: item, order: 0, into: thought, block: nil)
         }
@@ -697,7 +772,10 @@ struct ThoughtStore {
             let source = entry.element
             let id = takenBlockIDs.contains(source.id) ? UUID() : source.id
             takenBlockIDs.insert(id)
-            let block = Block(id: id, kind: BlockKind(rawValue: source.kindRaw) ?? .blurred, content: source.content, title: source.title, order: order)
+            let resolved = source.resolved ?? (kind: .markdown, isBlurred: false)
+            let block = Block(
+                id: id, kind: resolved.kind, content: source.content, title: source.title, isBlurred: resolved.isBlurred, order: order
+            )
             context.insert(block)
             block.thought = thought
             let images = source.images.enumerated().sorted { ($0.element.order, $0.offset) < ($1.element.order, $1.offset) }
@@ -732,8 +810,9 @@ struct ThoughtStore {
         }
         let blocks = record.blocks.enumerated().sorted { ($0.element.order, $0.offset) < ($1.element.order, $1.offset) }.map { entry in
             let block = entry.element
+            let resolved = block.resolved ?? (kind: .markdown, isBlurred: false)
             return BlockDraft(
-                id: blockID(block.id), kind: BlockKind(rawValue: block.kindRaw) ?? .blurred, title: block.title ?? "", content: block.content,
+                id: blockID(block.id), kind: resolved.kind, title: block.title ?? "", content: block.content, isBlurred: resolved.isBlurred,
                 images: block.images.enumerated().sorted { ($0.element.order, $0.offset) < ($1.element.order, $1.offset) }.map { draft($0.element) }
             )
         }

@@ -120,8 +120,37 @@ enum BackupFormatV1 {
         var title: String?
         var content: String
         var order: Int
+        /// Markdown blocks only. Absent in archives from before it existed, which stored a blurred
+        /// block as kind "blurred".
+        var isBlurred: Bool
         /// Gallery blocks only.
         var images: [ImageRecord]
+
+        init(id: UUID, kindRaw: String, title: String?, content: String, order: Int, isBlurred: Bool = false, images: [ImageRecord]) {
+            self.id = id
+            self.kindRaw = kindRaw
+            self.title = title
+            self.content = content
+            self.order = order
+            self.isBlurred = isBlurred
+            self.images = images
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            id = try container.decode(UUID.self, forKey: .id)
+            kindRaw = try container.decode(String.self, forKey: .kindRaw)
+            title = try container.decodeIfPresent(String.self, forKey: .title)
+            content = try container.decode(String.self, forKey: .content)
+            order = try container.decode(Int.self, forKey: .order)
+            isBlurred = try container.decodeIfPresent(Bool.self, forKey: .isBlurred) ?? false
+            images = try container.decode([ImageRecord].self, forKey: .images)
+        }
+
+        /// The kind and blur state this record stands for, mapping the old "blurred" kind; nil if unknown.
+        var resolved: (kind: BlockKind, isBlurred: Bool)? {
+            BlockKind.resolve(raw: kindRaw, isBlurred: isBlurred)
+        }
     }
 
     struct ThoughtRecord: Codable, Equatable {
@@ -148,7 +177,7 @@ extension ThoughtRecord {
     /// Whether importing this record keeps every `IntegrityChecker` invariant. Records written by the
     /// app always pass; anything else is skipped rather than repaired.
     var isImportable: Bool {
-        let tokens = Set(ImageToken.references(in: body))
+        let tokens = Set(inlineImageReferences)
         let inlineIDs = images.map(\.id)
         guard Set(inlineIDs).count == inlineIDs.count, tokens.isSubset(of: inlineIDs) else { return false }
 
@@ -157,12 +186,12 @@ extension ThoughtRecord {
               Set(blocks.map(\.id)).count == blocks.count
         else { return false }
         for block in blocks {
-            guard let kind = BlockKind(rawValue: block.kindRaw) else { return false }
+            guard let kind = block.resolved?.kind else { return false }
             switch kind {
-            case .blurred:
+            case .markdown:
                 guard block.images.isEmpty, !block.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
             case .gallery:
-                guard !block.images.isEmpty else { return false }
+                guard !block.images.isEmpty, !block.isBlurred else { return false }
             }
         }
         guard (images + blocks.flatMap(\.images)).allSatisfy({ $0.width > 0 && $0.height > 0 }) else { return false }
@@ -174,6 +203,17 @@ extension ThoughtRecord {
         }
         if let days = intervalDays, !(1...Scheduler.maxIntervalDays).contains(days) { return false }
         return viewCount >= 0 && (viewCount == 0 || lastViewedAt != nil) && updatedAt >= createdAt
+    }
+
+    /// The body followed by the content of each markdown block, in block order.
+    var markdownTexts: [String] {
+        let ordered = blocks.enumerated().sorted { ($0.element.order, $0.offset) < ($1.element.order, $1.offset) }.map(\.element)
+        return [body] + ordered.filter { $0.resolved?.kind == .markdown }.map(\.content)
+    }
+
+    /// Image ids referenced by tokens in `markdownTexts`.
+    var inlineImageReferences: [UUID] {
+        markdownTexts.flatMap { ImageToken.references(in: $0) }
     }
 
     /// Inline images first, then each gallery's.

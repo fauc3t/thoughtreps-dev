@@ -132,7 +132,7 @@ export const HELP_CATEGORIES: HelpCategory[] = [
     slug: 'writing',
     title: 'Writing',
     description:
-      'Markdown, images, blurred blocks, tags and saving from other apps.',
+      'Markdown, images, text blocks you can blur, tags and saving from other apps.',
   },
   {
     slug: 'reviewing',
@@ -179,7 +179,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
       {
         heading: 'What you get',
         list: [
-          'Thoughts written in Markdown, with photos, image galleries and blurred blocks you can use to quiz yourself.',
+          'Thoughts written in Markdown, with photos, image galleries and extra text blocks you can blur to quiz yourself.',
           'Tags, with a timeline for each tag.',
           'Pin, snooze and archive, so you choose what stays in front of you.',
           'An optional daily reminder.',
@@ -238,7 +238,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
         list: [
           'Add `#tags` anywhere in the text to file the thought. See [Organize with tags](/help/tags).',
           'Add photos with the {icon:photo} button above the keyboard. See [Add images and galleries](/help/images-and-galleries).',
-          'Add a blurred block to hide an answer. See [Quiz yourself with blurred blocks](/help/blurred-blocks).',
+          'Add a text block and blur it to hide an answer. See [Quiz yourself with blurred blocks](/help/blurred-blocks).',
           'Under "Schedule", use "Comes back every" if this thought should return sooner or later than usual.',
         ],
       },
@@ -382,7 +382,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
     category: 'getting-started',
     title: 'Search your thoughts',
     description:
-      'Find any thought, whether it is due, waiting, pinned or archived. Search looks at your text, blurred blocks, gallery titles and tags.',
+      'Find any thought, whether it is due, waiting, pinned or archived. Search looks at your text, extra text blocks, gallery titles and tags.',
     related: [
       'the-timeline',
       'tags',
@@ -412,7 +412,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
         heading: 'What is searched',
         list: [
           'The text of your thoughts, without the Markdown symbols.',
-          'The text of blurred blocks, so a hidden answer can be found too.',
+          'The text of extra text blocks, blurred ones too, so a hidden answer can be found.',
           'The titles of image galleries.',
           'Tag names.',
         ],
@@ -523,7 +523,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
         list: [
           'The editor shows plain Markdown text. Open the thought to see it formatted.',
           'You can select and copy text in a thought.',
-          'Blurred text blocks are plain text, so Markdown does not work inside them.',
+          'Text blocks you add under a thought take Markdown too, with the same formatting bar.',
         ],
       },
     ],
@@ -551,7 +551,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
       },
       {
         paragraphs: [
-          'That line is the image. Cut and paste it to move the picture. Delete it to remove the picture. You can also tap {icon:clear} on its thumbnail under the text box.',
+          'That line is the image. Cut and paste it to move the picture. Delete it to remove the picture. You can also tap {icon:clear} on its thumbnail under the text box. Text blocks you add under a thought take images the same way.',
         ],
       },
       {
@@ -603,7 +603,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
     category: 'writing',
     title: 'Quiz yourself with blurred blocks',
     description:
-      'A blurred block hides text until you tap it. Put the question in your thought and the answer in a block, then test yourself each time it returns.',
+      'Add a text block under your thought and blur it. It stays hidden until you tap it, so you can test yourself each time the thought returns.',
     related: [
       'write-your-first-thought',
       'markdown-formatting',
@@ -612,8 +612,8 @@ export const HELP_ARTICLES: HelpArticle[] = [
     sections: [
       {
         paragraphs: [
-          'A blurred block is text that stays hidden behind a heavy blur until you tap it. It turns a thought into a small quiz. Write the question in the thought. Put the answer in a blurred block. Try to remember it before you reveal it.',
-          'It is a good fit for words of the day, definitions, names and quotes you want to finish. It is good for anything you want to learn, not just read.',
+          'A thought can hold more than one piece of text. The text you type first is the main text. You can add text blocks under it. Turn on "Blur until tapped" for a block, and it stays hidden behind a heavy blur until you tap it.',
+          'That turns a thought into a small quiz. Write the question in the main text. Put the answer in a blurred block. Try to remember it before you reveal it. It is a good fit for words of the day, definitions, names and quotes you want to finish.',
         ],
         example: {
           kind: 'blurred-block',
@@ -622,38 +622,41 @@ export const HELP_ARTICLES: HelpArticle[] = [
         },
       },
       {
-        heading: 'Add a blurred block',
+        heading: 'Add a text block',
         steps: [
           'In the editor, scroll to the "Blocks" section and tap "Add block".',
-          'Choose "Blurred text".',
-          'Type a label if you like, such as "Answer". If you leave it empty, the block is called "Hidden".',
-          'Type the text to hide in the "Hidden text" field.',
+          'Choose "Text".',
+          'Type a label if you like, such as "Answer".',
+          'Type the text. Markdown, #tags and images work here just like in the main text.',
+          'Turn on "Blur until tapped" to hide it.',
         ],
       },
       {
         paragraphs: [
-          'You can add as many blocks as you like. A blurred block with no text is dropped when you save. To remove a block, swipe it left in the editor.',
+          'You can add as many blocks as you like. A text block with no text is dropped when you save. To remove a block, swipe it left in the editor. The main text always stays first, and you cannot remove or blur it.',
         ],
       },
       {
         heading: 'Using it',
         paragraphs: [
-          'Blocks show under the body of the thought. A block shows its label and "Tap to reveal". Tap it to see the text. Tap again to hide it ("Hide").',
-          'The block is hidden again each time you open the thought. So every visit is a fresh try at remembering.',
+          'Blocks show under the main text. A blurred block shows its label and "Tap to reveal". If you gave it no label, it is called "Hidden". Tap it to see the text. Tap again to hide it ("Hide").',
+          'A blurred block is hidden again each time you open the thought. So every visit is a fresh try at remembering.',
         ],
       },
       {
         heading: 'Example',
         list: [
-          'Thought: "Word of the day: petrichor. What does it mean?"',
-          'Blurred block labelled "Answer": "The smell of rain on dry ground."',
+          'Main text: "Word of the day: petrichor. What does it mean?"',
+          'Text block labelled "Answer", blurred: "The smell of rain on dry ground."',
         ],
       },
       {
         heading: 'Good to know',
         list: [
-          'The hidden text is plain text. Markdown does not work inside a block.',
-          'Blurred blocks are in your backups.',
+          'Tags in any text block file the thought, and search finds text in every block, blurred ones too.',
+          'The title, the timeline preview and pinning come from the main text.',
+          'Blocks, and whether each is blurred, are in your backups.',
+          'Older blurred blocks, and older backups, open as blurred text blocks.',
         ],
       },
     ],
@@ -682,6 +685,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
         heading: 'Rules worth knowing',
         list: [
           'Tags are not case sensitive. `#Quotes` and `#quotes` are the same tag. The first spelling you used is the one shown.',
+          'Tags work in any text block you add under a thought, too. See [Quiz yourself with blurred blocks](/help/blurred-blocks).',
           'A heading like `# Title` is a heading, not a tag.',
           'A `#` inside a web address, inside code, or right after a letter (as in C#) is not a tag.',
           'Tags are read again every time you save. So if you delete `#quotes` from the text, the tag leaves that thought.',

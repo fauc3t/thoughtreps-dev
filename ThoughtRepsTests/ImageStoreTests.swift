@@ -134,7 +134,7 @@ struct ImageStoreTests {
         let two = gallery([newImage(3)])
         let blurred = BlockDraft(content: "hidden")
         let thought = store.create(body: "# T", blocks: [blurred, one, two], now: now)
-        #expect(thought.sortedBlocks.map(\.kind) == [.blurred, .gallery, .gallery])
+        #expect(thought.sortedBlocks.map(\.kind) == [.markdown, .gallery, .gallery])
 
         let keep = BlockDraft(id: two.id, kind: .gallery, images: [ImageDraft(id: two.images[0].id)])
         #expect(store.update(thought, body: "# T", blocks: [keep], intervalDays: nil, now: now))
@@ -306,7 +306,7 @@ struct ImageStoreTests {
 
         #expect(store.update(thought, body: newBody, blocks: blocks, images: [n1], intervalDays: 3, now: now))
         #expect(thought.body == newBody, failure)
-        #expect(thought.sortedBlocks.map(\.kind) == [.blurred, .gallery, .gallery], failure)
+        #expect(thought.sortedBlocks.map(\.kind) == [.markdown, .gallery, .gallery], failure)
         #expect(thought.sortedBlocks.map(\.order) == [0, 1, 2], failure)
         #expect(thought.sortedBlocks[1].sortedImages.map(\.id) == [y.id], failure)
         #expect(thought.sortedBlocks[2].sortedImages.map(\.id) == [c.id, x.id, a.id], failure)
@@ -367,7 +367,7 @@ struct ImageIntegrityTests {
             context.insert(copy)
             copy.thought = thought
             let block = thought.sortedBlocks[0]
-            let twin = Block(id: block.id, kind: .blurred, content: "x", order: 5)
+            let twin = Block(id: block.id, kind: .markdown, content: "x", order: 5)
             context.insert(twin)
             twin.thought = thought
         }
@@ -407,11 +407,11 @@ struct ImageIntegrityTests {
         #expect(found.contains { $0.contains("image orders") })
     }
 
-    @Test func detectsImagesInBlurredBlocks() throws {
+    @Test func detectsImagesInMarkdownBlocks() throws {
         let found = try violations { _, thought in
             galleryImages(thought)[0].block = thought.sortedBlocks[0]
         }
         #expect(found.contains { $0.contains("not a gallery") })
-        #expect(found.contains { $0.contains("Blurred block") && $0.contains("has images") })
+        #expect(found.contains { $0.contains("Markdown block") && $0.contains("has images") })
     }
 }

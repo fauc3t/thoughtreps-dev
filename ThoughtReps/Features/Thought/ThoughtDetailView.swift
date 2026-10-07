@@ -29,11 +29,13 @@ struct ThoughtDetailView: View {
                         TagChips(tags: thought.sortedTags, linked: true)
                     }
                 }
-                ThoughtRenderer(markdown: thought.body, images: thought.images ?? []) { viewingImage = ImageViewerStart(id: $0) }
-                    .environment(\.openURL, OpenURLAction(handler: openLink))
-                ForEach(thought.sortedBlocks) { block in
-                    BlockView(block: block) { viewingImage = ImageViewerStart(id: $0) }
+                VStack(alignment: .leading, spacing: 16) {
+                    ThoughtRenderer(markdown: thought.body, images: thought.images ?? []) { viewingImage = ImageViewerStart(id: $0) }
+                    ForEach(thought.sortedBlocks) { block in
+                        BlockView(block: block, images: thought.images ?? []) { viewingImage = ImageViewerStart(id: $0) }
+                    }
                 }
+                .environment(\.openURL, OpenURLAction(handler: openLink))
                 Divider().padding(.top, 8)
                 footer
             }

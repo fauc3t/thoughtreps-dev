@@ -87,6 +87,7 @@ struct RootTabView: View {
         .task {
             backup.removeStaleTemporaryFiles()
             ThoughtStore(context: context).pruneOrphanTags()
+            ThoughtStore(context: context).migrateLegacyBlurredBlocks()
             ThoughtStore(context: context).cleanUpPendingImageSaves()
             #if DEBUG
             SampleData.seedIfNeeded(context: context)

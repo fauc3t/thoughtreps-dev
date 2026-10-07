@@ -68,15 +68,25 @@ extension Thought {
         (blocks ?? []).sorted { $0.order < $1.order }
     }
 
-    /// Every image in display order: inline images as their tokens appear in the body, then each
-    /// gallery's images, galleries in block order.
+    /// The body followed by the content of each markdown block, in order.
+    var markdownTexts: [String] {
+        [body] + sortedBlocks.filter { $0.kind == .markdown }.map(\.content)
+    }
+
+    /// Image ids referenced by tokens in `markdownTexts`, in order, duplicates included.
+    var inlineImageReferences: [UUID] {
+        markdownTexts.flatMap { ImageToken.references(in: $0) }
+    }
+
+    /// Every image in display order: inline images as their tokens appear in the body and markdown
+    /// blocks, then each gallery's images, galleries in block order.
     var orderedImages: [ImageAsset] {
         let inline = Dictionary(
             (images ?? []).filter { $0.block == nil }.map { ($0.id, $0) },
             uniquingKeysWith: { first, _ in first }
         )
         var seen = Set<UUID>()
-        let inBody = ImageToken.references(in: body).compactMap { id in
+        let inBody = inlineImageReferences.compactMap { id in
             seen.insert(id).inserted ? inline[id] : nil
         }
         return inBody + sortedBlocks.flatMap(\.sortedImages)

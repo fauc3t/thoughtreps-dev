@@ -27,7 +27,7 @@ struct FixtureGenerator {
 
         let pinned = store.create(
             body: "# Pinned idea\nKeep this on top.\n\n#Swift #study",
-            blocks: [BlockDraft(title: "Quiz", content: "Answer one"), BlockDraft(content: "Answer two")],
+            blocks: [BlockDraft(title: "Quiz", content: "Answer one", isBlurred: true), BlockDraft(content: "Answer two", isBlurred: true)],
             intervalDays: 3,
             now: t0
         )

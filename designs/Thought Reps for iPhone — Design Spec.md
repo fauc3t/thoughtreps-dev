@@ -12,7 +12,7 @@ Goals for v1:
 - Resurface each thought on a timeline after its interval (default 7 days); viewing it re-queues it.
 - Pin thoughts to keep them always visible; archive thoughts to retire them.
 - Organize with inline `#hashtags`, with a timeline per tag.
-- Attach extra blocks to a thought, starting with blurred (tap-to-reveal) text.
+- Attach extra blocks to a thought: Markdown text (optionally blurred until tapped) and image galleries.
 
 Non-goals for v1: multi-user sharing, a web or Android client, a backend, and AI features. iCloud sync is designed for but ships in a later milestone.
 
@@ -35,7 +35,7 @@ Time moves a thought from waiting to due; a view or snooze sends it back, and ar
 
 - Again: brings it back tomorrow and resets a growing interval.
 - Got it: re-queues it on its interval; in growing mode, doubles the interval (capped at 365 days).
-- Blurred blocks act as the answer to recall before revealing.
+- Blurred text blocks act as the answer to recall before revealing.
 - Thoughts opened outside the due list (pinned, tag "All", search) still record a plain view.
 
 Intervals:
@@ -95,9 +95,10 @@ Four SwiftData models cover v1. Every field has a default and every relationship
 | Field | Type | Notes |
 | --- | --- | --- |
 | id | UUID |  |
-| kind | String | `blurred` in v1; `quote`, `link`, `checklist` later |
-| content | String | Markdown or plain text, per kind |
-| title | String? | Optional label, e.g. "Answer" |
+| kind | String | `markdown` or `gallery` in v1; `quote`, `link`, `checklist` later. Old `blurred` records load as blurred `markdown` |
+| content | String | Markdown for `markdown` blocks; unused for `gallery` |
+| title | String? | Optional label, e.g. "Answer" (a gallery's title) |
+| isBlurred | Bool | `markdown` only: hidden until tapped |
 | order | Int | Position under the thought |
 | thought | Thought? | Inverse |
 
@@ -131,7 +132,7 @@ Capture flow:
 
 1. Tap the floating **+** button on any tab.
 2. The editor opens with the keyboard up and the current tag pre-filled when you are in a tag timeline.
-3. Type, optionally add images or a blurred block.
+3. Type, optionally add images, more text blocks or a gallery.
 4. Save. The thought is waiting and first comes due after its interval.
 
 Review flow:
@@ -145,7 +146,7 @@ Empty states matter here: an empty Timeline says what is coming next ("3 thought
 
 ## Content: Markdown, images & blocks
 
-Thought bodies are GitHub-flavored Markdown rendered with a third-party SwiftUI library, because Apple's built-in Markdown support only covers inline styles. Blocks are separate records rendered under the body.
+Thought bodies are GitHub-flavored Markdown rendered with a third-party SwiftUI library, because Apple's built-in Markdown support only covers inline styles. The body is the thought's main text, always first; blocks are separate records rendered under it.
 
 **Markdown rendering**
 
@@ -164,12 +165,13 @@ Thought bodies are GitHub-flavored Markdown rendered with a third-party SwiftUI 
 
 | Kind | Behavior | Version |
 | --- | --- | --- |
-| Blurred text | Content shown with a heavy blur and an optional title; tap to reveal, tap again to hide. Reveal state resets each time the thought opens. | v1 |
+| Text | Markdown with an optional label, the same formatting bar, `#tags` and inline images as the body. A "Blur until tapped" toggle shows it under a heavy blur; tap to reveal, tap again to hide. Reveal state resets each time the thought opens. | v1 |
+| Image gallery | A titled, horizontally scrolling row of images | v1 |
 | Quote / source | A citation with author and link | Later |
 | Checklist | Tickable items whose state persists | Later |
 | Link preview | URL with a fetched title and image | Later |
 
-Blocks are added from the editor's **Add block** menu, reordered by drag, and each block kind is one SwiftUI view plus one case in a `BlockKind` enum, so new kinds stay small.
+The main text can't be removed or blurred. Title, timeline preview and pinning come from it. Tags from every text block file the thought, and search covers every text block, blurred too. Blocks are added from the editor's **Add block** menu (Text, Image gallery), reordered by drag, and each block kind is one SwiftUI view plus one case in a `BlockKind` enum, so new kinds stay small.
 
 ## Architecture & repo structure
 
@@ -204,7 +206,7 @@ ThoughtReps/
 │   │   ├── Timeline/   TimelineView, ThoughtCard
 │   │   ├── Thought/    ThoughtDetailView, ThoughtRenderer
 │   │   ├── Editor/     EditorView, FormatBar, BlockEditor
-│   │   ├── Blocks/     BlockKind, BlurredBlockView
+│   │   ├── Blocks/     BlockKind, BlockView
 │   │   ├── Tags/       TagListView, TagTimelineView
 │   │   ├── Archive/    ArchiveView
 │   │   └── Settings/   SettingsView
@@ -265,13 +267,13 @@ A **Send Feedback** section in Settings, sent through the app's own API (no Mail
 
 The build runs in four stages.
 
-1. **Skeleton — done.** Repo, models, Scheduler with tests, timeline, thought view with view-to-requeue, pin, archive, snooze, editor with blurred blocks, tags and tag timelines, archive, settings, sample data.
+1. **Skeleton — done.** Repo, models, Scheduler with tests, timeline, thought view with view-to-requeue, pin, archive, snooze, editor with text and gallery blocks, tags and tag timelines, archive, settings, sample data.
 2. **v1 release — must ship.**
     - Backup and export/import (zip of JSON + images; Markdown export).
     - Daily reminder notification.
     - Search across bodies and blocks.
     - Markdown renderer (MarkdownUI vs Textual spike) and images.
-    - Study mode: Again / Got it, growing intervals, blurred blocks as answers.
+    - Study mode: Again / Got it, growing intervals, blurred text blocks as answers.
     - Send feedback / request a feature.
     - App Store prep: paid Apple Developer Program ($99/yr), app icon, privacy label, screenshots, TestFlight beta.
 3. **Fast follow — driven by user requests.** Quick capture from anywhere: share extension, Lock Screen and Control Center button, Shortcuts/Siri "Add thought", home-screen widget. One-time export link (encrypted, single download, expires after 24h).
@@ -285,4 +287,4 @@ Open questions:
 - [ ] Privacy label and policy for feedback: Contact Info (email) and User Content, used for app support.
 - [ ] One-time export link: how the privacy label and policy describe the temporary upload.
 - [ ] Should viewing re-queue immediately on open, or only after a short dwell (e.g. 3 seconds) to avoid accidental views?
-- [ ] Any block types from the original app beyond blurred text that v1 should include?
+- [ ] Any block types from the original app beyond text and gallery that v1 should include?

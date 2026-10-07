@@ -11,7 +11,7 @@ struct SearchDocument: Sendable, Equatable {
     var updatedAt: Date
     var isArchived: Bool
     var body: String
-    /// Contents of the blurred blocks.
+    /// Contents of the markdown blocks, blurred or not.
     var blocks: String
     /// Titles of all blocks (galleries mostly).
     var titles: String
@@ -36,7 +36,7 @@ struct SearchDocument: Sendable, Equatable {
             updatedAt: thought.updatedAt,
             isArchived: thought.isArchived,
             body: SearchText.plain(thought.body),
-            blocks: blocks.filter { $0.kind == .blurred }.map { SearchText.plain($0.content) }.filter { !$0.isEmpty }.joined(separator: "\n"),
+            blocks: blocks.filter { $0.kind == .markdown }.map { SearchText.plain($0.content) }.filter { !$0.isEmpty }.joined(separator: "\n"),
             titles: blocks.compactMap(\.title).filter { !$0.isEmpty }.joined(separator: "\n"),
             tags: (thought.tags ?? []).map(\.name).sorted().joined(separator: " ")
         )

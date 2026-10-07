@@ -46,7 +46,7 @@ struct ImageFrontendTests {
         )
         let drafts = BlockDraft.drafts(for: thought)
         #expect(drafts.count == 2)
-        #expect(drafts[0].kind == .blurred && drafts[0].content == "Secret")
+        #expect(drafts[0].kind == .markdown && drafts[0].content == "Secret")
 
         let gallery = try #require(thought.sortedBlocks.last)
         #expect(drafts[1].id == gallery.id)

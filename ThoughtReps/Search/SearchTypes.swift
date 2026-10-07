@@ -11,7 +11,7 @@ enum SearchScope: Sendable, Equatable {
 /// The part of a thought a result's snippet comes from.
 enum SearchField: Sendable, Equatable {
     case body
-    /// Text of a blurred block. It is shown in snippets as written.
+    /// Text of a markdown block (blurred or not). It is shown in snippets as written.
     case blockText
     case blockTitle
     case tag

@@ -39,6 +39,13 @@ enum TagParser {
         return result
     }
 
+    /// Unique tags across several texts in order of first appearance. Each text is parsed on its own,
+    /// so an unclosed code fence in one can't hide tags in the next.
+    static func parse(all texts: [String]) -> [ParsedTag] {
+        var seen = Set<String>()
+        return texts.flatMap(parse).filter { seen.insert($0.key).inserted }
+    }
+
     /// NFC first, so "café" typed precomposed or decomposed is one tag.
     static func normalized(_ text: String) -> String {
         text.precomposedStringWithCanonicalMapping

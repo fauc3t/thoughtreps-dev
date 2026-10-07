@@ -172,7 +172,35 @@ struct PersistenceTests {
         #expect(try context.fetchCount(FetchDescriptor<ThoughtReps.Tag>()) == 3)
         #expect(try context.fetchCount(FetchDescriptor<Block>()) == 3)
         #expect(try context.fetchCount(FetchDescriptor<ImageAsset>()) == 3)
+
+        #expect(pinned.sortedBlocks.map(\.kindRaw) == ["markdown", "markdown"])
+        #expect(pinned.sortedBlocks.map(\.isBlurred) == [true, true])
+        #expect(gallery.isBlurred == false)
         #expect(try IntegrityChecker.check(context).isEmpty)
+    }
+
+    @Test func legacyBlurredBlocksMigrateToBlurredMarkdown() throws {
+        let container = try ModelContainer.thoughtReps(inMemory: true)
+        let context = container.mainContext
+        let store = ThoughtStore(context: context, saveErrors: SaveErrorCenter())
+        let thought = store.create(
+            body: "Body",
+            blocks: [BlockDraft(title: "Quiz", content: "One"), BlockDraft(content: "Two")],
+            intervalDays: nil,
+            now: now
+        )
+        for block in thought.sortedBlocks { block.kindRaw = BlockKind.legacyBlurredRaw }
+        try context.save()
+
+        #expect(BlockDraft.drafts(for: thought).map(\.isBlurred) == [true, true])
+        #expect(BlockDraft.drafts(for: thought).map(\.kind) == [.markdown, .markdown])
+        #expect(try IntegrityChecker.check(context).contains { $0.description.contains("legacy blurred") })
+
+        #expect(store.migrateLegacyBlurredBlocks())
+        #expect(thought.sortedBlocks.map(\.kindRaw) == ["markdown", "markdown"])
+        #expect(thought.sortedBlocks.map(\.isBlurred) == [true, true])
+        #expect(try IntegrityChecker.check(context).isEmpty)
+        #expect(store.migrateLegacyBlurredBlocks())
     }
 }
 
@@ -372,7 +400,7 @@ struct IntegrityCheckerTests {
 
     @Test func detectsOrphanBlockAndImage() throws {
         let found = try violations { context, _ in
-            context.insert(Block(kind: .blurred, content: "x", order: 0))
+            context.insert(Block(kind: .markdown, content: "x", order: 0))
             context.insert(ImageAsset(data: Data([1]), thumbnailData: Data([1]), width: 1, height: 1))
         }
         #expect(found.contains { $0.contains("Block") && $0.contains("no thought") })

@@ -3,12 +3,20 @@ import SwiftUI
 /// Renders any attached block by kind. New kinds add a case here.
 struct BlockView: View {
     let block: Block
+    /// The thought's own images, which inline tokens in a markdown block resolve against.
+    let images: [ImageAsset]
     let onOpenImage: (UUID) -> Void
 
     var body: some View {
         switch block.kind {
-        case .blurred:
-            BlurredBlockView(title: block.title, content: block.content)
+        case .markdown:
+            MarkdownBlockView(
+                title: block.title,
+                content: block.content,
+                isBlurred: block.isBlurred,
+                images: images,
+                onOpenImage: onOpenImage
+            )
         case .gallery:
             GalleryBlockView(title: block.title, images: block.sortedImages, onOpenImage: onOpenImage)
         }
@@ -59,12 +67,46 @@ struct GalleryBlockView: View {
     }
 }
 
-/// Text hidden behind a blur until tapped. Hidden again every time the thought opens.
+/// A Markdown block, rendered like the thought's body under an optional label.
+struct MarkdownBlockView: View {
+    let title: String?
+    let content: String
+    let isBlurred: Bool
+    let images: [ImageAsset]
+    let onOpenImage: (UUID) -> Void
+
+    private var heading: String? {
+        guard let title, !title.isEmpty else { return nil }
+        return title
+    }
+
+    var body: some View {
+        if isBlurred {
+            BlurredBlockView(title: heading, content: content, images: images, onOpenImage: onOpenImage)
+        } else {
+            VStack(alignment: .leading, spacing: 8) {
+                if let heading {
+                    Text(heading)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .accessibilityAddTraits(.isHeader)
+                }
+                ThoughtRenderer(markdown: content, images: images) { onOpenImage($0) }
+            }
+        }
+    }
+}
+
+/// Markdown hidden behind a blur until tapped. Hidden again every time the thought opens.
 struct BlurredBlockView: View {
     let title: String?
     let content: String
+    var images: [ImageAsset] = []
+    var onOpenImage: (UUID) -> Void = { _ in }
 
     @State private var isRevealed = false
+
+    private var name: String { title ?? "Hidden text" }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -77,8 +119,8 @@ struct BlurredBlockView: View {
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.tint)
             }
-            Text(content)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            ThoughtRenderer(markdown: content, images: images) { onOpenImage($0) }
+                .allowsHitTesting(isRevealed)
                 .blur(radius: isRevealed ? 0 : 8)
                 .animation(.easeInOut(duration: 0.2), value: isRevealed)
         }
@@ -89,15 +131,23 @@ struct BlurredBlockView: View {
         )
         .clipShape(RoundedRectangle(cornerRadius: 14))
         .contentShape(Rectangle())
+        .hoverEffect(.highlight)
         .onTapGesture { isRevealed.toggle() }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(isRevealed ? "\(title ?? "Hidden text"): \(content)" : "\(title ?? "Hidden text"), hidden")
+        .accessibilityLabel(isRevealed ? "\(name): \(Self.spokenText(content))" : "\(name), hidden")
         .accessibilityHint(isRevealed ? "Double tap to hide" : "Double tap to reveal")
         .accessibilityAddTraits(.isButton)
     }
 }
 
+extension BlurredBlockView {
+    /// The content as plain words, so VoiceOver doesn't read Markdown syntax or image URLs aloud.
+    static func spokenText(_ content: String) -> String {
+        SearchText.plain(content).replacingOccurrences(of: "\n", with: ". ")
+    }
+}
+
 #Preview {
-    BlurredBlockView(title: "Answer", content: "O(1) on average, because elements are hashed.")
+    BlurredBlockView(title: "Answer", content: "**O(1)** on average, because elements are hashed.")
         .padding()
 }

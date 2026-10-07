@@ -64,7 +64,7 @@ struct RandomizedOperationTests {
     static func currentDrafts(of thought: Thought) -> [BlockDraft] {
         thought.sortedBlocks.map {
             BlockDraft(
-                id: $0.id, kind: $0.kind, title: $0.title ?? "", content: $0.content,
+                id: $0.id, kind: $0.kind, title: $0.title ?? "", content: $0.content, isBlurred: $0.isBlurred,
                 images: $0.sortedImages.map { ImageDraft(existing: $0) }
             )
         }
@@ -76,11 +76,24 @@ struct RandomizedOperationTests {
                 // No images drops the gallery.
                 return BlockDraft(kind: .gallery, title: Bool.random(using: &rng) ? "Gallery" : "", images: randomImages(&rng, count: 0...3))
             }
+            var content = Int.random(in: 0..<4, using: &rng) == 0 ? "  " : "content \(Int.random(in: 0..<100, using: &rng))"
+            if Bool.random(using: &rng) { content += " " + tagPool.randomElement(using: &rng)! }
             return BlockDraft(
                 title: Bool.random(using: &rng) ? "Title" : "",
                 // Whitespace-only content is dropped by the store, which must not leave gaps in `order`.
-                content: Int.random(in: 0..<4, using: &rng) == 0 ? "  " : "content \(Int.random(in: 0..<100, using: &rng))"
+                content: content,
+                isBlurred: Bool.random(using: &rng)
             )
+        }
+    }
+
+    /// Moves some of the body's inline image tokens into the content of markdown blocks.
+    static func moveTokensToBlocks(body: inout String, images: [ImageDraft], blocks: inout [BlockDraft], _ rng: inout SeededGenerator) {
+        let targets = blocks.indices.filter { blocks[$0].kind == .markdown }
+        guard !targets.isEmpty else { return }
+        for image in images where body.contains(ImageToken.token(for: image.id)) && Bool.random(using: &rng) {
+            body = body.replacingOccurrences(of: ImageToken.token(for: image.id), with: "")
+            blocks[targets.randomElement(using: &rng)!].content += "\n" + ImageToken.token(for: image.id)
         }
     }
 
@@ -103,7 +116,12 @@ struct RandomizedOperationTests {
                 let gallery = (0..<Int.random(in: 1...3, using: &rng)).map { imageRecord(order: $0) }
                 return BlockRecord(id: UUID(), kindRaw: BlockKind.gallery.rawValue, title: nil, content: "", order: order, images: gallery.shuffled(using: &rng))
             }
-            return BlockRecord(id: UUID(), kindRaw: BlockKind.blurred.rawValue, title: "T", content: "content \(order)", order: order, images: [])
+            let legacy = Int.random(in: 0..<3, using: &rng) == 0
+            return BlockRecord(
+                id: UUID(), kindRaw: legacy ? BlockKind.legacyBlurredRaw : BlockKind.markdown.rawValue, title: "T",
+                content: "content \(order) \(tagPool.randomElement(using: &rng)!)", order: order,
+                isBlurred: !legacy && Bool.random(using: &rng), images: []
+            )
         }
         let createdAt = existing?.createdAt ?? now.addingTimeInterval(-86_400)
         let updatedAt = max(createdAt, (existing?.updatedAt ?? now).addingTimeInterval(Double(Int.random(in: -100...100, using: &rng))))
@@ -170,13 +188,15 @@ struct RandomizedOperationTests {
             switch op {
             case 0, 1:
                 let interval = Self.randomInterval(&rng)
-                let blocks = Self.randomBlocks(&rng)
-                let (body, images) = Self.withInlineImages(Self.randomBody(&rng), &rng)
+                var blocks = Self.randomBlocks(&rng)
+                var (body, images) = Self.withInlineImages(Self.randomBody(&rng), &rng)
+                Self.moveTokensToBlocks(body: &body, images: images, blocks: &blocks, &rng)
                 store.create(body: body, blocks: blocks, images: images, intervalDays: interval, now: now)
                 description = "create(interval: \(String(describing: interval)), blocks: \(blocks.count), inline: \(images.count))"
             case 2:
-                let (body, images) = Self.withInlineImages(Self.randomBody(&rng), &rng)
-                let blocks = Self.randomBlocks(&rng)
+                var (body, images) = Self.withInlineImages(Self.randomBody(&rng), &rng)
+                var blocks = Self.randomBlocks(&rng)
+                Self.moveTokensToBlocks(body: &body, images: images, blocks: &blocks, &rng)
                 let interval = Self.randomInterval(&rng)
                 store.update(target!, body: body, blocks: blocks, images: images, intervalDays: interval, now: now)
                 description = "update(body: \(body.debugDescription), blocks: \(blocks.count), inline: \(images.count), interval: \(String(describing: interval)))"

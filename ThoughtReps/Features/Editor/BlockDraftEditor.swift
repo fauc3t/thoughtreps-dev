@@ -3,8 +3,13 @@ import SwiftUI
 /// Editing row for one attached block in the editor.
 struct BlockDraftEditor: View {
     @Binding var draft: BlockDraft
-    /// Images already stored on the thought, for thumbnails of existing gallery images.
+    /// The cursor in this block's Markdown text.
+    @Binding var selection: TextSelection?
+    var focus: FocusState<EditorField?>.Binding
+    /// Images already stored on the thought, for thumbnails of existing images.
     let storedImages: [UUID: ImageAsset]
+    /// New inline images added to the thought, for thumbnails of tokens in this block's text.
+    let inlineDrafts: [ImageDraft]
     /// Called with this block's id when processed images are ready.
     let onAddImages: (UUID, [ImageDraft]) -> Void
 
@@ -16,11 +21,8 @@ struct BlockDraftEditor: View {
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
             switch draft.kind {
-            case .blurred:
-                TextField("Label (optional), e.g. Answer", text: $draft.title)
-                    .font(.subheadline.weight(.semibold))
-                TextField("Hidden text", text: $draft.content, axis: .vertical)
-                    .lineLimit(2...8)
+            case .markdown:
+                markdown
             case .gallery:
                 TextField("Title (optional)", text: $draft.title)
                     .font(.subheadline.weight(.semibold))
@@ -28,6 +30,36 @@ struct BlockDraftEditor: View {
             }
         }
         .padding(.vertical, 4)
+    }
+
+    private var markdown: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            TextField("Label (optional), e.g. Answer", text: $draft.title)
+                .font(.subheadline.weight(.semibold))
+            TextEditor(text: $draft.content, selection: $selection)
+                .font(.system(.body, design: .monospaced))
+                .frame(minHeight: 100)
+                .focused(focus, equals: .block(draft.id))
+                .accessibilityLabel(draft.title.isEmpty ? "Text block" : draft.title)
+                .overlay(alignment: .topLeading) {
+                    if draft.content.isEmpty {
+                        Text("Markdown text")
+                            .foregroundStyle(.tertiary)
+                            .padding(.top, 8)
+                            .padding(.leading, 5)
+                            .allowsHitTesting(false)
+                            .accessibilityHidden(true)
+                    }
+                }
+            let thumbnails = inlineThumbnails(in: draft.content, drafts: inlineDrafts, stored: storedImages)
+            if !thumbnails.isEmpty {
+                InlineImageStrip(thumbnails: thumbnails) { id in
+                    draft.content = ImageToken.removing(id, from: draft.content)
+                    selection = nil
+                }
+            }
+            Toggle("Blur until tapped", isOn: $draft.isBlurred)
+        }
     }
 
     private var gallery: some View {
