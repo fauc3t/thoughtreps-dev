@@ -66,6 +66,10 @@ struct RootTabView: View {
             }
                 .padding(.trailing, 20)
                 .padding(.bottom, 66) // clears the tab bar
+                .opacity(captureContext.hidesButton ? 0 : 1)
+                .allowsHitTesting(!captureContext.hidesButton)
+                .accessibilityHidden(captureContext.hidesButton)
+                .animation(.easeOut(duration: 0.2), value: captureContext.hidesButton)
         }
         .sheet(item: $capture) { request in
             EditorView(mode: .new(prefillTag: request.prefillTag))

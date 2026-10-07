@@ -7,6 +7,7 @@ struct ThoughtDetailView: View {
 
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
+    @Environment(CaptureContext.self) private var captureContext: CaptureContext?
     @AppStorage(AppSettings.Key.defaultIntervalDays) private var defaultIntervalDays = Scheduler.defaultIntervalDays
 
     @State private var hasRecordedView = false
@@ -16,6 +17,7 @@ struct ThoughtDetailView: View {
     @State private var pendingDelete = false
     @State private var tappedTag: Tag?
     @State private var viewingImage: ImageViewerStart?
+    @State private var captureToken = UUID()
 
     private var store: ThoughtStore {
         ThoughtStore(context: context, defaultIntervalDays: defaultIntervalDays)
@@ -50,7 +52,6 @@ struct ThoughtDetailView: View {
             .padding(20)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .contentMargins(.bottom, 88, for: .scrollContent) // room for the + button
         .background(Color.paper)
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if !thought.isArchived {
@@ -77,8 +78,12 @@ struct ThoughtDetailView: View {
         } message: {
             Text("This can't be undone.")
         }
-        .onAppear { recordView() }
+        .onAppear {
+            recordView()
+            captureContext?.hideButton(token: captureToken) // the interval bar takes the bottom edge
+        }
         .onDisappear {
+            captureContext?.showButton(token: captureToken)
             // Delete only once the pop has finished, so this view never renders a deleted model.
             if pendingDelete {
                 pendingDelete = false
@@ -107,9 +112,6 @@ struct ThoughtDetailView: View {
 
     private static let quickIntervals = [1, 3, 7, 30]
 
-    /// Clears the floating + button, which sits over the lower trailing corner of this bar.
-    private static let captureButtonClearance: CGFloat = 84
-
     private var intervalBar: some View {
         let current = thought.effectiveIntervalDays(defaultDays: defaultIntervalDays)
         return VStack(spacing: 8) {
@@ -135,7 +137,6 @@ struct ThoughtDetailView: View {
                 }
                 intervalMenu(selected: !Self.quickIntervals.contains(current))
             }
-            .padding(.trailing, Self.captureButtonClearance - 16)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)

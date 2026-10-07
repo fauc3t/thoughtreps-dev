@@ -111,9 +111,10 @@ extension View {
             .background(Color.paper)
     }
 
-    /// A list row that is just its card: no separator, no row background.
+    /// A list row that is just its card: no separator, no row background, no disclosure chevron.
     func inkRow() -> some View {
-        listRowSeparator(.hidden)
+        navigationLinkIndicatorVisibility(.hidden)
+            .listRowSeparator(.hidden)
             .listRowBackground(Color.clear)
             .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
     }

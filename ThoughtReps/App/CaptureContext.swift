@@ -8,7 +8,16 @@ import Observation
 final class CaptureContext {
     private var registrations: [(token: UUID, tag: Tag)] = []
 
+    private var hiders: Set<UUID> = []
+
     var tag: Tag? { registrations.last?.tag }
+
+    /// True while a screen that has its own bottom controls (a thought) is on screen.
+    var hidesButton: Bool { !hiders.isEmpty }
+
+    func hideButton(token: UUID) { hiders.insert(token) }
+
+    func showButton(token: UUID) { hiders.remove(token) }
 
     func register(token: UUID, tag: Tag) {
         registrations.removeAll { $0.token == token }
