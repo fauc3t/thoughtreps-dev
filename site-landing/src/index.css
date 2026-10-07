@@ -1,10 +1,14 @@
 @import 'tailwindcss';
 @import '@fontsource-variable/archivo/wdth.css';
-@import '@fontsource/ibm-plex-mono/latin-400.css';
-@import '@fontsource/ibm-plex-mono/latin-500.css';
-@import '@fontsource/ibm-plex-sans/latin-400.css';
-@import '@fontsource/ibm-plex-sans/latin-500.css';
-@import '@fontsource/ibm-plex-sans/latin-600.css';
+
+/* Paper Mono (paper.design, SIL OFL 1.1, see fonts/OFL.txt). */
+@font-face {
+  font-family: 'Paper Mono';
+  src: url('./fonts/PaperMono-Variable.woff2') format('woff2');
+  font-weight: 100 800;
+  font-style: normal;
+  font-display: swap;
+}
 
 /* Light/dark palette. Dark follows the OS; data-theme on <html> forces either. */
 :root {
@@ -74,9 +78,8 @@
 
 @theme {
   --font-display: 'Archivo Variable', 'Arial Black', system-ui, sans-serif;
-  --font-body:
-    'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --font-mono: 'IBM Plex Mono', ui-monospace, Menlo, monospace;
+  --font-body: 'Paper Mono', ui-monospace, Menlo, monospace;
+  --font-mono: 'Paper Mono', ui-monospace, Menlo, monospace;
   --breakpoint-xs: 520px;
 }
 
