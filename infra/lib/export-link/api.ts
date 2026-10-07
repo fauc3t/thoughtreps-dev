@@ -221,7 +221,11 @@ export class ExportApi extends Construct {
 
     route(POST, '/api/v1/feedback', 'FeedbackIntegration', feedbackFn);
 
-    route(POST, '/api/v1/waitlist', 'WaitlistIntegration', waitlistFn);
+    // The stage's RouteSettings name this route, and API Gateway rejects
+    // settings for a route that doesn't exist yet.
+    stage.node.addDependency(
+      ...route(POST, '/api/v1/waitlist', 'WaitlistIntegration', waitlistFn),
+    );
 
     route(GET, '/api/v1/export-links/{id}', 'StatusIntegration', publicFn);
     route(
