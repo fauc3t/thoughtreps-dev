@@ -152,7 +152,7 @@ final class MarkdownStyleApplier {
             reserveSpace(for: item, in: storage, units: units)
         }
         for item in applied.markers where item.glyph != nil {
-            storage.addAttribute(.kern, value: item.width / CGFloat(max(item.range.length, 1)), range: item.range)
+            reserveSpace(for: item, in: storage)
         }
         for entry in hangingIndents {
             applyHangingIndent(entry.prefix, range: entry.range, in: storage, units: units)
@@ -225,6 +225,19 @@ final class MarkdownStyleApplier {
     }
 
     /// Wrapped lines of an item line up with its text: the indentation plus the marker's width.
+    /// Spreads the hidden prefix over the marker's width. Its last character (the space) keeps the
+    /// body font, still invisible, so an empty item's line and caret are full height rather than the
+    /// hidden font's sliver. Trailing kern is dropped at a line end, so the width goes on the others.
+    private func reserveSpace(for item: DisplayedMarker, in storage: NSTextStorage) {
+        guard item.range.length > 0 else { return }
+        let last = NSRange(location: item.range.upperBound - 1, length: 1)
+        storage.addAttribute(.font, value: baseFont, range: last)
+        let lastWidth = storage.attributedSubstring(from: last).size().width
+        let rest = NSRange(location: item.range.location, length: item.range.length - 1)
+        guard rest.length > 0 else { return }
+        storage.addAttribute(.kern, value: (item.width - lastWidth) / CGFloat(rest.length), range: rest)
+    }
+
     private func applyHangingIndent(
         _ prefix: MarkdownStyler.ListPrefix,
         range: NSRange,

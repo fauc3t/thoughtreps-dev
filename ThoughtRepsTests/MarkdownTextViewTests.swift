@@ -555,6 +555,24 @@ struct MarkdownTextViewTests {
 
     // MARK: Lists
 
+    /// On a new, empty item the caret was a 2 pt sliver (the hidden prefix's font) until text was typed.
+    @Test func caretOnAnEmptyItemIsFullHeightAfterTheMarker() {
+        for (empty, typed) in [("a\n- ", "a\n- b"), ("a\n- [ ] ", "a\n- [ ] b")] {
+            let h = makeHarness(empty)
+            let t = makeHarness(typed)
+            let n = (empty as NSString).length
+            h.view.selectedRange = NSRange(location: n, length: 0)
+            t.view.selectedRange = NSRange(location: n, length: 0)
+            h.view.layoutIfNeeded()
+            t.view.layoutIfNeeded()
+            let caret = h.view.caretRect(for: h.view.position(from: h.view.beginningOfDocument, offset: n)!)
+            let expected = t.view.caretRect(for: t.view.position(from: t.view.beginningOfDocument, offset: n)!)
+            #expect(abs(caret.height - expected.height) < 1)
+            #expect(abs(caret.minY - expected.minY) < 1)
+            #expect(abs(caret.minX - expected.minX) < 1)
+        }
+    }
+
     @Test func bulletGlyphsFollowTheNestingLevel() {
         let h = makeHarness("- a\n  - b\n    - c\n1. d")
         h.view.selectedRange = NSRange(location: 0, length: 0)
@@ -565,7 +583,8 @@ struct MarkdownTextViewTests {
         #expect(glyphs[0] !== glyphs[1] && glyphs[1] !== glyphs[2])
         #expect(markers[0].tint == .secondaryLabel)
         #expect(isHidden(h, at: 0))
-        #expect(isHidden(h, at: 1))
+        // The prefix's space keeps the body font (see the next test) but is still invisible.
+        #expect(color(h, at: 1) == .clear)
         let numbered = (h.view.text as NSString).range(of: "1.").location
         #expect(color(h, at: numbered) == .secondaryLabel)
         #expect(!isHidden(h, at: numbered))
