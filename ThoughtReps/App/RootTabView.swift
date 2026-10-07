@@ -51,6 +51,13 @@ struct RootTabView: View {
             }
             .tabItem { Label("Archive", systemImage: "archivebox") }
             .tag(AppTab.archive)
+
+            NavigationStack {
+                StatsView()
+                    .thoughtDestinations()
+            }
+            .tabItem { Label("Stats", systemImage: "chart.bar") }
+            .tag(AppTab.stats)
         }
         .environment(captureContext)
         .overlay(alignment: .bottomTrailing) {

@@ -807,6 +807,63 @@ function ImportLink() {
   );
 }
 
+function Stats() {
+  const weeks = [
+    0, 1, 0, 0, 2, 1, 0, 3, 1, 0, 0, 1, 2, 0, 1, 4, 2, 0, 1, 1, 0, 2, 3, 1, 0,
+    0, 1, 2, 1, 0, 0, 1, 3, 2, 1, 0, 1, 0, 2, 4, 1, 1, 0, 2, 1, 0, 3, 2, 1, 0,
+    1, 2,
+  ];
+  const steps = ['opacity-40', 'opacity-60', 'opacity-80', 'opacity-100'];
+  const stat = (title: string, value: string, detail?: string) => (
+    <div className="flex items-center justify-between gap-3 p-3">
+      <span className="flex flex-col gap-0.5">
+        <span className="text-[15px]">{title}</span>
+        {detail && <span className="text-[12.5px] text-muted">{detail}</span>}
+      </span>
+      <b className="text-[18px]">{value}</b>
+    </div>
+  );
+  return (
+    <div className="flex flex-col gap-3">
+      <span className={screenTitle}>Stats</span>
+      <ListLabel>Basics</ListLabel>
+      <div className={`${panel} ${rows}`}>
+        {stat('Thoughts written', '128', '9 this month')}
+        {stat('Revisits', '412', '97 thoughts seen at least once')}
+        {stat('Active', '104')}
+        {stat('Archived', '24')}
+      </div>
+      <ListLabel>Most revisited</ListLabel>
+      <div className={panel}>
+        <div className="flex flex-col gap-1 p-3">
+          <b className="text-[15px] leading-snug">Weekly review questions</b>
+          <span className="text-[12.5px] font-medium text-muted">
+            Seen 14 times
+          </span>
+        </div>
+      </div>
+      <ListLabel>Writing rhythm</ListLabel>
+      <div className={`${panel} flex flex-col gap-3 p-3`}>
+        <div className="grid grid-cols-13 gap-1">
+          {weeks.map((count, index) => (
+            <span
+              key={index}
+              className={
+                count === 0
+                  ? 'aspect-square rounded-[3px] border border-hl'
+                  : `aspect-square rounded-[3px] bg-ink ${steps[count - 1]}`
+              }
+            />
+          ))}
+        </div>
+        <span className="text-[12.5px] text-muted">
+          58 thoughts in the last year
+        </span>
+      </div>
+    </div>
+  );
+}
+
 const EXAMPLES: Record<
   HelpExampleKind,
   { Mock: () => ReactNode; interactive?: boolean }
@@ -833,6 +890,7 @@ const EXAMPLES: Record<
   'export-link': { Mock: ExportLink },
   'import-link': { Mock: ImportLink },
   'import-menu': { Mock: ImportMenu },
+  stats: { Mock: Stats },
 };
 
 /** The mockup is hidden from screen readers; the caption stands in for it. Only the blurred block is real, focusable UI. */
