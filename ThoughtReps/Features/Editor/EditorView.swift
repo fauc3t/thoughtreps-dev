@@ -419,6 +419,8 @@ struct FormatBar: View {
             .padding(.horizontal, 12)
         }
         .scrollBounceBehavior(.basedOnSize)
+        // Plain white (black in light mode) icons, not the accent color.
+        .tint(.primary)
     }
 
     private func button(_ label: String, systemImage: String, action: @escaping () -> Void) -> some View {
