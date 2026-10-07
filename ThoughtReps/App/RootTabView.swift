@@ -1,13 +1,17 @@
 import SwiftUI
 import SwiftData
 
+private struct CaptureRequest: Identifiable {
+    let id = UUID()
+    let prefillTag: String?
+}
+
 struct RootTabView: View {
     @Environment(\.modelContext) private var context
     @State private var captureContext = CaptureContext()
-    @State private var isCapturing = false
+    @State private var capture: CaptureRequest?
     @State private var saveErrors = SaveErrorCenter.shared
     @State private var navigation = AppNavigation.shared
-    @State private var prefillTag: String?
     @State private var inboxImporter = InboxImporter()
     @State private var backup = BackupModel.shared
     @Environment(\.scenePhase) private var scenePhase
@@ -51,14 +55,13 @@ struct RootTabView: View {
         .environment(captureContext)
         .overlay(alignment: .bottomTrailing) {
             CaptureButton(hasTag: captureContext.tag != nil) {
-                prefillTag = captureContext.tag?.displayName
-                isCapturing = true
+                capture = CaptureRequest(prefillTag: captureContext.tag?.displayName)
             }
                 .padding(.trailing, 20)
                 .padding(.bottom, 66) // clears the tab bar
         }
-        .sheet(isPresented: $isCapturing) {
-            EditorView(mode: .new(prefillTag: prefillTag))
+        .sheet(item: $capture) { request in
+            EditorView(mode: .new(prefillTag: request.prefillTag))
         }
         .saveErrorAlert(saveErrors)
         .backupImportSheet(backup, host: .root)

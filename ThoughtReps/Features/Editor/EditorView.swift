@@ -249,17 +249,32 @@ struct EditorView: View {
         selection = TextSelection(insertionPoint: continued.cursor)
     }
 
+    private var prefilledText: String? {
+        guard case let .new(prefillTag) = mode, let prefillTag else { return nil }
+        return "\n\n#\(prefillTag)"
+    }
+
     private func load() {
         guard !hasLoaded else { return }
         hasLoaded = true
         switch mode {
-        case let .new(prefillTag):
-            if let prefillTag {
-                text = "\n\n#\(prefillTag)"
+        case .new:
+            if let prefilledText {
+                text = prefilledText
             }
             Task { @MainActor in
                 try? await Task.sleep(for: .milliseconds(350))
+                guard let prefilledText else {
+                    isBodyFocused = true
+                    return
+                }
+                // TextEditor doesn't report its focus-time cursor placement and overwrites the cursor on focus, so write the start before focus and again 100 ms after.
+                selection = TextSelection(insertionPoint: text.startIndex)
                 isBodyFocused = true
+                try? await Task.sleep(for: .milliseconds(100))
+                if text == prefilledText {
+                    selection = TextSelection(insertionPoint: text.startIndex)
+                }
             }
         case let .edit(thought):
             text = thought.body

@@ -17,6 +17,7 @@ struct ThoughtTimelineView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.requestReview) private var requestReview
     @Environment(CaptureContext.self) private var captureContext: CaptureContext?
+    @State private var captureToken = UUID()
     @AppStorage(AppSettings.Key.defaultIntervalDays) private var defaultIntervalDays = Scheduler.defaultIntervalDays
 
     @Query(filter: #Predicate<Thought> { $0.isArchived == false }, sort: \Thought.nextDueAt)
@@ -107,13 +108,11 @@ struct ThoughtTimelineView: View {
         .refreshable { @MainActor in snapshot = .now }
         .onAppear {
             snapshot = .now
-            if let tag { captureContext?.tag = tag }
+            if let tag { captureContext?.register(token: captureToken, tag: tag) }
         }
         .task(id: scenePhase) { await requestReviewIfPending() }
         .onDisappear {
-            if let tag, captureContext?.tag?.persistentModelID == tag.persistentModelID {
-                captureContext?.tag = nil
-            }
+            captureContext?.unregister(token: captureToken)
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { snapshot = .now }
