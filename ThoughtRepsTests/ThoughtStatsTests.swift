@@ -163,6 +163,14 @@ struct ThoughtStatsTests {
         #expect(ThoughtStats.level(count: 5, busiest: 0) == 0)
     }
 
+    @Test(arguments: [
+        (0, "0"), (999, "999"), (1_000, "1k"), (1_234, "1.2k"), (1_950, "2k"), (9_960, "10k"),
+        (12_345, "12k"), (123_456, "123k"), (999_499, "999k"), (999_500, "1M"), (1_234_567, "1.2M"),
+    ])
+    func compactCounts(value: Int, expected: String) {
+        #expect(ThoughtStats.compactCount(value, locale: Locale(identifier: "en_US")) == expected)
+    }
+
     @Test func rhythmLabelSummarizesGrid() {
         var stats = ThoughtStats.Snapshot()
         stats.weeks = Array(repeating: 0, count: 52)
