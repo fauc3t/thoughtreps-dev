@@ -86,6 +86,30 @@ struct MarkdownTextViewTests {
         h.view.textStorage.attribute(.foregroundColor, at: offset, effectiveRange: nil) as? UIColor
     }
 
+    /// Hosted in SwiftUI the way the editor hosts it, a long line wraps at the offered width instead
+    /// of widening the view to the line (which left the editor scrolled sideways).
+    @Test func longLineWrapsAtTheOfferedWidth() throws {
+        let line = String(repeating: "a long line of words ", count: 40)
+        let host = UIHostingController(rootView: MarkdownTextView(
+            text: .constant(line), selection: .constant(nil), isFocused: .constant(false),
+            accessibilityLabel: "Thought", imageData: { _ in nil }, accessory: AnyView(EmptyView()),
+            undoResetToken: 0, height: .constant(MarkdownTextView.minHeight)
+        ))
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 600))
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        host.view.layoutIfNeeded()
+        let view = try #require(Self.find(StyledTextView.self, in: host.view))
+        #expect(view.frame.width <= 390)
+        #expect(view.contentSize.width <= 390)
+    }
+
+    private static func find<T: UIView>(_ type: T.Type, in view: UIView) -> T? {
+        if let match = view as? T { return match }
+        for child in view.subviews { if let match = find(type, in: child) { return match } }
+        return nil
+    }
+
     @Test func textStaysExactMarkdownAndGetsStyled() {
         let source = "# Title\n\nSome **bold** and #tag"
         let h = makeHarness(source)

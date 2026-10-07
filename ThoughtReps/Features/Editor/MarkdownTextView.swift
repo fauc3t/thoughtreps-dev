@@ -70,6 +70,13 @@ struct MarkdownTextView: UIViewRepresentable {
         context.coordinator.update(self)
     }
 
+    // A non-scrolling text view's intrinsic width is its longest unwrapped line, so take the offered
+    // width instead; the text then wraps and `height` is measured at that width.
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: StyledTextView, context: Context) -> CGSize? {
+        guard let width = proposal.width, width.isFinite else { return nil }
+        return CGSize(width: width, height: max(height, minHeight))
+    }
+
     static func dismantleUIView(_ view: StyledTextView, coordinator: Coordinator) {
         coordinator.dismantle()
     }
@@ -129,25 +136,31 @@ final class StyledTextView: UITextView {
     }
 }
 
-/// Keyboard accessory bar that hosts SwiftUI content.
+/// Keyboard accessory that floats its SwiftUI content in a glass pill above the keyboard, like
+/// SwiftUI's `.keyboard` toolbar.
 @MainActor
 private final class AccessoryBar: UIInputView {
+    static let pillHeight: CGFloat = 48
+    static let margin: CGFloat = 8
     private let content: UIView & UIContentView
 
     init(rootView: AnyView) {
         content = Self.configuration(rootView).makeContentView()
-        super.init(frame: CGRect(x: 0, y: 0, width: 0, height: 44), inputViewStyle: .keyboard)
+        let height = Self.pillHeight + 2 * Self.margin
+        super.init(frame: CGRect(x: 0, y: 0, width: 0, height: height), inputViewStyle: .default)
         allowsSelfSizing = true
+        backgroundColor = .clear
+        content.backgroundColor = .clear
         content.translatesAutoresizingMaskIntoConstraints = false
         addSubview(content)
-        let height = heightAnchor.constraint(equalToConstant: 44)
-        height.priority = .defaultHigh
+        let heightConstraint = heightAnchor.constraint(equalToConstant: height)
+        heightConstraint.priority = .defaultHigh
         NSLayoutConstraint.activate([
             content.leadingAnchor.constraint(equalTo: leadingAnchor),
             content.trailingAnchor.constraint(equalTo: trailingAnchor),
             content.topAnchor.constraint(equalTo: topAnchor),
             content.bottomAnchor.constraint(equalTo: bottomAnchor),
-            height,
+            heightConstraint,
         ])
     }
 
@@ -157,8 +170,32 @@ private final class AccessoryBar: UIInputView {
         content.configuration = Self.configuration(rootView)
     }
 
-    private static func configuration(_ rootView: AnyView) -> UIHostingConfiguration<AnyView, EmptyView> {
-        UIHostingConfiguration { rootView }.margins(.all, 0)
+    private static func configuration(_ rootView: AnyView) -> UIHostingConfiguration<AccessoryPill, EmptyView> {
+        UIHostingConfiguration { AccessoryPill(content: rootView) }
+            .margins(.all, 0)
+    }
+}
+
+/// The accessory's content in a capsule: Liquid Glass on iOS 26, a material before it.
+private struct AccessoryPill: View {
+    let content: AnyView
+
+    var body: some View {
+        let pill = content
+            .padding(.horizontal, 4)
+            .frame(maxWidth: .infinity, minHeight: AccessoryBar.pillHeight, maxHeight: AccessoryBar.pillHeight)
+            .clipShape(Capsule())
+        Group {
+            if #available(iOS 26, *) {
+                pill.glassEffect(.regular, in: .capsule)
+            } else {
+                pill
+                    .background(.regularMaterial, in: Capsule())
+                    .overlay(Capsule().strokeBorder(.separator, lineWidth: 0.5))
+                    .shadow(color: .black.opacity(0.12), radius: 8, y: 2)
+            }
+        }
+        .padding(AccessoryBar.margin)
     }
 }
 
