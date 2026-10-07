@@ -1,3 +1,4 @@
+import * as cdk from 'aws-cdk-lib/core';
 import * as apigwv2 from 'aws-cdk-lib/aws-apigatewayv2';
 import { HttpUserPoolAuthorizer } from 'aws-cdk-lib/aws-apigatewayv2-authorizers';
 import { HttpLambdaIntegration } from 'aws-cdk-lib/aws-apigatewayv2-integrations';
@@ -19,6 +20,9 @@ export interface MailApiProps {
   userPool: cognito.IUserPool;
   userPoolClient: cognito.IUserPoolClient;
   mailBucket: s3.IBucket;
+  // Transient outbound attachments: browser -> presigned POST -> here, then
+  // ReplyFn reads and deletes them.
+  attachmentBucket: s3.IBucket;
   mailboxAddresses: string[];
 }
 
@@ -28,7 +32,13 @@ export class MailApi extends Construct {
   constructor(scope: Construct, id: string, props: MailApiProps) {
     super(scope, id);
 
-    const { userPool, userPoolClient, mailBucket, mailboxAddresses } = props;
+    const {
+      userPool,
+      userPoolClient,
+      mailBucket,
+      attachmentBucket,
+      mailboxAddresses,
+    } = props;
 
     // Sends an email as one of mailboxAddresses, threaded as a reply — the
     // one real authorization boundary this app needs. Reading is 100%
@@ -38,8 +48,13 @@ export class MailApi extends Construct {
     const replyFn = new NodejsFunction(this, 'ReplyFn', {
       runtime: lambda.Runtime.NODEJS_24_X,
       entry: path.join(moduleDir, '../../lambda/mail/reply/index.ts'),
+      // Holds up to 25 MiB of attachments plus their base64 copy; 29s is
+      // just under the HTTP API integration limit of 30s.
+      memorySize: 1024,
+      timeout: cdk.Duration.seconds(29),
       environment: {
         MAIL_BUCKET_NAME: mailBucket.bucketName,
+        ATTACHMENT_BUCKET_NAME: attachmentBucket.bucketName,
         MAILBOX_ADDRESSES: mailboxAddresses.join(','),
       },
     });
@@ -49,17 +64,31 @@ export class MailApi extends Construct {
     // in the mail bucket.
     mailBucket.grantRead(replyFn);
 
-    // ses:SendRawEmail is not resource-ARN-scopable, so resources: ['*'] is
-    // correct, not a shortcut — but it *does* have an IAM condition key:
-    // ses:FromAddress. StringEquals against an array is an OR match, so this
-    // scopes the grant to exactly the configured mailbox addresses —
-    // replyFn can never be used to send as an arbitrary address. For this
-    // condition to evaluate deterministically, index.ts sets Source
-    // explicitly on SendRawEmailCommand rather than relying on SES
-    // inferring it from the raw message's From: header.
+    // Hand-rolled, not grantRead/grantDelete: those add bucket-wide
+    // s3:GetBucket*/s3:List*. No s3:ListBucket either, so HeadObject on a
+    // missing key is a 403 (ReplyFn treats any HeadObject failure as not
+    // found). HeadObject is authorized by s3:GetObject.
     replyFn.addToRolePolicy(
       new iam.PolicyStatement({
-        actions: ['ses:SendRawEmail'],
+        actions: ['s3:GetObject', 's3:DeleteObject'],
+        resources: [attachmentBucket.arnForObjects('*')],
+      }),
+    );
+
+    // The SES v2 SendEmail API (used instead of v1 SendRawEmail, whose
+    // message cap is 10 MB vs 40 MB) is authorized as ses:SendEmail. It is
+    // not resource-ARN-scopable, so resources: ['*'] is correct, not a
+    // shortcut — but it *does* have an IAM condition key: ses:FromAddress,
+    // which applies to v2's FromEmailAddress (FeedbackFn in the share stack
+    // already relies on the same pairing in prod). StringEquals against an
+    // array is an OR match, so this scopes the grant to exactly the
+    // configured mailbox addresses — replyFn can never be used to send as
+    // an arbitrary address. For this condition to evaluate
+    // deterministically, index.ts sets FromEmailAddress explicitly rather
+    // than relying on SES inferring it from the raw message's From: header.
+    replyFn.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ['ses:SendEmail'],
         resources: ['*'],
         conditions: {
           StringEquals: { 'ses:FromAddress': mailboxAddresses },
@@ -96,6 +125,25 @@ export class MailApi extends Construct {
       }),
     );
 
+    // Mints presigned POSTs so the browser can upload attachments straight
+    // to S3 (Lambda payloads cap at 6 MB). PutObject only, hand-rolled for
+    // the same reason as above; the policy on the presigned POST itself pins
+    // key, size range and Content-Type.
+    const attachmentUrlFn = new NodejsFunction(this, 'AttachmentUrlFn', {
+      runtime: lambda.Runtime.NODEJS_24_X,
+      entry: path.join(moduleDir, '../../lambda/mail/attachments/index.ts'),
+      environment: {
+        ATTACHMENT_BUCKET_NAME: attachmentBucket.bucketName,
+        MAILBOX_ADDRESSES: mailboxAddresses.join(','),
+      },
+    });
+    attachmentUrlFn.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ['s3:PutObject'],
+        resources: [attachmentBucket.arnForObjects('*')],
+      }),
+    );
+
     // Pass userPoolClients explicitly. Omitting it would make
     // HttpUserPoolAuthorizer.bind() silently provision its own separate
     // app client (this.pool.addClient('UserPoolAuthorizerClient')) instead
@@ -126,6 +174,16 @@ export class MailApi extends Construct {
       path: '/reply',
       methods: [apigwv2.HttpMethod.POST],
       integration: new HttpLambdaIntegration('ReplyIntegration', replyFn),
+      authorizer,
+    });
+
+    httpApi.addRoutes({
+      path: '/attachments',
+      methods: [apigwv2.HttpMethod.POST],
+      integration: new HttpLambdaIntegration(
+        'AttachmentUrlIntegration',
+        attachmentUrlFn,
+      ),
       authorizer,
     });
 

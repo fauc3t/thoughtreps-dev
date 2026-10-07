@@ -263,6 +263,14 @@ describe('MailStack api', () => {
   const mailboxAddresses = ['hello@example.test', 'support@example.test'];
   const template = synthMailStack({ mailboxAddresses });
 
+  function attachmentBucketId(): string {
+    const ids = Object.keys(template.findResources('AWS::S3::Bucket')).filter(
+      (id) => id.startsWith('AttachmentBucket'),
+    );
+    expect(ids).toHaveLength(1);
+    return ids[0];
+  }
+
   it("scopes the JWT authorizer to a single audience and doesn't provision a second, silently-drifted user pool client", () => {
     template.hasResourceProperties('AWS::ApiGatewayV2::Authorizer', {
       AuthorizerType: 'JWT',
@@ -278,13 +286,13 @@ describe('MailStack api', () => {
     template.resourceCountIs('AWS::Cognito::UserPoolClient', 1);
   });
 
-  it("grants the reply Lambda's role read-only S3 plus ses:SendRawEmail scoped by a ses:FromAddress condition matching mailboxAddresses", () => {
+  it("grants the reply Lambda's role read-only mail S3 plus ses:SendEmail scoped by a ses:FromAddress condition matching mailboxAddresses", () => {
     template.hasResourceProperties('AWS::IAM::Policy', {
       PolicyDocument: Match.objectLike({
         Statement: Match.arrayWith([
           Match.objectLike({
             Effect: 'Allow',
-            Action: 'ses:SendRawEmail',
+            Action: 'ses:SendEmail',
             Resource: '*',
             Condition: {
               StringEquals: { 'ses:FromAddress': mailboxAddresses },
@@ -294,11 +302,107 @@ describe('MailStack api', () => {
       }),
     });
     expect(statementActions(defaultPolicyFor(template, 'ApiReplyFn'))).toEqual([
+      's3:DeleteObject',
       's3:GetBucket*',
+      's3:GetObject',
       's3:GetObject*',
       's3:List*',
-      'ses:SendRawEmail',
+      'ses:SendEmail',
     ]);
+  });
+
+  it("grants the reply Lambda exactly GetObject+DeleteObject on the attachment bucket's objects and the upload Lambda exactly PutObject", () => {
+    const objectsOfAttachmentBucket = {
+      'Fn::Join': ['', [{ 'Fn::GetAtt': [attachmentBucketId(), 'Arn'] }, '/*']],
+    };
+    template.hasResourceProperties('AWS::IAM::Policy', {
+      PolicyDocument: Match.objectLike({
+        Statement: Match.arrayWith([
+          {
+            Effect: 'Allow',
+            Action: ['s3:GetObject', 's3:DeleteObject'],
+            Resource: objectsOfAttachmentBucket,
+          },
+        ]),
+      }),
+    });
+    template.hasResourceProperties('AWS::IAM::Policy', {
+      PolicyDocument: {
+        Version: '2012-10-17',
+        Statement: [
+          {
+            Effect: 'Allow',
+            Action: 's3:PutObject',
+            Resource: objectsOfAttachmentBucket,
+          },
+        ],
+      },
+    });
+  });
+
+  it('gives ReplyFn 1024 MB and a 29s timeout, and passes the attachment bucket to both attachment Lambdas', () => {
+    template.hasResourceProperties('AWS::Lambda::Function', {
+      MemorySize: 1024,
+      Timeout: 29,
+      Environment: {
+        Variables: Match.objectLike({
+          ATTACHMENT_BUCKET_NAME: { Ref: attachmentBucketId() },
+          MAIL_BUCKET_NAME: Match.anyValue(),
+        }),
+      },
+    });
+    template.hasResourceProperties('AWS::Lambda::Function', {
+      Environment: {
+        Variables: {
+          ATTACHMENT_BUCKET_NAME: { Ref: attachmentBucketId() },
+          MAILBOX_ADDRESSES: mailboxAddresses.join(','),
+        },
+      },
+    });
+  });
+
+  it('creates an unversioned, SSL-only, private attachment bucket that expires objects after 1 day and allows POST from the web origins', () => {
+    const buckets = template.findResources('AWS::S3::Bucket');
+    const properties = buckets[attachmentBucketId()].Properties as Record<
+      string,
+      unknown
+    >;
+    expect(properties.VersioningConfiguration).toBeUndefined();
+    expect(properties.PublicAccessBlockConfiguration).toEqual({
+      BlockPublicAcls: true,
+      BlockPublicPolicy: true,
+      IgnorePublicAcls: true,
+      RestrictPublicBuckets: true,
+    });
+    expect(properties.LifecycleConfiguration).toEqual({
+      Rules: [
+        {
+          Status: 'Enabled',
+          ExpirationInDays: 1,
+          AbortIncompleteMultipartUpload: { DaysAfterInitiation: 1 },
+        },
+      ],
+    });
+    expect(properties.CorsConfiguration).toEqual({
+      CorsRules: [
+        expect.objectContaining({
+          AllowedMethods: ['POST'],
+          AllowedOrigins: ['http://localhost:*', 'https://mail.example.test'],
+        }),
+      ],
+    });
+    expect(buckets[attachmentBucketId()].DeletionPolicy).toBe('Delete');
+    template.hasResourceProperties('AWS::S3::BucketPolicy', {
+      Bucket: { Ref: attachmentBucketId() },
+      PolicyDocument: Match.objectLike({
+        Statement: Match.arrayWith([
+          Match.objectLike({
+            Effect: 'Deny',
+            Condition: { Bool: { 'aws:SecureTransport': 'false' } },
+          }),
+        ]),
+      }),
+    });
   });
 
   it("grants the delete Lambda's role exactly s3:DeleteObject, one resource per mailbox's own inbox prefix — not arnForObjects('*')", () => {
@@ -318,9 +422,13 @@ describe('MailStack api', () => {
     });
   });
 
-  it('exposes exactly one POST /reply and one POST /delete route on a single HttpApi, both behind the same JWT authorizer', () => {
+  it('exposes exactly one POST /reply, /attachments and /delete route on a single HttpApi, all behind the same JWT authorizer', () => {
     template.resourceCountIs('AWS::ApiGatewayV2::Api', 1);
-    template.resourceCountIs('AWS::ApiGatewayV2::Route', 2);
+    template.resourceCountIs('AWS::ApiGatewayV2::Route', 3);
+    template.hasResourceProperties('AWS::ApiGatewayV2::Route', {
+      RouteKey: 'POST /attachments',
+      AuthorizationType: 'JWT',
+    });
     template.hasResourceProperties('AWS::ApiGatewayV2::Route', {
       RouteKey: 'POST /reply',
       AuthorizationType: 'JWT',

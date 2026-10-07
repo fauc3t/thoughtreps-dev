@@ -109,6 +109,13 @@ export class MailStack extends cdk.Stack {
       values: [`v=DMARC1; p=none; rua=mailto:${alertEmail}`],
     });
 
+    const webOrigins = [
+      // Any local Vite dev port (S3 allows exactly one '*' per origin
+      // string) — Vite tries 5173, then increments if taken.
+      'http://localhost:*',
+      `https://mail.${domainName}`,
+    ];
+
     // Holds every configured address's raw received mail — irreplaceable
     // once delivered (SES doesn't re-deliver a message after accepting it),
     // so this gets an explicit RETAIN even though Bucket already defaults to
@@ -140,17 +147,38 @@ export class MailStack extends cdk.Stack {
       // isn't one.
       cors: [
         {
-          allowedOrigins: [
-            // Any local Vite dev port (S3 allows exactly one '*' per
-            // origin string) — Vite tries 5173, then increments if taken.
-            'http://localhost:*',
-            `https://mail.${domainName}`,
-          ],
+          allowedOrigins: webOrigins,
           allowedMethods: [s3.HttpMethods.GET, s3.HttpMethods.HEAD],
           allowedHeaders: ['*'],
           maxAge: 3600,
         },
       ],
+    });
+
+    // Transient outbound attachments only (uploaded by the browser, read and
+    // deleted by ReplyFn), so it's unversioned and disposable, unlike the
+    // mail bucket. The lifecycle rule is the backstop for uploads whose
+    // reply was never sent.
+    const attachmentBucket = new s3.Bucket(this, 'AttachmentBucket', {
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+      encryption: s3.BucketEncryption.S3_MANAGED,
+      enforceSSL: true,
+      lifecycleRules: [
+        {
+          expiration: cdk.Duration.days(1),
+          abortIncompleteMultipartUploadAfter: cdk.Duration.days(1),
+        },
+      ],
+      cors: [
+        {
+          allowedOrigins: webOrigins,
+          allowedMethods: [s3.HttpMethods.POST],
+          allowedHeaders: ['*'],
+          maxAge: 3600,
+        },
+      ],
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+      autoDeleteObjects: true,
     });
 
     // SES delivers against exactly one *active* receipt rule set per
@@ -265,6 +293,7 @@ export class MailStack extends cdk.Stack {
       userPool: auth.userPool,
       userPoolClient: auth.userPoolClient,
       mailBucket: this.bucket,
+      attachmentBucket,
       mailboxAddresses,
     });
 

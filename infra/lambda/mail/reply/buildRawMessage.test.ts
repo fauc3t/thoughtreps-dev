@@ -1,4 +1,9 @@
-import { buildRawMessage, type OriginalMessage } from './buildRawMessage.js';
+import {
+  buildRawMessage,
+  sanitizeContentType,
+  type OriginalMessage,
+  type OutgoingAttachment,
+} from './buildRawMessage.js';
 
 function baseOriginal(
   overrides: Partial<OriginalMessage> = {},
@@ -184,5 +189,179 @@ describe('buildRawMessage', () => {
     expect(headerLines.some((line) => line.startsWith('X-Injected'))).toBe(
       false,
     );
+  });
+
+  it('emits the same single-part message byte-for-byte when attachments is empty', () => {
+    const withoutArg = buildRawMessage(
+      baseOriginal(),
+      'reply body',
+      'hello@example.test',
+    );
+    const withEmpty = buildRawMessage(
+      baseOriginal(),
+      'reply body',
+      'hello@example.test',
+      [],
+    );
+    expect(Buffer.from(withEmpty.raw).equals(Buffer.from(withoutArg.raw))).toBe(
+      true,
+    );
+    expect(headers(withEmpty.raw)['Content-Type']).toBe(
+      'text/plain; charset=UTF-8',
+    );
+  });
+});
+
+describe('buildRawMessage with attachments', () => {
+  function build(
+    attachments: OutgoingAttachment[],
+    replyBody = 'reply body',
+  ): { text: string; boundary: string } {
+    const { raw } = buildRawMessage(
+      baseOriginal(),
+      replyBody,
+      'hello@example.test',
+      attachments,
+    );
+    const text = Buffer.from(raw).toString('utf-8');
+    const boundary = /boundary="([^"]+)"/.exec(text)?.[1] ?? '';
+    return { text, boundary };
+  }
+
+  function parts(text: string, boundary: string): string[] {
+    return text
+      .split(`--${boundary}`)
+      .slice(1, -1)
+      .map((part) => part.replace(/^\r\n/, '').replace(/\r\n$/, ''));
+  }
+
+  const file = (overrides: Partial<OutgoingAttachment> = {}) => ({
+    filename: 'report.pdf',
+    contentType: 'application/pdf',
+    data: Buffer.from('hello attachment'),
+    ...overrides,
+  });
+
+  it('builds multipart/mixed with a text part followed by one part per file', () => {
+    const { text, boundary } = build([
+      file(),
+      file({ filename: 'b.txt', contentType: 'text/plain' }),
+    ]);
+    const topHeaders = text.split('\r\n\r\n')[0];
+    expect(topHeaders).toContain(
+      `Content-Type: multipart/mixed; boundary="${boundary}"`,
+    );
+    expect(topHeaders).not.toContain('Content-Transfer-Encoding');
+    expect(text.endsWith(`\r\n--${boundary}--\r\n`)).toBe(true);
+
+    const [textPart, first, second] = parts(text, boundary);
+    expect(textPart).toContain('Content-Type: text/plain; charset=UTF-8');
+    const textBody = textPart.split('\r\n\r\n')[1].split('\r\n').join('');
+    expect(Buffer.from(textBody, 'base64').toString('utf-8')).toBe(
+      'reply body',
+    );
+
+    expect(first).toContain('Content-Type: application/pdf; name="report.pdf"');
+    expect(first).toContain(
+      'Content-Disposition: attachment; filename="report.pdf"',
+    );
+    expect(first).toContain('Content-Transfer-Encoding: base64');
+    const firstBody = first.split('\r\n\r\n')[1].split('\r\n').join('');
+    expect(Buffer.from(firstBody, 'base64').toString()).toBe(
+      'hello attachment',
+    );
+    expect(second).toContain('name="b.txt"');
+  });
+
+  it('allows an empty reply body', () => {
+    const { text, boundary } = build([file()], '');
+    expect(parts(text, boundary)).toHaveLength(2);
+  });
+
+  it('wraps attachment base64 at 76 characters and round-trips binary data', () => {
+    const data = Buffer.from(Array.from({ length: 5000 }, (_, i) => i % 256));
+    const { text, boundary } = build([file({ data })]);
+    const body = parts(text, boundary)[1].split('\r\n\r\n')[1];
+    for (const line of body.split('\r\n')) {
+      expect(line.length).toBeLessThanOrEqual(76);
+    }
+    expect(
+      Buffer.from(body.split('\r\n').join(''), 'base64').equals(data),
+    ).toBe(true);
+  });
+
+  it('uses a different boundary per message and never one that appears in the content', () => {
+    const a = build([file()]);
+    const b = build([file()]);
+    expect(a.boundary).not.toBe(b.boundary);
+    expect(a.boundary.length).toBeGreaterThan(20);
+    expect(parts(a.text, a.boundary)).toHaveLength(2);
+  });
+
+  it('adds RFC 2231 filename* for a non-ASCII filename, with an ASCII fallback', () => {
+    const { text, boundary } = build([file({ filename: 'café (1).pdf' })]);
+    const part = parts(text, boundary)[1];
+    expect(part).toContain('name="caf_ (1).pdf"');
+    expect(part).toContain(
+      `filename="caf_ (1).pdf";\r\n filename*=UTF-8''caf%C3%A9%20%281%29.pdf`,
+    );
+  });
+
+  it('splits a very long encoded filename into folded continuations under 998 characters per line', () => {
+    const filename = '文'.repeat(250) + '.pdf';
+    const { text, boundary } = build([file({ filename })]);
+    const part = parts(text, boundary)[1];
+    const headerBlock = part.split('\r\n\r\n')[0];
+    for (const line of headerBlock.split('\r\n')) {
+      expect(line.length).toBeLessThan(998);
+    }
+    const encoded = [
+      ...headerBlock.matchAll(/filename\*\d+\*=(?:UTF-8'')?([^;\r]+)/g),
+    ]
+      .map((m) => m[1])
+      .join('');
+    expect(decodeURIComponent(encoded)).toBe(filename);
+  });
+
+  it('strips quotes and backslashes from the quoted filename', () => {
+    const { text, boundary } = build([file({ filename: 'a"b\\c.txt' })]);
+    const part = parts(text, boundary)[1];
+    expect(part).toContain('filename="abc.txt"');
+    expect(part).toContain('name="abc.txt"');
+  });
+
+  it('cannot be used to inject headers through the filename or content type', () => {
+    const { text, boundary } = build([
+      file({
+        filename: 'x.txt"\r\nBcc: attacker@evil.test\r\nX-Injected: yes',
+        contentType: 'text/plain\r\nBcc: attacker@evil.test',
+      }),
+    ]);
+    const part = parts(text, boundary)[1];
+    const headerLines = part.split('\r\n\r\n')[0].split('\r\n');
+    expect(headerLines).toHaveLength(3);
+    expect(headerLines.some((l) => l.startsWith('Bcc:'))).toBe(false);
+    expect(headerLines.some((l) => l.startsWith('X-Injected'))).toBe(false);
+    expect(headerLines[0]).toMatch(
+      /^Content-Type: application\/octet-stream; /,
+    );
+    expect(text.split('\r\n\r\n')[0]).not.toContain('Bcc: attacker');
+  });
+
+  it.each([
+    ['image/png', 'image/png'],
+    ['application/vnd.ms-excel', 'application/vnd.ms-excel'],
+    ['text/plain; charset=utf-8', 'application/octet-stream'],
+    ['', 'application/octet-stream'],
+    ['notatype', 'application/octet-stream'],
+    ['a/b/c', 'application/octet-stream'],
+    ['text/html"<x>', 'application/octet-stream'],
+  ])('maps content type %j to %j', (input, expected) => {
+    expect(sanitizeContentType(input)).toBe(expected);
+  });
+
+  it('falls back to a generic filename when nothing is left after sanitizing', () => {
+    const { text, boundary } = build([file({ filename: '""' })]);
+    expect(parts(text, boundary)[1]).toContain('filename="attachment"');
   });
 });
