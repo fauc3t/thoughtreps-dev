@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 
 /// Picks a tag's color: Automatic (the name-based pick) or one of `TagColor.swatches`.
 struct TagColorSheet: View {
