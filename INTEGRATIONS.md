@@ -15,9 +15,9 @@ All in one `cdk.Stage` named `prod` (`infra/lib/app-stage.ts`).
 | Stack | Status | Owns |
 | --- | --- | --- |
 | `ThoughtReps-prod-Dns` | Deployed 2026-10-05 | Route53 hosted zone `thoughtreps.com` (RETAIN) |
-| `ThoughtReps-prod-Landing` | Deployed 2026-10-05 | S3 bucket (OAC) + CloudFront for the apex, `www` -> apex 301 and `/x` -> `/x/index.html` rewrite (viewer-request function), `404.html`; ACM cert |
-| `ThoughtReps-prod-Mail` | Deployed 2026-10-05; reply attachments added 2026-10-06 | SES identity, MX, DMARC, mail bucket, receipt rule, ForwardFn, Cognito, HTTP API (ReplyFn/DeleteFn/AttachmentUrlFn), attachment upload bucket (unversioned, 1-day expiry), mail web UI hosting |
-| `ThoughtReps-prod-Share` | Deployed 2026-10-05; waitlist added 2026-10-07 | Export-link backend: unversioned export bucket, DynamoDB link table, App Attest device/export-link/public/sweep Lambdas, FeedbackFn (`POST /feedback`, SES send), WaitlistFn (`POST /waitlist`, public, CORS for thoughtreps.com only), `WaitlistTable` (RETAIN, PITR), HTTP API, `transfer.thoughtreps.com` site (download page from `transfer-web/`, deployed by `scripts/deploy-transfer-web.sh`) |
+| `ThoughtReps-prod-Landing` | Deployed 2026-10-05; security headers + CSP 2026-10-07 | S3 bucket (OAC) + CloudFront for the apex, `www` -> apex 301 and `/x` -> `/x/index.html` rewrite (viewer-request function), `404.html`; ACM cert |
+| `ThoughtReps-prod-Mail` | Deployed 2026-10-05; reply attachments added 2026-10-06; security headers + CSP 2026-10-07 | SES identity, MX, DMARC, mail bucket, receipt rule, ForwardFn, Cognito, HTTP API (ReplyFn/DeleteFn/AttachmentUrlFn), attachment upload bucket (unversioned, 1-day expiry), mail web UI hosting |
+| `ThoughtReps-prod-Share` | Deployed 2026-10-05; waitlist added 2026-10-07; custom security headers + CSP 2026-10-07 | Export-link backend: unversioned export bucket, DynamoDB link table, App Attest device/export-link/public/sweep Lambdas, FeedbackFn (`POST /feedback`, SES send), WaitlistFn (`POST /waitlist`, public, CORS for thoughtreps.com only), `WaitlistTable` (RETAIN, PITR), HTTP API, `transfer.thoughtreps.com` site (download page from `transfer-web/`, deployed by `scripts/deploy-transfer-web.sh`) |
 
 ### DNS
 
@@ -55,5 +55,6 @@ SES identity `thoughtreps.com` verified (DKIM and MAIL FROM `SUCCESS`); MX resol
 | Transfer site bucket / distribution (`TransferSiteBucketName`, `TransferDistributionId`) | `thoughtreps-prod-share-transfersitebucket6a3fef50-bl0j1eymkxco` / `E622TVJW5S9HN` |
 | Transfer URL (`TransferUrl`) | https://transfer.thoughtreps.com |
 | Waitlist rollout | Done 2026-10-07: Share stack deployed, then `scripts/deploy-landing.sh` |
+| Response headers rollout | Done 2026-10-07: Landing, Mail and Share stacks deployed (each distribution has its own `ResponseHeadersPolicy`: HSTS 2y incl. subdomains, nosniff, frame DENY, referrer policy, CSP), then all three content scripts; headers checked live with `curl -I` |
 | Export link real-device App Attest test | Passed 2026-10-06: link created on a device, and tapping it opens the app (Universal Link) |
 | Feedback real-device App Attest test | Passed 2026-10-06: sent from Settings > Send Feedback on a device |
