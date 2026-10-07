@@ -2,14 +2,14 @@
 
 Oct 7, 2026
 
-The store page has to sell a $9.99 app with no trial, and most people decide from the icon, subtitle and first three screenshots in search results. This spec covers what those surfaces say and how we test and measure them. It builds on the App Store listing section of the Launch Plan (`designs/Thought Reps — Launch Plan.md`) rather than repeating it.
+The store page has to sell a $6.99 app with no trial, and most people decide from the icon, subtitle and first three screenshots in search results. This spec covers what those surfaces say and how we test and measure them. It builds on the App Store listing section of the Launch Plan (`designs/Thought Reps — Launch Plan.md`) rather than repeating it.
 
 ## Positioning
 
 The promise is the landing site's headline: **Write it down. It comes back.** Every store surface repeats that one loop before listing any feature.
 
 - **Who it's for:** people who save quotes, ideas and links and never look at them again. The secondary audience is spaced-repetition users who want something lighter than Anki.
-- **Why pay $9.99:** it's bought once, with no subscription and no account, and your thoughts stay on your phone. Paid utilities convert on trust, so this goes in a screenshot, not just the description.
+- **Why pay $6.99:** it's bought once, with no subscription and no account, and your thoughts stay on your phone. Paid utilities convert on trust, so this goes in a screenshot, not just the description.
 - **What we don't claim:** growing intervals, sync, or Markdown export. All three are post-launch, and a store claim that doesn't match the app leads to 1-star reviews and rejection risk.
 - **Tone:** plain and a little warm, like the landing site. No emojis.
 
@@ -22,7 +22,7 @@ Search ranking uses the name, the subtitle and the keywords field. The descripti
 | Name | 30 | Thought Reps | Reserve it by creating the App Store Connect record. |
 | Subtitle | 30 | Spaced repetition thought log (29) | Highest-weight free text after the name. The wording is an open decision (below). |
 | Keywords | 100 | `notes,journal,ideas,remember,resurface,reflect,markdown,quotes,commonplace,memory,recall,brain` (94) | Commas, no spaces. Don't repeat words from the name or subtitle, and no competitor names (guideline 2.3.7). |
-| Promotional text | 170 | Write it down in five seconds. A week later it's back on your timeline, so the good ideas get a second look. $9.99 once. No account, no subscription. (149) | Can change without review, so use it for launch messages and updates. |
+| Promotional text | 170 | Write it down in five seconds. A week later it's back on your timeline, so the good ideas get a second look. $6.99 once. No account, no subscription. (149) | Can change without review, so use it for launch messages and updates. |
 | Description | 4,000 | Not yet written | The first 3 lines show before "more", so they carry the loop and the price. Then features, privacy, and how resurfacing works in 1.0 (a fixed interval). |
 | Category | n/a | Productivity, with Education as the secondary | Paid Productivity is a smaller chart to place in than Free. |
 | What's New | 4,000 | Not yet written | For 1.0, one line. After that, write real notes, because people do read them. |
@@ -37,7 +37,7 @@ Search results show the first three portrait screenshots, so frames 1 to 3 have 
 | --- | --- | --- |
 | 1 | Write it down. It comes back. | The timeline with due thoughts and the "due today" chips |
 | 2 | Capture a thought in five seconds | The editor with Markdown and an image |
-| 3 | $9.99 once. No account. Stays on your phone. | A calm timeline or settings shot, with the price in the caption |
+| 3 | $6.99 once. No account. Stays on your phone. | A calm timeline or settings shot, with the price in the caption |
 | 4 | Every tag gets its own timeline | The tag timeline, with custom colors |
 | 5 | Find anything you've ever saved | Search results |
 | 6 | Hide spoilers and answers until you're ready | A blurred block, before and after |
@@ -124,6 +124,6 @@ Review these weekly for the first month, then monthly. Record each metadata or s
 ## Open decisions
 
 1. **Subtitle.** Recommended: **Notes that come back to you** (27). It describes 1.0 accurately, since thoughts come back on a fixed interval. "Spaced repetition thought log" ranks for a term with real search volume, but Anki users will expect growing intervals. A third option keeps both: use the recommended subtitle and put `spaced,repetition` in the keywords. To fit 100 characters, drop `notes` (now in the subtitle) and `brain`, which uses exactly 100 characters.
-2. **Price on the website.** The landing hero says "Coming soon for iPhone · Free", but the Launch Plan decided on $9.99 once. One of them has to change before the listing and the site go live.
+2. **Price on the website.** Decided: $6.99, bought once (Oct 7, 2026). The landing hero now shows it.
 3. **Pre-order.** Recommended: yes, for about 2 weeks. The cost is that the 1.0 build has to pass review before the pre-order starts.
 4. **Apple Ads budget.** Recommended: $10 to $20 a day for the first 30 days, then keep only the terms with a cost per download under about half the price.

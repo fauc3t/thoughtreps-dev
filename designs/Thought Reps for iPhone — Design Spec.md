@@ -280,7 +280,7 @@ The build runs in four stages.
 Open questions:
 
 - [ ] Do you have the original Thought Reps code or data to import? If so, which format?
-- [ ] Pricing: free core app plus a one-time Pro unlock (about $9.99), with a subscription only once sync ships? Which features are Pro? (Keep export/backup free.)
+- [x] Pricing: a paid download at $6.99, bought once. No subscription or in-app purchase in 1.0. Post-launch features are free updates for buyers.
 - [x] Support email address for feedback: hello@thoughtreps.com.
 - [ ] Privacy label and policy for feedback: Contact Info (email) and User Content, used for app support.
 - [ ] One-time export link: how the privacy label and policy describe the temporary upload.
