@@ -182,6 +182,80 @@ struct BackupTests {
         }
     }
 
+    // MARK: Image normalization
+
+    private func storedImageSize(_ asset: ImageAsset) throws -> (width: Int, height: Int, hasMetadata: Bool) {
+        let data = try #require(asset.data)
+        let source = try #require(CGImageSourceCreateWithData(data as CFData, nil))
+        let properties = try #require(CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any])
+        return (
+            properties[kCGImagePropertyPixelWidth] as? Int ?? 0, properties[kCGImagePropertyPixelHeight] as? Int ?? 0,
+            properties[kCGImagePropertyExifDictionary] != nil || properties[kCGImagePropertyGPSDictionary] != nil
+        )
+    }
+
+    @Test func importedImagesAreResizedStrippedAndMeasured() async throws {
+        let png = makeTestImageData(width: 3000, height: 1500, type: .png)
+        let exif = makeTestImageData(
+            width: 300, height: 200,
+            properties: [kCGImagePropertyExifDictionary: [kCGImagePropertyExifUserComment: "secret"],
+                         kCGImagePropertyGPSDictionary: [kCGImagePropertyGPSLatitude: 12.5]]
+        )
+        let wrongSize = ImageRecord(id: UUID(), width: 10, height: 10, order: 0)
+        let withExif = ImageRecord(id: UUID(), width: 300, height: 200, order: 1)
+        let id = UUID()
+        let rec = record(
+            id: id, body: "# Pics\n\(ImageToken.token(for: wrongSize.id))\n\(ImageToken.token(for: withExif.id))",
+            images: [wrongSize, withExif]
+        )
+        let images = [BackupFormat.imagePath(for: wrongSize.id): png, BackupFormat.imagePath(for: withExif.id): exif]
+        let thoughts = try BackupFormat.encoder().encode(rec) + Data("\n".utf8)
+        var hashes = [BackupFormat.tagsPath: sha256Hex(Data()), BackupFormat.thoughtsPath: sha256Hex(thoughts)]
+        for (path, data) in images { hashes[path] = sha256Hex(data) }
+        let url = directory.appendingPathComponent("foreign.thoughtreps")
+        try writeArchive(
+            [
+                ArchiveEntry(path: "mimetype", data: Data(BackupFormat.mimeType.utf8), method: .none),
+                ArchiveEntry(path: "manifest.json", data: try validManifest(entries: hashes, thoughts: 1)),
+                ArchiveEntry(path: BackupFormat.tagsPath, data: Data(), method: .none),
+                ArchiveEntry(path: BackupFormat.thoughtsPath, data: thoughts, method: .none),
+            ] + images.map { ArchiveEntry(path: $0.key, data: $0.value) },
+            to: url
+        )
+
+        try await importFile(url)
+
+        let stored = try #require(try thought(id, in: destination))
+        let big = try #require(stored.images?.first { $0.id == wrongSize.id })
+        let size = try storedImageSize(big)
+        #expect(size.width == 2048 && size.height == 1024)
+        #expect(big.width == 2048 && big.height == 1024)
+        let small = try #require(stored.images?.first { $0.id == withExif.id })
+        let smallSize = try storedImageSize(small)
+        #expect(smallSize.width == 300 && smallSize.height == 200 && !smallSize.hasMetadata)
+        #expect(try IntegrityChecker.check(destination.mainContext).isEmpty)
+    }
+
+    @Test func importableKeepsAppProcessedImagesByteForByte() throws {
+        let processed = try #require(try realImage(0.3).processed)
+        let result = try ImageProcessor.importable(processed.data)
+        #expect(result.data == processed.data)
+        #expect(result.width == processed.width && result.height == processed.height)
+    }
+
+    @Test func importableKeepsACleanJPEGLikeTheFallbackEncoderWritesByteForByte() throws {
+        let jpeg = makeTestImageData(
+            width: 300, height: 200, type: .jpeg, properties: [kCGImageDestinationLossyCompressionQuality: ImageProcessor.quality]
+        )
+        let result = try ImageProcessor.importable(jpeg)
+        #expect(result.data == jpeg)
+        #expect(result.width == 300 && result.height == 200)
+    }
+
+    @Test func importableRejectsUndecodableBytes() {
+        #expect(throws: ImageProcessingError.undecodable) { try ImageProcessor.importable(Data("nope".utf8)) }
+    }
+
     // MARK: Round trip
 
     @Test func roundTripReproducesTheStore() async throws {

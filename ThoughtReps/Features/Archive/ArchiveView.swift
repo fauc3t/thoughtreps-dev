@@ -14,6 +14,7 @@ struct ArchiveView: View {
     @State private var search = ""
     @State private var model: SearchModel?
     @State private var now = Date.now
+    @State private var pendingDelete: Thought?
 
     private var store: ThoughtStore {
         ThoughtStore(context: context)
@@ -40,6 +41,27 @@ struct ArchiveView: View {
             model?.pruneRows()
         }
         .task(id: search) { await model?.search(search) }
+        .confirmationDialog(
+            "Delete this thought?",
+            isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }),
+            titleVisibility: .visible,
+            presenting: pendingDelete
+        ) { thought in
+            Button("Delete", role: .destructive) {
+                model?.remove(id: thought.id)
+                store.delete(thought)
+            }
+        } message: { _ in
+            Text("This can't be undone.")
+        }
+    }
+
+    private func deleteAction(for thought: Thought) -> some View {
+        Button(role: .destructive) {
+            pendingDelete = thought
+        } label: {
+            Label("Delete", systemImage: "trash")
+        }
     }
 
     private func searchResults(_ model: SearchModel) -> some View {
@@ -54,14 +76,7 @@ struct ArchiveView: View {
                 }
                 .tint(.accentColor)
             }
-            .swipeActions(edge: .trailing) {
-                Button(role: .destructive) {
-                    model.remove(id: row.id)
-                    store.delete(row.thought)
-                } label: {
-                    Label("Delete", systemImage: "trash")
-                }
-            }
+            .swipeActions(edge: .trailing, allowsFullSwipe: false) { deleteAction(for: row.thought) }
         }
         .inkList()
         .overlay {
@@ -95,13 +110,7 @@ struct ArchiveView: View {
                 }
                 .tint(.accentColor)
             }
-            .swipeActions(edge: .trailing) {
-                Button(role: .destructive) {
-                    store.delete(thought)
-                } label: {
-                    Label("Delete", systemImage: "trash")
-                }
-            }
+            .swipeActions(edge: .trailing, allowsFullSwipe: false) { deleteAction(for: thought) }
         }
         .inkList()
         .overlay {

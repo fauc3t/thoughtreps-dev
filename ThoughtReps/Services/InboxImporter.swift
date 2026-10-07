@@ -5,7 +5,8 @@ import os
 ///
 /// Files are processed oldest first. A file is deleted only after its create succeeds; a failed
 /// create stops the run and leaves that file and the later ones for next time, so order is kept.
-/// Undecodable `.json` files are logged and deleted (writes are atomic, so they can't be completed).
+/// Undecodable `.json` files are logged and deleted (writes are atomic, so they can't be completed);
+/// ones that can't be read are logged and left for the next run.
 /// Anything that isn't `*.json` is ignored.
 ///
 /// An item's ID is remembered between a successful create and a successful delete, so a file
@@ -41,8 +42,14 @@ final class InboxImporter {
 
         var pending: [(url: URL, item: InboxItem)] = []
         for url in jsonURLs {
+            let data: Data
             do {
-                let data = try Data(contentsOf: url)
+                data = try Data(contentsOf: url)
+            } catch {
+                Self.log.error("Couldn't read inbox file \(url.lastPathComponent), leaving it for next time: \(error.localizedDescription)")
+                continue
+            }
+            do {
                 pending.append((url, try InboxItem.decoder().decode(InboxItem.self, from: data)))
             } catch {
                 Self.log.error("Deleting undecodable inbox file \(url.lastPathComponent): \(error.localizedDescription)")

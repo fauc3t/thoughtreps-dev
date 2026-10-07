@@ -64,6 +64,20 @@ struct InboxImporterTests {
         #expect(rememberedIDs.isEmpty)
     }
 
+    @Test func unreadableFileIsLeftInPlace() throws {
+        let unreadable = dir.appendingPathComponent("\(UUID().uuidString).json", isDirectory: true)
+        try FileManager.default.createDirectory(at: unreadable, withIntermediateDirectories: true)
+        try drop("Fine", at: t0)
+        #expect(importer().importPending(from: dir, store: store()) == 1)
+        #expect(try files() == [unreadable.lastPathComponent])
+    }
+
+    @Test func undecodableFileIsDeleted() throws {
+        try Data("not json".utf8).write(to: dir.appendingPathComponent("\(UUID().uuidString).json"))
+        #expect(importer().importPending(from: dir, store: store()) == 0)
+        #expect(try files().isEmpty)
+    }
+
     @Test func failedSaveKeepsFile() throws {
         try drop("Keep me", at: t0)
         let failing = store(failingSave: true)

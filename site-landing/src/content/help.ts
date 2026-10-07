@@ -228,7 +228,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
       },
       {
         paragraphs: [
-          'To close the editor without saving, tap "Cancel". Once a new thought has text in it, swiping the editor down will not close it. That way you never lose a draft by accident.',
+          'To close the editor without saving, tap "Cancel". If you changed anything, it asks "Discard changes?" first, and swiping the editor down will not close it. That way you never lose a draft by accident.',
         ],
       },
       {
@@ -451,7 +451,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
       {
         heading: 'Search in the Archive',
         paragraphs: [
-          'The Archive tab has its own "Search archive" box for archived thoughts. In its results, you can still swipe right to restore a thought or swipe left to delete it.',
+          'The Archive tab has its own "Search archive" box for archived thoughts. In its results, you can still swipe right to restore a thought or swipe left and tap "Delete".',
         ],
       },
       {
@@ -978,7 +978,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
       {
         heading: 'Delete',
         paragraphs: [
-          'Delete removes a thought for good, with its images and blocks. In the Archive, swipe left on a thought and tap {icon:trash|decorative} "Delete". Inside a thought, {icon:more} also has "Delete", and it asks you to confirm. You cannot undo a delete. Archive instead if you might want it back.',
+          'Delete removes a thought for good, with its images and blocks. In the Archive, swipe left on a thought and tap {icon:trash|decorative} "Delete". Inside a thought, {icon:more} also has "Delete". Either way, it asks you to confirm. You cannot undo a delete. Archive instead if you might want it back.',
         ],
       },
     ],

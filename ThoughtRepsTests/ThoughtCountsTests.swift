@@ -48,6 +48,16 @@ struct ThoughtCountsTests {
         #expect(n(ThoughtCounts.any(tag: "a")) == 2)
     }
 
+    @Test func limitStopsCountingEarly() throws {
+        let a = tag("a")
+        thought(tags: [a])
+        thought(tags: [a], archived: true)
+        thought(tags: [a])
+        try context.save()
+        #expect(ThoughtCounts.count(ThoughtCounts.any(tag: "a"), in: context, limit: 1) == 1)
+        #expect(ThoughtCounts.count(ThoughtCounts.any(tag: "missing"), in: context, limit: 1) == 0)
+    }
+
     @Test func multiTagThoughtCountsOncePerTag() throws {
         let a = tag("a"), b = tag("b")
         thought(tags: [a, b])

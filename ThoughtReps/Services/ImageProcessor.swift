@@ -42,14 +42,44 @@ enum ImageProcessor {
         )
     }
 
-    /// Just the thumbnail of an image already stored, for rebuilding one from the original bytes.
-    static func thumbnail(of input: Data) throws -> Data {
+    /// For bytes read from a backup: kept as they are when already HEIC or JPEG within `maxDimension`, upright and
+    /// free of metadata (a backup made by this app), otherwise run through `process` so nothing foreign is stored.
+    /// Width and height come from the decoded image, never from the backup's record.
+    static func importable(_ input: Data) throws -> ProcessedImage {
         guard let source = CGImageSourceCreateWithData(input as CFData, nil),
               CGImageSourceGetCount(source) > 0,
-              let original = longestEdge(of: source),
-              let thumbnail = decoded(source, longestEdge: min(thumbnailDimension, original))
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = properties[kCGImagePropertyPixelWidth] as? Int,
+              let height = properties[kCGImagePropertyPixelHeight] as? Int,
+              width > 0, height > 0
         else { throw ImageProcessingError.undecodable }
-        return try encode(thumbnail)
+        let type = CGImageSourceGetType(source).flatMap { UTType($0 as String) }
+        let isClean = (type == .heic || type == .jpeg)
+            && max(width, height) <= maxDimension
+            && !hasMetadata(properties)
+            && (properties[kCGImagePropertyOrientation] as? Int ?? 1) == 1
+        guard isClean else { return try process(input) }
+        guard let thumbnail = decoded(source, longestEdge: min(thumbnailDimension, max(width, height))) else {
+            throw ImageProcessingError.undecodable
+        }
+        return ProcessedImage(data: input, thumbnailData: try encode(thumbnail), width: width, height: height)
+    }
+
+    /// Properties the encoder itself writes. Anything else (GPS, camera, dates, comments, maker notes)
+    /// makes an image count as carrying metadata.
+    private static let structuralProperties: [String: Set<String>] = [
+        "PixelWidth": [], "PixelHeight": [], "Depth": [], "ColorModel": [], "ProfileName": [], "PrimaryImage": [],
+        "Headroom": [], "Orientation": [], "HasAlpha": [], "{JFIF}": ["JFIFVersion", "XDensity", "YDensity", "DensityUnit", "IsProgressive"], "{PNG}": [],
+        "{Exif}": ["PixelXDimension", "PixelYDimension"],
+        "{TIFF}": ["Orientation", "TileLength", "TileWidth"],
+    ]
+
+    private static func hasMetadata(_ properties: [CFString: Any]) -> Bool {
+        properties.contains { key, value in
+            guard let allowed = structuralProperties[key as String] else { return true }
+            guard let inner = value as? [String: Any] else { return false }
+            return !Set(inner.keys).isSubset(of: allowed)
+        }
     }
 
     /// EXIF orientation only swaps the edges, so the longest edge needs no orientation handling.
@@ -66,10 +96,10 @@ enum ImageProcessor {
     /// ImageIO thumbnails come back premultiplied even for opaque sources, and encoding those logs a warning.
     static func decoded(_ source: CGImageSource, longestEdge: Int) -> CGImage? {
         guard let image = downscaled(source, longestEdge: longestEdge) else { return nil }
-        switch CGImageSourceCreateImageAtIndex(source, 0, nil)?.alphaInfo {
-        case .some(.none), .some(.noneSkipFirst), .some(.noneSkipLast): return opaque(image) ?? image
-        default: return image
-        }
+        let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
+        // ImageIO leaves HasAlpha out for opaque images and sets it only when there is an alpha channel.
+        guard properties?[kCGImagePropertyHasAlpha] as? Bool != true else { return image }
+        return opaque(image) ?? image
     }
 
     private static func opaque(_ image: CGImage) -> CGImage? {

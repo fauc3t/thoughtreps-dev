@@ -331,9 +331,9 @@ enum BackupImporter {
                 for ref in record.images + record.blocks.flatMap(\.images) {
                     guard let entry = imageEntries[BackupFormat.imagePath(for: ref.id)] else { throw BackupError.damaged("missing image") }
                     let data = try read(entry, of: imagesArchive, limit: limits.imageBytes)
-                    let thumbnail = try ImageProcessor.thumbnail(of: data)
-                    bytes += data.count + thumbnail.count
-                    images[ref.id] = ProcessedImage(data: data, thumbnailData: thumbnail, width: ref.width, height: ref.height)
+                    let processed = try ImageProcessor.importable(data)
+                    bytes += processed.data.count + processed.thumbnailData.count
+                    images[ref.id] = processed
                 }
                 batch.thoughts.append(ImportedThought(record: record, images: images))
                 batchBytes += bytes

@@ -67,11 +67,11 @@ struct ThoughtStore {
         )
         context.insert(thought)
         let plan = plan(for: thought, body: body, blocks: blocks, images: images)
-        syncTags(for: thought, texts: plan.texts)
+        let tagsSynced = syncTags(for: thought, texts: plan.texts)
         insertNewBlocks(of: plan, into: thought, firstOrder: 0)
         insertNewInlineImages(of: plan, into: thought)
         removeStaleInlineImages(of: plan)
-        if persist() {
+        if persist(requiring: tagsSynced) {
             indexUpsert(thought)
         }
         return thought
@@ -111,10 +111,10 @@ struct ThoughtStore {
             reanchor(thought)
         }
         thought.updatedAt = now
-        syncTags(for: thought, texts: plan.textsWhileSurplusRemains)
+        let editTagsSynced = syncTags(for: thought, texts: plan.textsWhileSurplusRemains)
         editKeptBlocks(of: plan)
         removeStaleInlineImages(of: plan)
-        guard persist() else {
+        guard persist(requiring: editTagsSynced) else {
             if discardAfterFailure(addedInline) {
                 pendingImageSaves.remove(thought.id)
             }
@@ -125,14 +125,14 @@ struct ThoughtStore {
         }
 
         removeStale(plan)
-        syncTags(for: thought, texts: plan.keptTexts)
-        if context.hasChanges {
-            guard persist() else { return false }
+        let keptTagsSynced = syncTags(for: thought, texts: plan.keptTexts)
+        if context.hasChanges || !keptTagsSynced {
+            guard persist(requiring: keptTagsSynced) else { return false }
         }
         insertNewBlocks(of: plan, into: thought, firstOrder: plan.blocks.filter { $0.existing != nil }.count)
-        syncTags(for: thought, texts: plan.texts)
-        if context.hasChanges {
-            guard persist() else { return false }
+        let finalTagsSynced = syncTags(for: thought, texts: plan.texts)
+        if context.hasChanges || !finalTagsSynced {
+            guard persist(requiring: finalTagsSynced) else { return false }
         }
         applyFinalOrders(of: plan, in: thought)
         return !context.hasChanges || persist()
@@ -456,38 +456,56 @@ struct ThoughtStore {
     }
 
     /// Rebuilds the thought's tags from its body and markdown blocks, creating `Tag`s as needed.
-    func syncTags(for thought: Thought) {
+    @discardableResult
+    func syncTags(for thought: Thought) -> Bool {
         syncTags(for: thought, texts: thought.markdownTexts)
     }
 
-    private func syncTags(for thought: Thought, texts: [String]) {
-        let wanted = TagParser.parse(all: texts).map(tag(for:))
-        let wantedNames = Set(wanted.map(\.name))
-        thought.tags?.removeAll { !wantedNames.contains($0.name) }
-        let existing = Set((thought.tags ?? []).map(\.name))
-        for tag in wanted where !existing.contains(tag.name) {
-            thought.tags?.append(tag)
+    /// False if a tag lookup failed (logged and reported); the caller then rolls back with `persist(requiring: false)`.
+    @discardableResult
+    private func syncTags(for thought: Thought, texts: [String]) -> Bool {
+        do {
+            let wanted = try TagParser.parse(all: texts).map(tag(for:))
+            let wantedNames = Set(wanted.map(\.name))
+            thought.tags?.removeAll { !wantedNames.contains($0.name) }
+            let existing = Set((thought.tags ?? []).map(\.name))
+            for tag in wanted where !existing.contains(tag.name) {
+                thought.tags?.append(tag)
+            }
+            return true
+        } catch {
+            Self.logger.error("Tag lookup failed: \(error)")
+            saveErrors.report(error)
+            return false
         }
     }
 
     /// Saves tags the texts need that don't exist yet, before the thought is edited; see `persist()`.
     private func saveNewTags(for texts: [String]) -> Bool {
         var inserted = false
-        for parsed in TagParser.parse(all: texts) where existingTag(named: parsed.key) == nil {
-            context.insert(Tag(name: parsed.key, displayName: parsed.display))
-            inserted = true
+        do {
+            for parsed in TagParser.parse(all: texts) where try existingTag(named: parsed.key) == nil {
+                context.insert(Tag(name: parsed.key, displayName: parsed.display))
+                inserted = true
+            }
+        } catch {
+            Self.logger.error("Tag lookup failed: \(error)")
+            context.rollback()
+            saveErrors.report(error)
+            return false
         }
         return !inserted || persist()
     }
 
-    private func existingTag(named key: String) -> Tag? {
+    /// Throws on a fetch error rather than answering "no tag", which would create a duplicate.
+    private func existingTag(named key: String) throws -> Tag? {
         var descriptor = FetchDescriptor<Tag>(predicate: #Predicate { $0.name == key })
         descriptor.fetchLimit = 1
-        return try? context.fetch(descriptor).first
+        return try context.fetch(descriptor).first
     }
 
-    private func tag(for parsed: TagParser.ParsedTag) -> Tag {
-        if let existing = existingTag(named: parsed.key) {
+    private func tag(for parsed: TagParser.ParsedTag) throws -> Tag {
+        if let existing = try existingTag(named: parsed.key) {
             return existing
         }
         let tag = Tag(name: parsed.key, displayName: parsed.display)
@@ -594,14 +612,25 @@ struct ThoughtStore {
         context.delete(thought)
     }
 
-    /// Deletes every thought and tag. One by one, because batch deletes can leave
-    /// @Query results stale on iOS 17.
+    /// Deletes every thought and tag, one by one through `deleteWithChildren` so each thought's
+    /// blocks and images are removed explicitly as the `persist()` note requires. A failed fetch
+    /// deletes nothing and returns false.
     @discardableResult
     func deleteAll() -> Bool {
-        for thought in (try? context.fetch(FetchDescriptor<Thought>())) ?? [] {
+        let thoughts: [Thought]
+        let tags: [Tag]
+        do {
+            thoughts = try context.fetch(FetchDescriptor<Thought>())
+            tags = try context.fetch(FetchDescriptor<Tag>())
+        } catch {
+            Self.logger.error("Delete all fetch failed: \(error)")
+            saveErrors.report(error)
+            return false
+        }
+        for thought in thoughts {
             deleteWithChildren(thought)
         }
-        for tag in (try? context.fetch(FetchDescriptor<Tag>())) ?? [] {
+        for tag in tags {
             context.delete(tag)
         }
         guard persist() else { return false }
@@ -625,8 +654,24 @@ struct ThoughtStore {
     /// reading a deleted model can crash. Until then, empty tags are simply hidden.
     @discardableResult
     func pruneOrphanTags() -> Bool {
-        let tags = (try? context.fetch(FetchDescriptor<Tag>())) ?? []
-        let orphans = tags.filter { ($0.thoughts ?? []).isEmpty }
+        let tags: [Tag]
+        do {
+            tags = try context.fetch(FetchDescriptor<Tag>())
+        } catch {
+            Self.logger.error("Orphan tag lookup failed: \(error)")
+            return false
+        }
+        let orphans: [Tag]
+        do {
+            orphans = try tags.filter { tag in
+                var descriptor = FetchDescriptor<Thought>(predicate: ThoughtCounts.any(tag: tag.name))
+                descriptor.fetchLimit = 1
+                return try context.fetchCount(descriptor) == 0
+            }
+        } catch {
+            Self.logger.error("Orphan tag count failed: \(error)")
+            return false
+        }
         guard !orphans.isEmpty else { return true }
         for tag in orphans {
             context.delete(tag)
@@ -789,7 +834,7 @@ struct ThoughtStore {
         guard let processed = item.images[ref.id] else { return }
         let image = ImageAsset(
             id: ref.id, data: processed.data, thumbnailData: processed.thumbnailData,
-            width: ref.width, height: ref.height, order: order
+            width: processed.width, height: processed.height, order: order
         )
         context.insert(image)
         image.thought = thought
@@ -860,7 +905,9 @@ struct ThoughtStore {
     private func reindex(ids: Set<UUID>) {
         let lookup = Array(ids)
         do {
-            let found = try context.fetch(FetchDescriptor<Thought>(predicate: #Predicate { lookup.contains($0.id) }))
+            var descriptor = FetchDescriptor<Thought>(predicate: #Predicate { lookup.contains($0.id) })
+            descriptor.relationshipKeyPathsForPrefetching = [\.blocks, \.tags]
+            let found = try context.fetch(descriptor)
             for thought in found {
                 indexUpsert(thought)
             }
@@ -892,7 +939,11 @@ struct ThoughtStore {
     /// them crashes), and refuses to edit it if that fails. Keep any new write on a stored
     /// thought within those shapes.
     @discardableResult
-    private func persist() -> Bool {
+    private func persist(requiring ok: Bool = true) -> Bool {
+        guard ok else {
+            context.rollback()
+            return false
+        }
         do {
             try save(context)
             return true

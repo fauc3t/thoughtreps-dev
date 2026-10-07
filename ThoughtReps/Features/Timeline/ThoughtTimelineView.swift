@@ -6,6 +6,14 @@ enum TimelineScope {
     case all
     case tag(Tag)
     case untagged
+
+    var queryScope: ThoughtCounts.Scope {
+        switch self {
+        case .all: .all
+        case .tag(let tag): .tag(tag.name)
+        case .untagged: .untagged
+        }
+    }
 }
 
 /// The main timeline (pinned + due thoughts). Pass a `scope` to get a tag's or the untagged
@@ -13,15 +21,10 @@ enum TimelineScope {
 struct ThoughtTimelineView: View {
     var scope: TimelineScope = .all
 
-    @Environment(\.modelContext) private var context
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.requestReview) private var requestReview
     @Environment(CaptureContext.self) private var captureContext: CaptureContext?
     @State private var captureToken = UUID()
-    @AppStorage(AppSettings.Key.defaultIntervalDays) private var defaultIntervalDays = Scheduler.defaultIntervalDays
-
-    @Query(filter: #Predicate<Thought> { $0.isArchived == false }, sort: \Thought.nextDueAt)
-    private var active: [Thought]
 
     /// "Now" as of the last time this screen appeared. Thoughts viewed after it stay listed
     /// until you come back, so a card doesn't vanish while you're reading it.
@@ -30,24 +33,6 @@ struct ThoughtTimelineView: View {
     @State private var showSettings = false
     @State private var showColorSheet = false
     @State private var navigation = AppNavigation.shared
-
-    private var store: ThoughtStore {
-        ThoughtStore(context: context, defaultIntervalDays: defaultIntervalDays)
-    }
-
-    private var scoped: [Thought] {
-        switch scope {
-        case .all:
-            return active
-        case .tag(let tag):
-            let id = tag.persistentModelID
-            return active.filter { thought in
-                (thought.tags ?? []).contains { $0.persistentModelID == id }
-            }
-        case .untagged:
-            return active.filter(\.isUntagged)
-        }
-    }
 
     private var isScoped: Bool {
         if case .all = scope { return false }
@@ -67,73 +52,31 @@ struct ThoughtTimelineView: View {
         return nil
     }
 
-    private var pinned: [Thought] {
-        scoped.filter(\.isPinned)
-    }
-
-    private var listed: [Thought] {
-        scoped.filter { thought in
-            !thought.isPinned && (showAll || thought.isOnTimeline(now: snapshot))
-        }
-    }
-
     var body: some View {
-        List {
-            if !pinned.isEmpty {
-                Section {
-                    ForEach(pinned) { row($0) }
-                } header: {
-                    Text("Pinned").inkSectionHeader()
-                }
+        TimelineList(scope: scope, showAll: showAll, snapshot: snapshot) { snapshot = .now }
+            .navigationTitle(title)
+            .toolbar { toolbarContent }
+            .onAppear {
+                snapshot = .now
+                if let tag { captureContext?.register(token: captureToken, tag: tag) }
             }
-            if !listed.isEmpty {
-                Section {
-                    ForEach(listed) { row($0) }
-                } header: {
-                    Text(showAll ? "All" : "Due").inkSectionHeader()
-                }
-            } else if !pinned.isEmpty {
-                Section {
-                    Text(nextUpText)
-                        .font(.mono(12))
-                        .foregroundStyle(Color.muted)
-                        .inkRow()
-                } header: {
-                    Text("Due").inkSectionHeader()
-                }
+            .task(id: scenePhase) { await requestReviewIfPending() }
+            .onDisappear {
+                captureContext?.unregister(token: captureToken)
             }
-        }
-        .inkList()
-        .contentMargins(.bottom, 88, for: .scrollContent) // room for the + button
-        .overlay {
-            if pinned.isEmpty && listed.isEmpty {
-                emptyState
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active { snapshot = .now }
             }
-        }
-        .navigationTitle(title)
-        .toolbar { toolbarContent }
-        .refreshable { @MainActor in snapshot = .now }
-        .onAppear {
-            snapshot = .now
-            if let tag { captureContext?.register(token: captureToken, tag: tag) }
-        }
-        .task(id: scenePhase) { await requestReviewIfPending() }
-        .onDisappear {
-            captureContext?.unregister(token: captureToken)
-        }
-        .onChange(of: scenePhase) { _, phase in
-            if phase == .active { snapshot = .now }
-        }
-        .onChange(of: showAll) {
-            snapshot = .now
-        }
-        .onChange(of: navigation.reminderOpenCount) { showSettings = false }
-        .sheet(isPresented: $showSettings) {
-            SettingsView()
-        }
-        .sheet(isPresented: $showColorSheet) {
-            if let tag { TagColorSheet(tag: tag) }
-        }
+            .onChange(of: showAll) {
+                snapshot = .now
+            }
+            .onChange(of: navigation.reminderOpenCount) { showSettings = false }
+            .sheet(isPresented: $showSettings) {
+                SettingsView()
+            }
+            .sheet(isPresented: $showColorSheet) {
+                if let tag { TagColorSheet(tag: tag) }
+            }
     }
 
     /// Runs while the main timeline is on screen. The delay lets a returning navigation or sheet
@@ -146,44 +89,6 @@ struct ThoughtTimelineView: View {
         guard !Task.isCancelled, scenePhase == .active else { return }
         requestReview()
         prompt.markAsked()
-    }
-
-    private func row(_ thought: Thought) -> some View {
-        NavigationLink(value: thought) {
-            ThoughtCard(thought: thought, now: snapshot)
-        }
-        .inkRow()
-        .swipeActions(edge: .leading) {
-            Button {
-                store.setPinned(thought, !thought.isPinned)
-            } label: {
-                Label(thought.isPinned ? "Unpin" : "Pin", systemImage: thought.isPinned ? "pin.slash" : "pin")
-            }
-            .tint(.accentColor)
-        }
-        .swipeActions(edge: .trailing) {
-            Button {
-                store.archive(thought, now: .now)
-            } label: {
-                Label("Archive", systemImage: "archivebox")
-            }
-            .tint(.gray)
-            if thought.isPinned {
-                Button {
-                    store.setPinned(thought, false)
-                } label: {
-                    Label("Unpin", systemImage: "pin.slash")
-                }
-                .tint(.accentColor)
-            } else {
-                Button {
-                    store.snooze(thought, days: 1, now: .now)
-                } label: {
-                    Label("Tomorrow", systemImage: "moon.zzz")
-                }
-                .tint(.orange)
-            }
-        }
     }
 
     @ToolbarContentBuilder
@@ -234,10 +139,119 @@ struct ThoughtTimelineView: View {
         .pickerStyle(.segmented)
         .frame(width: 120)
     }
+}
+
+/// The rows. Its query is built from the scope and snapshot, so a new snapshot re-creates the view
+/// and loads only the pinned and due (or viewed-since) thoughts rather than every active one.
+private struct TimelineList: View {
+    let scope: TimelineScope
+    let showAll: Bool
+    let snapshot: Date
+    let onRefresh: () -> Void
+
+    @Environment(\.modelContext) private var context
+    @AppStorage(AppSettings.Key.defaultIntervalDays) private var defaultIntervalDays = Scheduler.defaultIntervalDays
+    @Query private var shown: [Thought]
+    /// Bumped on every save. The empty state and "come back" text come from queries run in `body`, which
+    /// `shown` alone doesn't invalidate (a first thought that isn't due yet, a snooze).
+    @State private var saveToken = 0
+
+    init(scope: TimelineScope, showAll: Bool, snapshot: Date, onRefresh: @escaping () -> Void) {
+        self.scope = scope
+        self.showAll = showAll
+        self.snapshot = snapshot
+        self.onRefresh = onRefresh
+        _shown = Query(
+            filter: ThoughtCounts.timeline(scope.queryScope, showAll: showAll, snapshot: snapshot),
+            sort: \Thought.nextDueAt
+        )
+    }
+
+    private var store: ThoughtStore {
+        ThoughtStore(context: context, defaultIntervalDays: defaultIntervalDays)
+    }
+
+    var body: some View {
+        let _ = saveToken
+        let pinned = shown.filter(\.isPinned)
+        let listed = shown.filter { !$0.isPinned }
+        List {
+            if !pinned.isEmpty {
+                Section {
+                    ForEach(pinned) { row($0) }
+                } header: {
+                    Text("Pinned").inkSectionHeader()
+                }
+            }
+            if !listed.isEmpty {
+                Section {
+                    ForEach(listed) { row($0) }
+                } header: {
+                    Text(showAll ? "All" : "Due").inkSectionHeader()
+                }
+            } else if !pinned.isEmpty {
+                Section {
+                    Text(nextUpText)
+                        .font(.mono(12))
+                        .foregroundStyle(Color.muted)
+                        .inkRow()
+                } header: {
+                    Text("Due").inkSectionHeader()
+                }
+            }
+        }
+        .inkList()
+        .contentMargins(.bottom, 88, for: .scrollContent) // room for the + button
+        .overlay {
+            if shown.isEmpty {
+                emptyState
+            }
+        }
+        .refreshable { @MainActor in onRefresh() }
+        .onReceive(NotificationCenter.default.publisher(for: ModelContext.didSave)) { _ in saveToken += 1 }
+    }
+
+    private func row(_ thought: Thought) -> some View {
+        NavigationLink(value: thought) {
+            ThoughtCard(thought: thought, now: snapshot)
+        }
+        .inkRow()
+        .swipeActions(edge: .leading) {
+            Button {
+                store.setPinned(thought, !thought.isPinned)
+            } label: {
+                Label(thought.isPinned ? "Unpin" : "Pin", systemImage: thought.isPinned ? "pin.slash" : "pin")
+            }
+            .tint(.accentColor)
+        }
+        .swipeActions(edge: .trailing) {
+            Button {
+                store.archive(thought, now: .now)
+            } label: {
+                Label("Archive", systemImage: "archivebox")
+            }
+            .tint(.gray)
+            if thought.isPinned {
+                Button {
+                    store.setPinned(thought, false)
+                } label: {
+                    Label("Unpin", systemImage: "pin.slash")
+                }
+                .tint(.accentColor)
+            } else {
+                Button {
+                    store.snooze(thought, days: 1, now: .now)
+                } label: {
+                    Label("Tomorrow", systemImage: "moon.zzz")
+                }
+                .tint(.orange)
+            }
+        }
+    }
 
     @ViewBuilder
     private var emptyState: some View {
-        if scoped.isEmpty {
+        if ThoughtCounts.count(ThoughtCounts.active(scope.queryScope), in: context, limit: 1) == 0 {
             ContentUnavailableView {
                 Label("No thoughts yet", systemImage: "lightbulb")
                     .font(.archivo(22, weight: .bold, relativeTo: .title2))
@@ -267,9 +281,7 @@ struct ThoughtTimelineView: View {
 
     /// "3 thoughts come back tomorrow."
     private var nextUpText: String {
-        let waiting = scoped.filter { !$0.isPinned }
-        guard let next = waiting.map(\.nextDueAt).min() else { return "Nothing else is scheduled." }
-        let count = waiting.filter { Calendar.current.isDate($0.nextDueAt, inSameDayAs: next) }.count
+        guard let (next, count) = ThoughtCounts.nextUp(scope.queryScope, in: context) else { return "Nothing else is scheduled." }
         let noun = count == 1 ? "thought comes" : "thoughts come"
         return "\(count) \(noun) back \(RelativeDay.phrase(for: next, now: snapshot))."
     }

@@ -31,9 +31,12 @@ enum ThoughtCounts {
         #Predicate<Thought> { !$0.isArchived && $0.nextDueAt <= now && !($0.tags?.contains { _ in true } ?? false) }
     }
 
-    static func count(_ predicate: Predicate<Thought>, in context: ModelContext) -> Int {
+    /// `limit` stops counting early for existence checks.
+    static func count(_ predicate: Predicate<Thought>, in context: ModelContext, limit: Int? = nil) -> Int {
         do {
-            return try context.fetchCount(FetchDescriptor<Thought>(predicate: predicate))
+            var descriptor = FetchDescriptor<Thought>(predicate: predicate)
+            descriptor.fetchLimit = limit
+            return try context.fetchCount(descriptor)
         } catch {
             logger.error("Count query failed: \(error)")
             return 0

@@ -49,6 +49,8 @@ struct BlockDraftEditor: View {
     var canTakeFocus: () -> Bool = { true }
     /// Called once the focus request is done, so the owner can drop it.
     var onFocusRequestDone: () -> Void = {}
+    /// Called with this block's id when its image processing starts or finishes, so the owner can hold Save.
+    var onProcessingChange: (UUID, Bool) -> Void = { _, _ in }
     /// Called with this block's id when processed images are ready.
     let onAddImages: (UUID, [ImageDraft]) -> Void
 
@@ -144,6 +146,9 @@ struct BlockDraftEditor: View {
         }
         .imageIntake(intake) { [blockID = draft.id] added in
             onAddImages(blockID, added)
+        }
+        .onChange(of: intake.isProcessing) { _, processing in
+            onProcessingChange(draft.id, processing)
         }
     }
 }

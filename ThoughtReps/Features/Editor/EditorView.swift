@@ -34,6 +34,11 @@ struct EditorView: View {
     @State private var bodyLoadToken = 0
     @State private var bodyHeight = MarkdownTextView.minHeight
     @State private var formWidth: CGFloat = 0
+    @State private var isConfirmingDiscard = false
+    @State private var processingBlockIDs: Set<UUID> = []
+    @State private var openedText = ""
+    @State private var openedDrafts: [BlockDraft] = []
+    @State private var openedIntervalDays: Int?
 
     private var isNew: Bool {
         if case .new = mode { return true }
@@ -42,6 +47,16 @@ struct EditorView: View {
 
     private var trimmedText: String {
         text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Differs from what the editor opened with. Compares against the loaded state, so a prefilled tag alone isn't a change.
+    private var isDirty: Bool {
+        text != openedText || drafts != openedDrafts || intervalDays != openedIntervalDays || !inlineDrafts.isEmpty
+    }
+
+    /// Images are still being processed here or in a gallery block that is still in the editor.
+    private var isProcessingImages: Bool {
+        intake.isProcessing || !processingBlockIDs.isDisjoint(with: drafts.map(\.id))
     }
 
     private var markdownTexts: [String] {
@@ -163,6 +178,28 @@ struct EditorView: View {
         drafts[index].images.append(contentsOf: added)
     }
 
+    private func blockRow(_ draft: Binding<BlockDraft>) -> some View {
+        let id = draft.wrappedValue.id
+        let field = EditorField.block(id)
+        return BlockDraftEditor(
+            draft: draft,
+            selection: selectionBinding(for: field),
+            isFocused: EditorField.isFocused($focus, field: field),
+            accessory: accessory(for: field),
+            imageData: thumbnailData(for:),
+            storedImages: storedImages,
+            inlineDrafts: inlineDrafts,
+            wantsFocus: pendingNewBlockID == id,
+            canTakeFocus: { focus == nil || focus == field },
+            onFocusRequestDone: { if pendingNewBlockID == id { pendingNewBlockID = nil } },
+            onProcessingChange: setBlockProcessing
+        ) { addGalleryImages(to: $0, $1) }
+    }
+
+    private func setBlockProcessing(_ id: UUID, _ processing: Bool) {
+        if processing { processingBlockIDs.insert(id) } else { processingBlockIDs.remove(id) }
+    }
+
     private func removeInlineImage(_ id: UUID) {
         text = ImageToken.removing(id, from: text)
         selection = nil
@@ -208,21 +245,7 @@ struct EditorView: View {
                 }
 
                 Section {
-                    ForEach($drafts) { $draft in
-                        let field = EditorField.block(draft.id)
-                        BlockDraftEditor(
-                            draft: $draft,
-                            selection: selectionBinding(for: field),
-                            isFocused: EditorField.isFocused($focus, field: field),
-                            accessory: accessory(for: field),
-                            imageData: thumbnailData(for:),
-                            storedImages: storedImages,
-                            inlineDrafts: inlineDrafts,
-                            wantsFocus: pendingNewBlockID == draft.id,
-                            canTakeFocus: { focus == nil || focus == field },
-                            onFocusRequestDone: { if pendingNewBlockID == draft.id { pendingNewBlockID = nil } }
-                        ) { addGalleryImages(to: $0, $1) }
-                    }
+                    ForEach($drafts) { blockRow($0) }
                     .onDelete { drafts.remove(atOffsets: $0) }
                     .onMove { drafts.move(fromOffsets: $0, toOffset: $1) }
 
@@ -260,13 +283,19 @@ struct EditorView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") {
+                        if isDirty { isConfirmingDiscard = true } else { dismiss() }
+                    }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save", action: save)
                         .fontWeight(.semibold)
-                        .disabled(trimmedText.isEmpty)
+                        .disabled(trimmedText.isEmpty || isProcessingImages)
                 }
+            }
+            .confirmationDialog("Discard changes?", isPresented: $isConfirmingDiscard, titleVisibility: .visible) {
+                Button("Discard", role: .destructive) { dismiss() }
+                Button("Keep editing", role: .cancel) {}
             }
             .sheet(isPresented: $isPickingInterval) {
                 IntervalPickerSheet(initialDays: intervalDays ?? defaultIntervalDays) { days in
@@ -300,7 +329,7 @@ struct EditorView: View {
             }
             }
         }
-        .interactiveDismissDisabled(!trimmedText.isEmpty && isNew)
+        .interactiveDismissDisabled(isDirty)
     }
 
     private func continueList(in field: EditorField, from old: String, to new: String) {
@@ -353,6 +382,9 @@ struct EditorView: View {
             intervalDays = thought.intervalDays
             drafts = BlockDraft.drafts(for: thought)
         }
+        openedText = text
+        openedDrafts = drafts
+        openedIntervalDays = intervalDays
     }
 
     /// Dismisses only if the save succeeded, so a failed save keeps the draft on screen.
