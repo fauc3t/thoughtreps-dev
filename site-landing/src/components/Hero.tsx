@@ -183,7 +183,6 @@ export function Hero() {
       aria-labelledby="hero-h"
     >
       <div className="flex min-w-0 flex-col gap-6">
-        <span className="label">Coming soon for iPhone · $6.99</span>
         <h1
           id="hero-h"
           className="text-[clamp(46px,7.4vw,92px)] leading-[0.92] font-black tracking-[-0.035em] [font-variation-settings:'wdth'_112]"
