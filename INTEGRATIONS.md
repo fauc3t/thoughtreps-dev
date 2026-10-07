@@ -16,7 +16,7 @@ All in one `cdk.Stage` named `prod` (`infra/lib/app-stage.ts`).
 | --- | --- | --- |
 | `ThoughtReps-prod-Dns` | Deployed 2026-10-05 | Route53 hosted zone `thoughtreps.com` (RETAIN) |
 | `ThoughtReps-prod-Landing` | Deployed 2026-10-05 | S3 bucket (OAC) + CloudFront for the apex, `www` -> apex 301 and `/x` -> `/x/index.html` rewrite (viewer-request function), `404.html`; ACM cert |
-| `ThoughtReps-prod-Mail` | Deployed 2026-10-05 | SES identity, MX, DMARC, mail bucket, receipt rule, ForwardFn, Cognito, HTTP API (ReplyFn/DeleteFn), mail web UI hosting |
+| `ThoughtReps-prod-Mail` | Deployed 2026-10-05; reply attachments added 2026-10-06 | SES identity, MX, DMARC, mail bucket, receipt rule, ForwardFn, Cognito, HTTP API (ReplyFn/DeleteFn/AttachmentUrlFn), attachment upload bucket (unversioned, 1-day expiry), mail web UI hosting |
 | `ThoughtReps-prod-Share` | Deployed 2026-10-05 | Export-link backend: unversioned export bucket, DynamoDB link table, App Attest device/export-link/public/sweep Lambdas, FeedbackFn (`POST /feedback`, SES send), HTTP API, `transfer.thoughtreps.com` site (download page from `transfer-web/`, deployed by `scripts/deploy-transfer-web.sh`) |
 
 ### DNS
