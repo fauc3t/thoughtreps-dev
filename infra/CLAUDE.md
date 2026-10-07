@@ -48,6 +48,10 @@ The device encrypts its export and uploads ciphertext; the key lives only in the
 - **Waitlist (`POST /api/v1/waitlist`, `WaitlistFn`) is public, with no App Attest**, and is the one route CORS allows: the HttpApi's `corsPreflight` permits only `https://thoughtreps.com`, API-wide (the other routes don't rely on it). Requires `Content-Type: application/json` and a strict `{email, beta, honeypot}` body; a filled honeypot gets a silent 200. Abuse control is a per-route throttle (rate 2, burst 5) and deliberately **no per-IP limit**, since behind CloudFront `sourceIp` is the edge IP. Writes are a conditional put into `WaitlistTable` (RETAIN): a duplicate can only upgrade `beta` to true, returns an identical 200 and sends no mail, so the API can't be used to probe or spam an address. A new signup mails `feedbackToAddress` from `waitlistFromAddress`; an SES failure after the write still returns 200. **Never log the email.** The list is deleted by hand after launch (table rows and the `[Waitlist]` notification emails); `site-landing/src/content/privacy.ts` and the form promise this.
 - Request/response schemas are in `lib/export-link/schemas.ts`, exported as `./export-link/schemas` for the download page; the iOS client mirrors these shapes in Swift, so keep them in sync.
 
+## Response headers
+
+- **Each CloudFront distribution (landing, mail web, transfer-web) has its own `ResponseHeadersPolicy`** (HSTS, nosniff, frame DENY, referrer policy, CSP), and the header is the only CSP source (transfer-web has no meta CSP). When an app adds a fetch origin, font, or inline script, update that stack's CSP and its test. mail-web's email iframe has its own meta CSP (`mail-web/src/lib/emailCsp.ts`).
+
 ## Deliverability
 
 Passing SPF/DKIM/DMARC doesn't mean the inbox: a new sending domain has no reputation, so replies can land in spam for days to weeks. Don't re-check DNS because of a spam-foldered message unless `aws sesv2 get-email-identity` or `dig TXT` shows a real failure. `SendRawEmail` overwrites `Message-ID` and `Date`, so don't generate them.
