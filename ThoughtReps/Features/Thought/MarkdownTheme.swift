@@ -3,19 +3,42 @@ import MarkdownUI
 
 extension Theme {
     /// Thought Reps' Markdown look: font sizes are `em` multiples of the Dynamic-Type-scaled
-    /// body size, with semantic colors for light and dark mode.
-    @MainActor static var thoughtReps: Theme {
+    /// body size, with semantic colors for light and dark mode. `font` picks the body typeface;
+    /// headings stay Archivo at the same size either way.
+    @MainActor static func thoughtReps(font: ThoughtFont) -> Theme {
         let gap = RelativeSize.rem(0.7)
+        let mono = font == .paperMono
+        // Heading `em`s are relative to the body, which Paper Mono shrinks; this undoes that.
+        let heading: CGFloat = mono ? 1 / ThoughtFont.monoScale : 1
         return Theme()
             .text {
-                FontSize(.em(1))
+                if mono {
+                    FontFamily(.custom(InkFontName.monoRegular))
+                    FontSize(.em(ThoughtFont.monoScale))
+                }
+                if !mono {
+                    FontSize(.em(1))
+                }
             }
             .code {
                 FontFamilyVariant(.monospaced)
                 BackgroundColor(Color.secondary.opacity(0.15))
             }
             .strong {
-                FontWeight(.semibold)
+                if mono {
+                    FontFamily(.custom(InkFontName.monoSemiBold))
+                }
+                if !mono {
+                    FontWeight(.semibold)
+                }
+            }
+            .emphasis {
+                if mono {
+                    FontFamily(.custom(InkFontName.monoItalic))
+                }
+                if !mono {
+                    FontStyle(.italic)
+                }
             }
             // MarkdownUI can't style tag links apart from other links, so every link is accent
             // colored without an underline.
@@ -27,7 +50,7 @@ extension Theme {
                 configuration.label
                     .markdownTextStyle {
                         FontFamily(.custom(InkFontName.archivoBold))
-                        FontSize(.em(1.65))
+                        FontSize(.em(1.65 * heading))
                     }
                     .markdownMargin(top: .rem(0.25), bottom: gap)
             }
@@ -35,7 +58,7 @@ extension Theme {
                 configuration.label
                     .markdownTextStyle {
                         FontFamily(.custom(InkFontName.archivoBold))
-                        FontSize(.em(1.3))
+                        FontSize(.em(1.3 * heading))
                     }
                     .markdownMargin(top: .rem(0.25), bottom: gap)
             }
@@ -43,23 +66,32 @@ extension Theme {
                 configuration.label
                     .markdownTextStyle {
                         FontFamily(.custom(InkFontName.archivoSemiBold))
-                        FontSize(.em(1.18))
+                        FontSize(.em(1.18 * heading))
                     }
                     .markdownMargin(top: .zero, bottom: gap)
             }
             .heading4 { configuration in
                 configuration.label
-                    .markdownTextStyle { FontFamily(.custom(InkFontName.archivoSemiBold)) }
+                    .markdownTextStyle {
+                        FontFamily(.custom(InkFontName.archivoSemiBold))
+                        FontSize(.em(heading))
+                    }
                     .markdownMargin(top: .zero, bottom: gap)
             }
             .heading5 { configuration in
                 configuration.label
-                    .markdownTextStyle { FontFamily(.custom(InkFontName.archivoSemiBold)) }
+                    .markdownTextStyle {
+                        FontFamily(.custom(InkFontName.archivoSemiBold))
+                        FontSize(.em(heading))
+                    }
                     .markdownMargin(top: .zero, bottom: gap)
             }
             .heading6 { configuration in
                 configuration.label
-                    .markdownTextStyle { FontFamily(.custom(InkFontName.archivoSemiBold)) }
+                    .markdownTextStyle {
+                        FontFamily(.custom(InkFontName.archivoSemiBold))
+                        FontSize(.em(heading))
+                    }
                     .markdownMargin(top: .zero, bottom: gap)
             }
             .paragraph { configuration in
@@ -84,7 +116,7 @@ extension Theme {
                         .fixedSize(horizontal: false, vertical: true)
                         .markdownTextStyle {
                             FontFamilyVariant(.monospaced)
-                            FontSize(.em(0.94))
+                            FontSize(.em(0.94 * heading))
                             BackgroundColor(nil)
                         }
                         .padding(12)

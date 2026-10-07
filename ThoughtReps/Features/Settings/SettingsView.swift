@@ -9,6 +9,7 @@ struct SettingsView: View {
     @AppStorage(AppSettings.Key.defaultIntervalDays) private var defaultIntervalDays = Scheduler.defaultIntervalDays
     @AppStorage(AppSettings.Key.reminderEnabled) private var reminderEnabled = false
     @AppStorage(AppSettings.Key.reminderMinutes) private var reminderMinutes = AppSettings.defaultReminderMinutes
+    @AppStorage(AppSettings.Key.thoughtFont) private var thoughtFont = ThoughtFont.paperMono
     @Environment(\.scenePhase) private var scenePhase
     @State private var notificationStatus: UNAuthorizationStatus = .notDetermined
     @State private var confirmWipe = false
@@ -65,6 +66,18 @@ struct SettingsView: View {
                     } else {
                         Text("One notification at this time on days when thoughts are back, and a few more if you're away for a while. Pinned thoughts aren't counted.")
                     }
+                }
+
+                Section {
+                    Picker("Thought text", selection: $thoughtFont) {
+                        ForEach(ThoughtFont.allCases) { font in
+                            Text(font.label).tag(font)
+                        }
+                    }
+                } header: {
+                    Text("Appearance")
+                } footer: {
+                    Text("The font for your thoughts, card previews and the editor. Titles stay the same.")
                 }
 
                 Section("Send Feedback") {

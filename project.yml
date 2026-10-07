@@ -52,6 +52,8 @@ targets:
           - Archivo-ExtraBold.ttf
           - PaperMono-Regular.ttf
           - PaperMono-SemiBold.ttf
+          - PaperMono-Italic.ttf
+          - PaperMono-SemiBoldItalic.ttf
         UTExportedTypeDeclarations:
           - UTTypeIdentifier: com.thoughtreps.export
             UTTypeDescription: Thought Reps export

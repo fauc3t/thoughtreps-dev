@@ -52,7 +52,7 @@ struct ThoughtCard: View {
             }
             if !thought.preview.isEmpty {
                 Text(thought.preview)
-                    .font(.subheadline)
+                    .thoughtTextFont()
                     .foregroundStyle(Color.muted)
                     .lineLimit(2)
             }

@@ -1381,6 +1381,12 @@ export const HELP_ARTICLES: HelpArticle[] = [
         ],
       },
       {
+        heading: 'Can I change the font of my thoughts?',
+        paragraphs: [
+          'Yes. Tap {icon:settings} on the Timeline to open Settings. Under "Appearance", set "Thought text" to "Paper Mono" or "System". It changes your thoughts, card previews, search results and the editor. Titles stay the same.',
+        ],
+      },
+      {
         heading: 'What happens if I miss a few days?',
         paragraphs: [
           'Thoughts that come due wait on your timeline until you deal with them. Their cards show how long they have waited, like "due 2d ago".',

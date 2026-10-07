@@ -414,7 +414,17 @@ struct MarkdownTextViewTests {
         h.view.selectedRange = NSRange(location: 7, length: 0)
         h.view.insertText("s")
         let font = h.view.typingAttributes[.font] as? UIFont
-        #expect(font?.pointSize == UIFont.preferredFont(forTextStyle: .body).pointSize)
+        #expect(font?.pointSize == MarkdownStyleApplier().baseFont.pointSize)
+    }
+
+    @Test func bodyTextFollowsTheThoughtFontSetting() {
+        let body = UIFont.preferredFont(forTextStyle: .body).pointSize
+        let mono = MarkdownStyleApplier(thoughtFont: .paperMono).baseFont
+        #expect(mono.fontName == InkFontName.monoRegular)
+        #expect(abs(mono.pointSize - body * ThoughtFont.monoScale) < 0.01)
+        let system = MarkdownStyleApplier(thoughtFont: .system).baseFont
+        #expect(system.fontName != InkFontName.monoRegular)
+        #expect(system.pointSize == body)
     }
 
     @Test func resignsWhenFocusIsTakenAway() async throws {

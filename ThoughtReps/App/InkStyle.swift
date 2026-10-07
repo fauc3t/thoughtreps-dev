@@ -27,8 +27,11 @@ enum InkFontName {
     static let archivoExtraBold = "Archivo-ExtraBold"
     static let monoRegular = "PaperMono-Regular"
     static let monoSemiBold = "PaperMono-SemiBold"
+    /// Paper Mono has no italic; these are sheared copies made for emphasis in thought text.
+    static let monoItalic = "PaperMono-Italic"
+    static let monoSemiBoldItalic = "PaperMono-SemiBoldItalic"
 
-    static let all = [archivoSemiBold, archivoBold, archivoExtraBold, monoRegular, monoSemiBold]
+    static let all = [archivoSemiBold, archivoBold, archivoExtraBold, monoRegular, monoSemiBold, monoItalic, monoSemiBoldItalic]
 }
 
 extension Font {
@@ -40,6 +43,14 @@ extension Font {
     /// Paper Mono, for small metadata only.
     static func mono(_ size: CGFloat = 11, semibold: Bool = false, relativeTo style: Font.TextStyle = .caption) -> Font {
         .custom(semibold ? InkFontName.monoSemiBold : InkFontName.monoRegular, size: size, relativeTo: style)
+    }
+
+    /// Thought text (previews, snippets) in the font chosen in Settings, at a text style's size.
+    static func thought(_ style: Font.TextStyle, size: CGFloat, font: ThoughtFont) -> Font {
+        switch font {
+        case .paperMono: .custom(InkFontName.monoRegular, size: size * ThoughtFont.monoScale, relativeTo: style)
+        case .system: .system(style)
+        }
     }
 
     enum ArchivoWeight {
@@ -167,5 +178,23 @@ struct InkBadge: View {
                     style == .overdue ? Color.ink : style == .today ? Color.hl : Color.clear
                 )
             )
+    }
+}
+
+/// Thought text (previews, snippets) in the typeface chosen in Settings.
+struct ThoughtTextFont: ViewModifier {
+    let style: Font.TextStyle
+    let size: CGFloat
+    @AppStorage(AppSettings.Key.thoughtFont) private var font = ThoughtFont.paperMono
+
+    func body(content: Content) -> some View {
+        content.font(.thought(style, size: size, font: font))
+    }
+}
+
+extension View {
+    /// `size` is the text style's default point size (subheadline is 15).
+    func thoughtTextFont(_ style: Font.TextStyle = .subheadline, size: CGFloat = 15) -> some View {
+        modifier(ThoughtTextFont(style: style, size: size))
     }
 }

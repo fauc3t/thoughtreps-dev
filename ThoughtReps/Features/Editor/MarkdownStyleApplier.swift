@@ -64,11 +64,17 @@ final class MarkdownStyleApplier {
     }
 
     let bodySize = UIFont.preferredFont(forTextStyle: .body).pointSize
+    /// The typeface for body text; headings and code keep the system fonts.
+    let thoughtFont: ThoughtFont
     private var fonts: [Look: UIFont] = [:]
     private var glyphs: [String: UIImage] = [:]
 
     /// Width reserved for a bullet or checkbox, like the renderer's 1.5 em marker column.
     var markerWidth: CGFloat { bodySize * 1.5 }
+
+    init(thoughtFont: ThoughtFont = AppSettings.thoughtFont) {
+        self.thoughtFont = thoughtFont
+    }
 
     var baseFont: UIFont { font(for: []) }
 
@@ -319,6 +325,9 @@ final class MarkdownStyleApplier {
         if look.contains(.bold), weight.rawValue < UIFont.Weight.semibold.rawValue { weight = .semibold }
 
         let monospaced = look.contains(.monospaced)
+        if thoughtFont == .paperMono, look.heading == 0, !monospaced, let mono = paperMono(for: look) {
+            return mono
+        }
         let size = bodySize * scale * (monospaced ? 0.94 : 1)
         let base: UIFont
         if monospaced {
@@ -332,5 +341,16 @@ final class MarkdownStyleApplier {
               let descriptor = base.fontDescriptor.withSymbolicTraits(base.fontDescriptor.symbolicTraits.union(.traitItalic))
         else { return base }
         return UIFont(descriptor: descriptor, size: size)
+    }
+
+    /// Paper Mono by face name: it has no bold or italic traits for a descriptor to find.
+    private func paperMono(for look: Look) -> UIFont? {
+        let name = switch (look.contains(.bold), look.contains(.italic)) {
+        case (true, true): InkFontName.monoSemiBoldItalic
+        case (true, false): InkFontName.monoSemiBold
+        case (false, true): InkFontName.monoItalic
+        case (false, false): InkFontName.monoRegular
+        }
+        return UIFont(name: name, size: bodySize * ThoughtFont.monoScale)
     }
 }

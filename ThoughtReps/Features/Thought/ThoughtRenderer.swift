@@ -11,6 +11,7 @@ struct ThoughtRenderer: View {
     let onOpenImage: @MainActor (UUID) -> Void
 
     @State private var library: ImageLibrary
+    @AppStorage(AppSettings.Key.thoughtFont) private var thoughtFont = ThoughtFont.paperMono
 
     init(markdown: String, images: [ImageAsset] = [], onOpenImage: @escaping @MainActor (UUID) -> Void = { _ in }) {
         self.markdown = markdown
@@ -22,7 +23,7 @@ struct ThoughtRenderer: View {
     var body: some View {
         let provider = LocalImageProvider(library: library, onOpen: onOpenImage)
         Markdown(TagLinker.link(markdown))
-            .markdownTheme(.thoughtReps)
+            .markdownTheme(.thoughtReps(font: thoughtFont))
             .markdownImageProvider(provider)
             .markdownInlineImageProvider(provider)
             .frame(maxWidth: .infinity, alignment: .leading)

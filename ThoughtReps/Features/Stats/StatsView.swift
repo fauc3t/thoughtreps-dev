@@ -76,7 +76,7 @@ struct StatsView: View {
                         .lineLimit(2)
                     if !thought.preview.isEmpty {
                         Text(thought.preview)
-                            .font(.subheadline)
+                            .thoughtTextFont()
                             .foregroundStyle(Color.muted)
                             .lineLimit(2)
                     }

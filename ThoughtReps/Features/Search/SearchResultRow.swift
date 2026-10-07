@@ -30,6 +30,18 @@ struct SearchResultRow: View {
     let row: SearchModel.Row
     let now: Date
 
+    @AppStorage(AppSettings.Key.thoughtFont) private var thoughtFont = ThoughtFont.paperMono
+
+    /// Matches are bold. Paper Mono has no bold face for SwiftUI to find, so they get its semibold by name.
+    private var snippet: AttributedString {
+        var snippet = row.result.attributedSnippet
+        guard thoughtFont == .paperMono else { return snippet }
+        for run in snippet.runs where run.inlinePresentationIntent == .stronglyEmphasized {
+            snippet[run.range].font = .custom(InkFontName.monoSemiBold, size: 15 * ThoughtFont.monoScale, relativeTo: .subheadline)
+        }
+        return snippet
+    }
+
     var body: some View {
         let thought = row.thought
         VStack(alignment: .leading, spacing: 6) {
@@ -51,8 +63,8 @@ struct SearchResultRow: View {
                     InkBadge(text: status.text, style: status == .due ? .overdue : .plain)
                 }
             }
-            Text(row.result.attributedSnippet)
-                .font(.subheadline)
+            Text(snippet)
+                .thoughtTextFont()
                 .foregroundStyle(Color.muted)
                 .lineLimit(2)
             if !thought.sortedTags.isEmpty {
