@@ -28,7 +28,12 @@ struct EditorView: View {
     @State private var blockSelections: [UUID: TextSelection] = [:]
     @State private var activeField: EditorField = .body
     @State private var intake = ImageIntake()
-    @FocusState private var focus: EditorField?
+    /// The Markdown field that is the first responder; each field's text view keeps this in step.
+    @State private var focus: EditorField?
+    @State private var pendingNewBlockID: UUID?
+    @State private var bodyLoadToken = 0
+    @State private var bodyHeight = MarkdownTextView.minHeight
+    @State private var formWidth: CGFloat = 0
 
     private var isNew: Bool {
         if case .new = mode { return true }
@@ -45,6 +50,13 @@ struct EditorView: View {
 
     private var detectedTags: [TagParser.ParsedTag] {
         TagParser.parse(all: markdownTexts)
+    }
+
+    /// What the Section footer said before the body became edge-to-edge rows: a hint, or the tags found.
+    private var tagsFooter: String {
+        detectedTags.isEmpty
+            ? "Markdown works here. Add #tags anywhere to file this thought."
+            : "Tags: " + detectedTags.map { "#\($0.display)" }.joined(separator: " ")
     }
 
     private func textBinding(for field: EditorField) -> Binding<String> {
@@ -111,24 +123,38 @@ struct EditorView: View {
         return Dictionary((thought.images ?? []).map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
     }
 
+    /// Adds a block; `pendingNewBlockID` then drives scrolling to it and focusing its Markdown field.
+    private func addBlock(_ kind: BlockKind) {
+        pendingNewBlockID = drafts.addBlock(kind)
+    }
+
+    /// Thumbnail bytes for an image token in any Markdown field: only this thought's own images and the new inline ones.
+    private func thumbnailData(for id: UUID) -> Data? {
+        if let draft = inlineDrafts.first(where: { $0.id == id }), let processed = draft.processed {
+            return processed.thumbnailData
+        }
+        guard case let .edit(thought) = mode,
+              let asset = thought.images?.first(where: { $0.id == id }), asset.isInline else { return nil }
+        return asset.thumbnailData
+    }
+
+    /// The keyboard accessory of one Markdown field: tag suggestions while it has a `#partial` at its cursor,
+    /// otherwise the format bar. Every field gets its own, acting on its own text.
+    private func accessory(for field: EditorField) -> AnyView {
+        // Only the focused field can have a `#partial` at its cursor, so the others never look for one.
+        if focus == field, let token = activeToken, case let found = suggestions(for: token), !found.isEmpty {
+            return AnyView(SuggestionBar(suggestions: found, tags: allTags) { candidate in
+                EditorField.applyTag(candidate, replacing: token.range, in: textBinding(for: field), selection: selectionBinding(for: field))
+            })
+        }
+        return AnyView(FormatBar(text: textBinding(for: field), selection: selectionBinding(for: field), intake: intake) { addBlock($0) })
+    }
+
     /// Inserts at the cursor of the field last focused (the body if that block has since been deleted).
     private func addInlineImages(_ added: [ImageDraft]) {
-        var field = activeField
-        if case let .block(id) = field, !drafts.contains(where: { $0.id == id }) { field = .body }
-        let fieldText = textBinding(for: field)
-        let fieldSelection = selectionBinding(for: field)
-        for draft in added {
-            inlineDrafts.append(draft)
-            let current = fieldText.wrappedValue
-            var cursor = current.endIndex
-            if let selection = fieldSelection.wrappedValue, case let .selection(range) = selection.indices,
-               range.upperBound <= current.endIndex {
-                cursor = range.upperBound
-            }
-            let inserted = ImageToken.inserting(draft.id, into: current, at: cursor)
-            fieldText.wrappedValue = inserted.text
-            fieldSelection.wrappedValue = TextSelection(insertionPoint: inserted.cursor)
-        }
+        let field = EditorField.resolve(activeField, drafts: drafts)
+        inlineDrafts.append(contentsOf: added)
+        EditorField.insertImageTokens(added.map(\.id), into: textBinding(for: field), selection: selectionBinding(for: field))
     }
 
     /// Looks the block up by id because it may have moved or been deleted while the image processed.
@@ -149,48 +175,59 @@ struct EditorView: View {
 
     var body: some View {
         NavigationStack {
+            ScrollViewReader { proxy in
             Form {
                 Section {
-                    TextEditor(text: $text, selection: $selection)
-                        .font(.system(.body, design: .monospaced))
-                        .frame(minHeight: 220)
-                        .focused($focus, equals: .body)
-                        .accessibilityLabel("Thought")
-                    ImageProcessingIndicator(intake: intake)
+                    MarkdownTextView(
+                        text: $text,
+                        selection: $selection,
+                        isFocused: EditorField.isFocused($focus, field: .body),
+                        accessibilityLabel: "Thought",
+                        imageData: thumbnailData(for:),
+                        accessory: accessory(for: .body),
+                        undoResetToken: bodyLoadToken,
+                        height: $bodyHeight
+                    )
+                    .frame(height: bodyHeight)
+                    .bodyRow()
+                    if intake.isProcessing {
+                        ImageProcessingIndicator(intake: intake)
+                            .bodyRow(vertical: 6)
+                    }
                     let thumbnails = inlineThumbnails(in: text, drafts: inlineDrafts, stored: storedImages)
                     if !thumbnails.isEmpty {
                         InlineImageStrip(thumbnails: thumbnails, remove: removeInlineImage)
-                        .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 8))
+                            .bodyRow(vertical: 4)
                     }
-                } footer: {
-                    if detectedTags.isEmpty {
-                        Text("Markdown works here. Add #tags anywhere to file this thought.")
-                    } else {
-                        Text("Tags: " + detectedTags.map { "#\($0.display)" }.joined(separator: " "))
-                    }
+                    Text(tagsFooter)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel(tagsFooter)
+                        .bodyRow(vertical: 6)
                 }
 
                 Section {
                     ForEach($drafts) { $draft in
+                        let field = EditorField.block(draft.id)
                         BlockDraftEditor(
                             draft: $draft,
-                            selection: selectionBinding(for: .block(draft.id)),
-                            focus: $focus,
+                            selection: selectionBinding(for: field),
+                            isFocused: EditorField.isFocused($focus, field: field),
+                            accessory: accessory(for: field),
+                            imageData: thumbnailData(for:),
                             storedImages: storedImages,
-                            inlineDrafts: inlineDrafts
+                            inlineDrafts: inlineDrafts,
+                            wantsFocus: pendingNewBlockID == draft.id,
+                            canTakeFocus: { focus == nil || focus == field },
+                            onFocusRequestDone: { if pendingNewBlockID == draft.id { pendingNewBlockID = nil } }
                         ) { addGalleryImages(to: $0, $1) }
                     }
                     .onDelete { drafts.remove(atOffsets: $0) }
                     .onMove { drafts.move(fromOffsets: $0, toOffset: $1) }
 
                     Menu {
-                        ForEach(BlockKind.allCases) { kind in
-                            Button {
-                                addBlock(kind)
-                            } label: {
-                                Label(kind.label, systemImage: kind.systemImage)
-                            }
-                        }
+                        AddBlockMenuItems { addBlock($0) }
                     } label: {
                         Label("Add block", systemImage: "plus.circle")
                     }
@@ -230,17 +267,6 @@ struct EditorView: View {
                         .fontWeight(.semibold)
                         .disabled(trimmedText.isEmpty)
                 }
-                ToolbarItemGroup(placement: .keyboard) {
-                    if let token = activeToken, case let found = suggestions(for: token), !found.isEmpty {
-                        SuggestionBar(suggestions: found, tags: allTags) { candidate in
-                            let applied = TagSuggester.apply(candidate, replacing: token.range, in: textBinding(for: token.field).wrappedValue)
-                            textBinding(for: token.field).wrappedValue = applied.text
-                            selectionBinding(for: token.field).wrappedValue = TextSelection(insertionPoint: applied.cursor)
-                        }
-                    } else if let field = focus {
-                        FormatBar(text: textBinding(for: field), selection: selectionBinding(for: field), intake: intake)
-                    }
-                }
             }
             .sheet(isPresented: $isPickingInterval) {
                 IntervalPickerSheet(initialDays: intervalDays ?? defaultIntervalDays) { days in
@@ -259,8 +285,19 @@ struct EditorView: View {
                 guard let index = EditorField.changedIndex(from: old, to: new) else { return }
                 continueList(in: .block(drafts[index].id), from: old[index], to: new[index])
             }
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { formWidth = $0 }
             .onChange(of: focus) { _, new in
                 if let new { activeField = new }
+            }
+            .task(id: pendingNewBlockID) {
+                guard let id = pendingNewBlockID else { return }
+                try? await Task.sleep(for: .milliseconds(80))
+                guard !Task.isCancelled else { return }
+                withAnimation { proxy.scrollTo(id, anchor: .center) }
+                // The block's own row then focuses its field (`BlockDraftEditor.wantsFocus`); keep the id until it has.
+                try? await Task.sleep(for: .milliseconds(900))
+                if pendingNewBlockID == id { pendingNewBlockID = nil }
+            }
             }
         }
         .interactiveDismissDisabled(!trimmedText.isEmpty && isNew)
@@ -277,17 +314,18 @@ struct EditorView: View {
         selection.wrappedValue = TextSelection(insertionPoint: continued.cursor)
     }
 
-    private func addBlock(_ kind: BlockKind) {
-        let draft = BlockDraft(kind: kind)
-        drafts.append(draft)
-        if kind == .markdown {
-            Task { @MainActor in focus = .block(draft.id) }
-        }
-    }
-
     private var prefilledText: String? {
         guard case let .new(prefillTag) = mode, let prefillTag else { return nil }
         return "\n\n#\(prefillTag)"
+    }
+
+    /// The body's width is the form's less the 16 pt side margins; before the form has been measured,
+    /// the width of the foreground window scene.
+    private func estimatedBodyHeight() -> CGFloat {
+        let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive } ?? UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
+        let width = formWidth > 0 ? formWidth : (scene?.screen.bounds.width ?? 390)
+        return MarkdownTextView.estimatedHeight(for: text, width: width - 32)
     }
 
     private func load() {
@@ -297,23 +335,21 @@ struct EditorView: View {
         case .new:
             if let prefilledText {
                 text = prefilledText
+                bodyLoadToken += 1
+                bodyHeight = estimatedBodyHeight()
             }
             Task { @MainActor in
                 try? await Task.sleep(for: .milliseconds(350))
-                guard let prefilledText else {
-                    focus = .body
-                    return
-                }
-                // TextEditor doesn't report its focus-time cursor placement and overwrites the cursor on focus, so write the start before focus and again 100 ms after.
-                selection = TextSelection(insertionPoint: text.startIndex)
-                focus = .body
-                try? await Task.sleep(for: .milliseconds(100))
-                if text == prefilledText {
+                guard pendingNewBlockID == nil, focus == nil || focus == .body else { return }
+                if prefilledText != nil, text == prefilledText {
                     selection = TextSelection(insertionPoint: text.startIndex)
                 }
+                focus = .body
             }
         case let .edit(thought):
             text = thought.body
+            bodyLoadToken += 1
+            bodyHeight = estimatedBodyHeight()
             intervalDays = thought.intervalDays
             drafts = BlockDraft.drafts(for: thought)
         }
@@ -338,11 +374,22 @@ struct EditorView: View {
     }
 }
 
+private extension View {
+    /// A row of the body section: edge to edge inside the form's own side margin (about 16 pt), with
+    /// no card background or separator, so the text lines up with the screen's readable margin.
+    func bodyRow(vertical: CGFloat = 0) -> some View {
+        listRowInsets(EdgeInsets(top: vertical, leading: 0, bottom: vertical, trailing: 0))
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+    }
+}
+
 /// Keyboard toolbar that formats Markdown at the cursor or selection.
 struct FormatBar: View {
     @Binding var text: String
     @Binding var selection: TextSelection?
     let intake: ImageIntake
+    let onAddBlock: (BlockKind) -> Void
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -361,6 +408,13 @@ struct FormatBar: View {
                         .frame(minWidth: 44, minHeight: 44)
                 }
                 .accessibilityLabel("Add image")
+                Menu {
+                    AddBlockMenuItems(onAdd: onAddBlock)
+                } label: {
+                    Image(systemName: "plus.circle")
+                        .frame(minWidth: 44, minHeight: 44)
+                }
+                .accessibilityLabel("Add block")
             }
             .padding(.horizontal, 12)
         }
@@ -381,11 +435,11 @@ struct FormatBar: View {
         return text.endIndex..<text.endIndex
     }
 
-    private func apply(_ style: MarkdownFormatter.Inline) {
+    func apply(_ style: MarkdownFormatter.Inline) {
         commit(MarkdownFormatter.toggle(style, in: text, selection: currentRange))
     }
 
-    private func apply(_ prefix: MarkdownFormatter.LinePrefix) {
+    func apply(_ prefix: MarkdownFormatter.LinePrefix) {
         commit(MarkdownFormatter.toggle(prefix, in: text, selection: currentRange))
     }
 
@@ -395,7 +449,7 @@ struct FormatBar: View {
     }
 
     /// Inserts `#` at the cursor (end of text if there is none) so suggestions appear right away.
-    private func insertHash() {
+    func insertHash() {
         let inserted = TagSuggester.insertHash(in: text, at: currentRange.upperBound)
         text = inserted.text
         selection = TextSelection(insertionPoint: inserted.cursor)

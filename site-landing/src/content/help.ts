@@ -33,6 +33,7 @@ export const HELP_ICONS = {
   trash: 'Delete',
   undo: 'Restore',
   photo: 'Add image',
+  block: 'Add block',
   bold: 'Bold',
   italic: 'Italic',
   list: 'List',
@@ -219,7 +220,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
         example: {
           kind: 'editor',
           caption:
-            'The editor, with a thought half written and the formatting bar above the keyboard.',
+            'The editor, with a thought half written and the formatting bar above the keyboard. Only the line with the cursor shows its Markdown characters.',
         },
       },
       {
@@ -470,7 +471,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
     sections: [
       {
         paragraphs: [
-          'Markdown lets you format text by typing a few plain characters. You type it in the editor. The formatted result shows when you open the thought. You do not have to learn it, because the editor has buttons for the common things.',
+          'Markdown lets you format text by typing a few plain characters. You type it in the editor, and it looks formatted as you go. You do not have to learn it, because the editor has buttons for the common things.',
         ],
         example: {
           kind: 'markdown-pair',
@@ -492,6 +493,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
           'The {icon:code} button wraps text in backticks.',
           'The {icon:tag} button types a `#` and shows your tags to pick from.',
           'The {icon:photo} button adds an image. See [Add images and galleries](/help/images-and-galleries).',
+          'The {icon:block} button adds a block under your thought. See [Quiz yourself with blurred blocks](/help/blurred-blocks).',
         ],
         example: {
           kind: 'format-bar',
@@ -500,9 +502,15 @@ export const HELP_ARTICLES: HelpArticle[] = [
         },
       },
       {
+        heading: 'Syntax steps aside',
+        paragraphs: [
+          'Headings are big, bold is bold, and links show only their text. The characters that make this happen are hidden, except on the line your cursor is on. There they come back, faded, so you can edit them. Code blocks fold into a thin bar until your cursor is inside.',
+        ],
+      },
+      {
         heading: 'Lists keep going',
         paragraphs: [
-          'Press return at the end of a bullet, numbered or task item, and the next item starts for you. Press return on an empty item to end the list.',
+          "Press return at the end of a bullet, numbered or task item, and the next item starts for you. Press return on an empty item to end the list. Delete at the start of an item to remove its bullet. Tap a task's box to tick or untick it.",
         ],
       },
       {
@@ -521,9 +529,9 @@ export const HELP_ARTICLES: HelpArticle[] = [
       {
         heading: 'Good to know',
         list: [
-          'The editor shows plain Markdown text. Open the thought to see it formatted.',
+          'What you see in the editor is the same text you see when you open the thought. Only the look differs a little.',
           'You can select and copy text in a thought.',
-          'Text blocks you add under a thought take Markdown too, with the same formatting bar.',
+          'Text blocks you add under a thought are styled as you type too, and the formatting bar works in them.',
         ],
       },
     ],
@@ -546,7 +554,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
         steps: [
           'In the editor, tap {icon:photo} in the row above the keyboard.',
           'Choose "Photo Library" or "Take Photo". "Paste Image" shows up when you have copied a picture.',
-          'The picture is added where your cursor is, as a line of text like `![](img:…)`. A small thumbnail shows under the text box.',
+          'The picture is added where your cursor is, as a line of text like `![](img:…)`. It shows as a small picture in the text, and a thumbnail also shows under the text box.',
         ],
       },
       {
@@ -560,8 +568,8 @@ export const HELP_ARTICLES: HelpArticle[] = [
           'A gallery is a row of pictures that scrolls sideways under your thought.',
         ],
         steps: [
-          'In the editor, scroll to the "Blocks" section and tap "Add block".',
-          'Choose "Image gallery".',
+          'In the editor, tap {icon:block} in the row above the keyboard. Or scroll to the "Blocks" section and tap "Add block".',
+          'Choose "Image gallery". The editor scrolls to the new block.',
           'Type a title if you like. Then tap the {icon:plus} tile to add one or more images.',
         ],
         example: {
@@ -624,10 +632,10 @@ export const HELP_ARTICLES: HelpArticle[] = [
       {
         heading: 'Add a text block',
         steps: [
-          'In the editor, scroll to the "Blocks" section and tap "Add block".',
-          'Choose "Text".',
-          'Type a label if you like, such as "Answer".',
+          'In the editor, tap {icon:block} in the row above the keyboard. Or scroll to the "Blocks" section and tap "Add block".',
+          'Choose "Text". The editor scrolls to the new block and puts the cursor in its "Markdown text" box.',
           'Type the text. Markdown, #tags and images work here just like in the main text.',
+          'Type a label if you like, such as "Answer".',
           'Turn on "Blur until tapped" to hide it.',
         ],
       },
@@ -677,7 +685,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
       {
         heading: 'Make a tag',
         paragraphs: [
-          'Type a `#` and a word anywhere in your thought, like `#quotes` or `#to-read`. That is all it takes. The editor lists the tags it found under the text box.',
+          'Type a `#` and a word anywhere in your thought, like `#quotes` or `#to-read`. That is all it takes. Tags are tinted as you type, and the editor lists the ones it found under the text box.',
           'A tag can have letters, numbers, underscores and hyphens. It needs at least one letter, so `#1` is not a tag.',
         ],
       },

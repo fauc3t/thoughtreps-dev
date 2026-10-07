@@ -143,6 +143,7 @@ const FORMAT_BAR: HelpIconName[] = [
   'code',
   'tag',
   'photo',
+  'block',
 ];
 
 function Editor() {
@@ -156,9 +157,13 @@ function Editor() {
         </span>
       </div>
       <div className="px-3 py-3 text-[15px] leading-relaxed">
-        <p className="font-bold">Word of the day: petrichor</p>
+        <p className="text-[19px] leading-tight font-bold">
+          Word of the day: petrichor
+        </p>
         <p>
-          The smell of rain on dry ground. #words
+          The smell of <span className="text-muted">**</span>rain
+          <span className="text-muted">**</span> on dry ground.{' '}
+          <span className="font-semibold">#words</span>
           <span className={caret} />
         </p>
       </div>

@@ -140,6 +140,12 @@ const GLYPHS: Record<HelpIconName, ReactNode> = {
       <path d="M17 12h.01M12 12h.01M7 12h.01" />
     </>
   ),
+  block: (
+    <>
+      <circle cx="12" cy="12" r="10" />
+      <path d="M8 12h8M12 8v8" />
+    </>
+  ),
   clear: CIRCLE_X,
   close: CIRCLE_X,
   calendar: (

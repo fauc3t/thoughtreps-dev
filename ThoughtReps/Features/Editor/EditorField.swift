@@ -6,6 +6,54 @@ enum EditorField: Hashable {
     case body
     case block(UUID)
 
+    /// Whether `field` is the focused one, as a flag its text view can read and write. Turning it off
+    /// clears the focus only if `field` still holds it, so a field that lost focus to another can't clear it.
+    static func isFocused(_ focus: Binding<EditorField?>, field: EditorField) -> Binding<Bool> {
+        Binding(
+            get: { focus.wrappedValue == field },
+            set: { isOn in
+                if isOn {
+                    focus.wrappedValue = field
+                } else if focus.wrappedValue == field {
+                    focus.wrappedValue = nil
+                }
+            }
+        )
+    }
+
+    /// `field`, or the body if it is a block that has since been deleted.
+    static func resolve(_ field: EditorField, drafts: [BlockDraft]) -> EditorField {
+        if case let .block(id) = field, !drafts.contains(where: { $0.id == id }) { return .body }
+        return field
+    }
+
+    /// Puts the token for each image in `ids` at the cursor of one field, each in its own paragraph.
+    static func insertImageTokens(_ ids: [UUID], into text: Binding<String>, selection: Binding<TextSelection?>) {
+        for id in ids {
+            let current = text.wrappedValue
+            var cursor = current.endIndex
+            if let selected = selection.wrappedValue, case let .selection(range) = selected.indices,
+               range.upperBound <= current.endIndex {
+                cursor = range.upperBound
+            }
+            let inserted = ImageToken.inserting(id, into: current, at: cursor)
+            text.wrappedValue = inserted.text
+            selection.wrappedValue = TextSelection(insertionPoint: inserted.cursor)
+        }
+    }
+
+    /// Completes the `#partial` at `range` of one field with a suggested tag.
+    static func applyTag(
+        _ candidate: TagSuggester.Candidate,
+        replacing range: Range<String.Index>,
+        in text: Binding<String>,
+        selection: Binding<TextSelection?>
+    ) {
+        let applied = TagSuggester.apply(candidate, replacing: range, in: text.wrappedValue)
+        text.wrappedValue = applied.text
+        selection.wrappedValue = TextSelection(insertionPoint: applied.cursor)
+    }
+
     /// The index of the single text that changed between two same-length lists, or nil if none or several did.
     static func changedIndex(from old: [String], to new: [String]) -> Int? {
         guard old.count == new.count else { return nil }

@@ -12,6 +12,37 @@ extension ImageToken {
         return references(in: body).filter { seen.insert($0).inserted }
     }
 
+    /// Every token in `text` with its range and image id, in text order. Unlike `references`,
+    /// this does not skip code; callers that care mask it first. It finds each `](img:` and looks
+    /// back for the `![` on its line, rather than trying a regex at every `![`, so a long line
+    /// of unmatched `![` stays linear.
+    static func matches(in text: String) -> [(range: NSRange, id: UUID)] {
+        let units = Array(text.utf16)
+        let marker = Array("](img:".utf16)
+        let newline: UInt16 = 0x0A, close: UInt16 = 0x5D, open: UInt16 = 0x5B, bang: UInt16 = 0x21, paren: UInt16 = 0x29
+        var result: [(range: NSRange, id: UUID)] = []
+        var floor = 0
+        var p = 0
+        while p + marker.count + 37 <= units.count {
+            let idStart = p + marker.count
+            guard units[p...].starts(with: marker), units[idStart + 36] == paren,
+                  let id = UUID(uuidString: String(decoding: units[idStart..<(idStart + 36)], as: UTF16.self))
+            else { p += 1; continue }
+            var start: Int?
+            var i = p - 1
+            while i >= floor, units[i] != newline, units[i] != close {
+                if units[i] == open, i > floor, units[i - 1] == bang { start = i - 1 }
+                i -= 1
+            }
+            guard let start else { p += 1; continue }
+            let end = idStart + 37
+            result.append((NSRange(location: start, length: end - start), id))
+            floor = end
+            p = end
+        }
+        return result
+    }
+
     /// Alt text of each referenced image (the first non-empty one wins). Tokens in code are ignored.
     static func altTexts(in body: String) -> [UUID: String] {
         let stripped = TagParser.stripCode(body) as NSString
