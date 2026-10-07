@@ -10,6 +10,9 @@ import { Construct } from 'constructs';
 export interface MailWebHostingProps {
   zone: route53.IHostedZone;
   domainName: string;
+  apiUrl: string;
+  mailBucket: s3.IBucket;
+  attachmentBucket: s3.IBucket;
 }
 
 export class MailWebHosting extends Construct {
@@ -19,7 +22,7 @@ export class MailWebHosting extends Construct {
   constructor(scope: Construct, id: string, props: MailWebHostingProps) {
     super(scope, id);
 
-    const { zone, domainName } = props;
+    const { zone, domainName, apiUrl, mailBucket, attachmentBucket } = props;
     const hostname = `mail.${domainName}`;
 
     // Explicit DESTROY — unlike the mail bucket (irreplaceable raw mail),
@@ -40,10 +43,68 @@ export class MailWebHosting extends Construct {
       validation: acm.CertificateValidation.fromDns(zone),
     });
 
+    const region = cdk.Stack.of(this).region;
+    const bucketOrigins = [mailBucket, attachmentBucket].flatMap((bucket) => [
+      `https://${bucket.bucketName}.s3.${region}.amazonaws.com`,
+      `https://${bucket.bucketName}.s3.amazonaws.com`,
+    ]);
+    // default-src 'none' with an explicit allowance per use:
+    //  script-src 'self'       the bundled SPA (no inline scripts)
+    //  style-src 'unsafe-inline'  React/Tailwind style attributes
+    //  img-src data:           inline icons; email images live in a sandboxed
+    //                          iframe with its own meta CSP
+    //  connect-src             Cognito User Pool + Identity Pool, the mail API,
+    //                          and S3 (mail reads via federated credentials,
+    //                          presigned attachment POSTs)
+    //  frame-src about:        the sandboxed srcdoc iframe for message HTML
+    const contentSecurityPolicy = [
+      "default-src 'none'",
+      "script-src 'self'",
+      "style-src 'self' 'unsafe-inline'",
+      "img-src 'self' data:",
+      `connect-src 'self' ${[
+        `https://cognito-idp.${region}.amazonaws.com`,
+        `https://cognito-identity.${region}.amazonaws.com`,
+        apiUrl,
+        ...bucketOrigins,
+      ].join(' ')}`,
+      'frame-src about:',
+      "base-uri 'none'",
+      "form-action 'none'",
+      "object-src 'none'",
+      "frame-ancestors 'none'",
+    ].join('; ');
+
+    const responseHeadersPolicy = new cloudfront.ResponseHeadersPolicy(
+      this,
+      'SiteHeadersPolicy',
+      {
+        securityHeadersBehavior: {
+          contentSecurityPolicy: { contentSecurityPolicy, override: true },
+          strictTransportSecurity: {
+            accessControlMaxAge: cdk.Duration.days(730),
+            includeSubdomains: true,
+            override: true,
+          },
+          contentTypeOptions: { override: true },
+          frameOptions: {
+            frameOption: cloudfront.HeadersFrameOption.DENY,
+            override: true,
+          },
+          referrerPolicy: {
+            referrerPolicy:
+              cloudfront.HeadersReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN,
+            override: true,
+          },
+        },
+      },
+    );
+
     this.distribution = new cloudfront.Distribution(this, 'SiteDistribution', {
       defaultBehavior: {
         origin: origins.S3BucketOrigin.withOriginAccessControl(this.bucket),
         viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+        responseHeadersPolicy,
       },
       domainNames: [hostname],
       certificate,

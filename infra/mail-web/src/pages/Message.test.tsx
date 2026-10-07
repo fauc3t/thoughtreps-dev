@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { Link, MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import Message from './Message';
+import { withEmailCsp } from '../lib/emailCsp';
 import { MAX_REPLY_BYTES } from '../lib/attachments';
 
 interface ReplyState {
@@ -43,6 +44,7 @@ vi.mock('../lib/queries/message', () => ({
     data: {
       subject: 'Hi',
       text: 'Hello',
+      html: '<p>Hi</p><img src="https://t.example/p.gif">',
       from: { address: 'x@y.com' },
       attachments: [],
     },
@@ -83,6 +85,34 @@ beforeEach(() => {
   mutate.mockReset();
 });
 
+describe('Message body iframe', () => {
+  const META =
+    '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; img-src data:; style-src \'unsafe-inline\'">';
+
+  it('prepends a restrictive CSP and sends no referrer', () => {
+    renderPage();
+    const frame = screen.getByTitle('Message body');
+    expect(frame.getAttribute('srcdoc')).toBe(
+      META + '<p>Hi</p><img src="https://t.example/p.gif">',
+    );
+    expect(frame).toHaveAttribute('referrerpolicy', 'no-referrer');
+    expect(frame).toHaveAttribute('sandbox', '');
+  });
+
+  it('keeps a leading doctype first', () => {
+    expect(withEmailCsp('<!DOCTYPE html><html></html>')).toBe(
+      '<!DOCTYPE html>' + META + '<html></html>',
+    );
+    expect(withEmailCsp('\n <!doctype html>\n<p>x</p>')).toBe(
+      '\n <!doctype html>' + META + '\n<p>x</p>',
+    );
+  });
+
+  it('prepends the meta when there is no doctype', () => {
+    expect(withEmailCsp('<p>x</p>')).toBe(META + '<p>x</p>');
+  });
+});
+
 describe('Message reply compose', () => {
   it('enables Send only with a non-empty body or at least one file', async () => {
     renderPage();
@@ -106,10 +136,9 @@ describe('Message reply compose', () => {
     expect(screen.getByRole('button', { name: 'Attach files' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Remove a.txt' })).toBeDisabled();
     expect(sendButton()).toHaveTextContent('Uploading…');
-    expect(screen.getByLabelText('Attachments').closest('section')).toHaveAttribute(
-      'aria-busy',
-      'true',
-    );
+    expect(
+      screen.getByLabelText('Attachments').closest('section'),
+    ).toHaveAttribute('aria-busy', 'true');
   });
 
   it('removes a chip with its Remove button', async () => {

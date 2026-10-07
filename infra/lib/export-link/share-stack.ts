@@ -130,6 +130,48 @@ export class ShareStack extends cdk.Stack {
       code: cloudfront.FunctionCode.fromInline(SPA_REWRITE_CODE),
     });
 
+    // The page decrypts in memory with a key from the URL fragment, so nothing
+    // beyond its own bundle may run or be contacted:
+    //  connect-src 'self'     the /api/v1 status, claim and done calls
+    //  connect-src <bucket>   the presigned GET of the encrypted export
+    //                         (virtual-hosted regional form, as the SDK signs it)
+    const contentSecurityPolicy = [
+      "default-src 'self'",
+      "script-src 'self'",
+      "style-src 'self'",
+      "img-src 'self'",
+      "font-src 'self'",
+      `connect-src 'self' https://${this.exportBucket.bucketName}.s3.${this.region}.amazonaws.com`,
+      "base-uri 'none'",
+      "form-action 'none'",
+      "object-src 'none'",
+      "frame-ancestors 'none'",
+    ].join('; ');
+
+    const responseHeadersPolicy = new cloudfront.ResponseHeadersPolicy(
+      this,
+      'TransferHeadersPolicy',
+      {
+        securityHeadersBehavior: {
+          contentSecurityPolicy: { contentSecurityPolicy, override: true },
+          strictTransportSecurity: {
+            accessControlMaxAge: cdk.Duration.days(730),
+            includeSubdomains: true,
+            override: true,
+          },
+          contentTypeOptions: { override: true },
+          frameOptions: {
+            frameOption: cloudfront.HeadersFrameOption.DENY,
+            override: true,
+          },
+          referrerPolicy: {
+            referrerPolicy: cloudfront.HeadersReferrerPolicy.NO_REFERRER,
+            override: true,
+          },
+        },
+      },
+    );
+
     this.distribution = new cloudfront.Distribution(
       this,
       'TransferDistribution',
@@ -140,8 +182,7 @@ export class ShareStack extends cdk.Stack {
           ),
           viewerProtocolPolicy:
             cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
-          responseHeadersPolicy:
-            cloudfront.ResponseHeadersPolicy.SECURITY_HEADERS,
+          responseHeadersPolicy,
           functionAssociations: [
             {
               function: spaRewrite,

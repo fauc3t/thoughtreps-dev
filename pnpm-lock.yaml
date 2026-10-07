@@ -175,12 +175,6 @@ importers:
       '@fontsource-variable/archivo':
         specifier: ^5.2.0
         version: 5.3.0
-      '@fontsource/ibm-plex-mono':
-        specifier: ^5.2.0
-        version: 5.3.0
-      '@fontsource/ibm-plex-sans':
-        specifier: ^5.2.0
-        version: 5.3.0
       react:
         specifier: ^19.1.0
         version: 19.3.0
@@ -190,6 +184,12 @@ importers:
     devDependencies:
       '@fontsource/archivo':
         specifier: ^5.3.0
+        version: 5.3.0
+      '@fontsource/ibm-plex-mono':
+        specifier: ^5.2.0
+        version: 5.3.0
+      '@fontsource/ibm-plex-sans':
+        specifier: ^5.2.0
         version: 5.3.0
       '@resvg/resvg-js':
         specifier: ^2.6.2

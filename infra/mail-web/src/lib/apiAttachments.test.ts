@@ -102,7 +102,7 @@ describe('uploadAttachment', () => {
     expect(form.getAll('Content-Type')).toEqual(['text/plain']);
   });
 
-  it("throws \"Couldn't upload <filename>\" on a non-204 response", async () => {
+  it('throws "Couldn\'t upload <filename>" on a non-204 response', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue({ status: 403 } as Response),
@@ -126,7 +126,13 @@ describe('replyToMessage attachments', () => {
       { key: 'k1', filename: 'a.txt', contentType: 'text/plain' },
     ];
 
-    await replyToMessage(fakeSession(), 'a@b.com', 'a@b.com/inbox/x', '', attachments);
+    await replyToMessage(
+      fakeSession(),
+      'a@b.com',
+      'a@b.com/inbox/x',
+      '',
+      attachments,
+    );
 
     expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
       address: 'a@b.com',

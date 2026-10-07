@@ -2,6 +2,7 @@ import * as cdk from 'aws-cdk-lib/core';
 import * as route53 from 'aws-cdk-lib/aws-route53';
 import { Match, Template } from 'aws-cdk-lib/assertions';
 import { LandingStack } from '../lib/landing-stack.js';
+import { securityHeaders } from './helpers.js';
 
 function synthLandingStack() {
   const app = new cdk.App();
@@ -15,6 +16,7 @@ function synthLandingStack() {
     env,
     zone,
     domainName: 'example.test',
+    exportLinkSubdomain: 'transfer',
   });
   return Template.fromStack(stack);
 }
@@ -183,5 +185,37 @@ describe('LandingStack', () => {
     template.hasOutput('LandingBucketName', {});
     template.hasOutput('LandingDistributionId', {});
     template.hasOutput('LandingUrl', { Value: 'https://example.test' });
+  });
+
+  it('attaches a custom security-headers policy to the default behavior', () => {
+    const {
+      policyId,
+      csp,
+      hsts,
+      frameOption,
+      contentTypeOptions,
+      referrerPolicy,
+    } = securityHeaders(template);
+    expect(hsts).toMatchObject({
+      IncludeSubdomains: true,
+      Override: true,
+    });
+    expect(hsts.AccessControlMaxAgeSec).toBeGreaterThanOrEqual(31536000);
+    expect(contentTypeOptions).toEqual({ Override: true });
+    expect(frameOption).toEqual({ FrameOption: 'DENY', Override: true });
+    expect(referrerPolicy).toBe('strict-origin-when-cross-origin');
+    expect(csp).toContain("script-src 'self'");
+    expect(csp).toContain("img-src 'self' data:");
+    expect(csp).toContain("font-src 'self' data:");
+    expect(csp).toContain("connect-src 'self' https://transfer.example.test");
+    expect(csp).toContain("frame-ancestors 'none'");
+    expect(csp.join(';')).not.toContain('unsafe-eval');
+    template.hasResourceProperties('AWS::CloudFront::Distribution', {
+      DistributionConfig: Match.objectLike({
+        DefaultCacheBehavior: Match.objectLike({
+          ResponseHeadersPolicyId: { Ref: policyId },
+        }),
+      }),
+    });
   });
 });
