@@ -201,7 +201,7 @@ private struct AccessoryPill: View {
 
 extension MarkdownTextView {
     @MainActor
-    final class Coordinator: NSObject, UITextViewDelegate {
+    final class Coordinator: NSObject, UITextViewDelegate, UIGestureRecognizerDelegate {
         private var parent: MarkdownTextView
         private weak var textView: StyledTextView?
         private var accessoryBar: AccessoryBar?
@@ -280,6 +280,7 @@ extension MarkdownTextView {
             view.deleteUnits = { [weak self] in self?.deleteUnits ?? [] }
             view.isCheckboxAt = { [weak self] point in self?.checkboxTarget(at: point) != nil }
             let tap = UITapGestureRecognizer(target: self, action: #selector(checkboxTapped(_:)))
+            tap.delegate = self
             view.addGestureRecognizer(tap)
             view.checkboxTap = tap
             NotificationCenter.default.addObserver(
@@ -770,6 +771,13 @@ extension MarkdownTextView {
         }
 
         // MARK: Checkboxes
+
+        // The checkbox tap only sees touches on a checkbox. Tracking every touch, even to fail it,
+        // kept the text view's own tap from placing the caret.
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+            guard let view = textView, gestureRecognizer === view.checkboxTap else { return true }
+            return checkboxTarget(at: touch.location(in: view)) != nil
+        }
 
         private func checkboxTarget(at point: CGPoint) -> (range: NSRange, frame: CGRect)? {
             checkboxTargets
