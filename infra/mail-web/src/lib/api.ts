@@ -11,6 +11,7 @@ export async function replyToMessage(
   address: string,
   key: string,
   body: string,
+  attachments?: ReplyAttachment[],
 ): Promise<{ messageId: string }> {
   const res = await fetch(`${API_URL}/reply`, {
     method: 'POST',
@@ -18,7 +19,7 @@ export async function replyToMessage(
       Authorization: `Bearer ${session.getIdToken().getJwtToken()}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ address, key, body }),
+    body: JSON.stringify({ address, key, body, attachments }),
   });
 
   if (!res.ok) {
@@ -35,6 +36,69 @@ export async function replyToMessage(
   }
 
   return res.json();
+}
+
+export interface ReplyAttachment {
+  key: string;
+  filename: string;
+  contentType: string;
+}
+
+interface PresignedPost {
+  key: string;
+  url: string;
+  fields: Record<string, string>;
+}
+
+// Asks our backend for an S3 presigned POST for one outgoing attachment;
+// the file bytes themselves go straight to S3 via uploadAttachment below.
+export async function requestAttachmentUpload(
+  session: CognitoUserSession,
+  address: string,
+  file: File,
+): Promise<PresignedPost> {
+  const res = await fetch(`${API_URL}/attachments`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${session.getIdToken().getJwtToken()}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      address,
+      filename: file.name,
+      contentType: file.type || 'application/octet-stream',
+      size: file.size,
+    }),
+  });
+
+  if (!res.ok) {
+    const { error } = await res
+      .json()
+      .catch(() => ({ error: `Request failed (${res.status})` }));
+    throw new Error(error);
+  }
+
+  return res.json();
+}
+
+// S3 rejects a presigned POST whose `file` field isn't last, and the request
+// must not carry an Authorization header — the signature is in `fields`.
+export async function uploadAttachment(
+  post: PresignedPost,
+  file: File,
+): Promise<void> {
+  const form = new FormData();
+  Object.entries(post.fields).forEach(([name, value]) =>
+    form.append(name, value),
+  );
+  form.append('Content-Type', file.type || 'application/octet-stream');
+  form.append('file', file);
+
+  const res = await fetch(post.url, { method: 'POST', body: form });
+
+  if (res.status !== 204) {
+    throw new Error(`Couldn't upload ${file.name}`);
+  }
 }
 
 // Same Bearer-ID-token-to-our-own-backend shape as replyToMessage above —

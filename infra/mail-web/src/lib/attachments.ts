@@ -66,3 +66,26 @@ export function downloadableAttachments(
 ): Attachment[] {
   return attachments.filter((attachment) => !attachment.related);
 }
+
+export const MAX_REPLY_FILES = 10;
+export const MAX_REPLY_BYTES = 25 * 1024 * 1024;
+
+// Returns an error message if adding `incoming` to `existing` would break a
+// reply limit (file count, any single file, or the total), else null.
+export function validateReplyFiles(
+  existing: File[],
+  incoming: File[],
+): string | null {
+  if (existing.length + incoming.length > MAX_REPLY_FILES) {
+    return `You can attach at most ${MAX_REPLY_FILES} files.`;
+  }
+  const tooBig = incoming.find((file) => file.size > MAX_REPLY_BYTES);
+  if (tooBig) {
+    return `${tooBig.name} is larger than ${formatAttachmentSize(MAX_REPLY_BYTES)}.`;
+  }
+  const total = [...existing, ...incoming].reduce((n, f) => n + f.size, 0);
+  if (total > MAX_REPLY_BYTES) {
+    return `Attachments can total at most ${formatAttachmentSize(MAX_REPLY_BYTES)}.`;
+  }
+  return null;
+}
