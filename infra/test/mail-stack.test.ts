@@ -286,13 +286,13 @@ describe('MailStack api', () => {
     template.resourceCountIs('AWS::Cognito::UserPoolClient', 1);
   });
 
-  it("grants the reply Lambda's role read-only mail S3 plus ses:SendEmail scoped by a ses:FromAddress condition matching mailboxAddresses", () => {
+  it("grants the reply Lambda's role read-only mail S3 plus ses:SendRawEmail (what SES v2 raw sends are authorized as) scoped by a ses:FromAddress condition matching mailboxAddresses", () => {
     template.hasResourceProperties('AWS::IAM::Policy', {
       PolicyDocument: Match.objectLike({
         Statement: Match.arrayWith([
           Match.objectLike({
             Effect: 'Allow',
-            Action: 'ses:SendEmail',
+            Action: 'ses:SendRawEmail',
             Resource: '*',
             Condition: {
               StringEquals: { 'ses:FromAddress': mailboxAddresses },
@@ -307,7 +307,7 @@ describe('MailStack api', () => {
       's3:GetObject',
       's3:GetObject*',
       's3:List*',
-      'ses:SendEmail',
+      'ses:SendRawEmail',
     ]);
   });
 

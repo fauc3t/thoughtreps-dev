@@ -75,12 +75,14 @@ export class MailApi extends Construct {
       }),
     );
 
-    // The SES v2 SendEmail API (used instead of v1 SendRawEmail, whose
-    // message cap is 10 MB vs 40 MB) is authorized as ses:SendEmail. It is
-    // not resource-ARN-scopable, so resources: ['*'] is correct, not a
-    // shortcut — but it *does* have an IAM condition key: ses:FromAddress,
-    // which applies to v2's FromEmailAddress (FeedbackFn in the share stack
-    // already relies on the same pairing in prod). StringEquals against an
+    // ReplyFn uses the SES v2 SendEmail API (40 MB cap, vs 10 MB for v1
+    // SendRawEmail), but with Content.Raw SES authorizes the call as
+    // ses:SendRawEmail, not ses:SendEmail — confirmed against prod on
+    // 2026-10-06, where a ses:SendEmail-only grant was denied with "not
+    // authorized to perform 'ses:SendRawEmail'". (FeedbackFn sends Simple
+    // content, which is why ses:SendEmail is enough there.) Neither action
+    // is resource-ARN-scopable, so resources: ['*'] is correct, not a
+    // shortcut — but ses:FromAddress applies. StringEquals against an
     // array is an OR match, so this scopes the grant to exactly the
     // configured mailbox addresses — replyFn can never be used to send as
     // an arbitrary address. For this condition to evaluate
@@ -88,7 +90,7 @@ export class MailApi extends Construct {
     // than relying on SES inferring it from the raw message's From: header.
     replyFn.addToRolePolicy(
       new iam.PolicyStatement({
-        actions: ['ses:SendEmail'],
+        actions: ['ses:SendRawEmail'],
         resources: ['*'],
         conditions: {
           StringEquals: { 'ses:FromAddress': mailboxAddresses },

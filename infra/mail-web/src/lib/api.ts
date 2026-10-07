@@ -83,6 +83,8 @@ export async function requestAttachmentUpload(
 
 // S3 rejects a presigned POST whose `file` field isn't last, and the request
 // must not carry an Authorization header — the signature is in `fields`.
+// `fields` already carries the signed Content-Type; appending another one
+// makes S3 fail the policy's Content-Type condition with a 403.
 export async function uploadAttachment(
   post: PresignedPost,
   file: File,
@@ -91,7 +93,6 @@ export async function uploadAttachment(
   Object.entries(post.fields).forEach(([name, value]) =>
     form.append(name, value),
   );
-  form.append('Content-Type', file.type || 'application/octet-stream');
   form.append('file', file);
 
   const res = await fetch(post.url, { method: 'POST', body: form });

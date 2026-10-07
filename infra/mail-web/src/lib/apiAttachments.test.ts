@@ -70,7 +70,7 @@ describe('uploadAttachment', () => {
     fields: { policy: 'p', signature: 's' },
   };
 
-  it('POSTs fields, then Content-Type, then file last, with no Authorization header', async () => {
+  it('POSTs the presigned fields, then file last, with no Authorization header', async () => {
     const fetchMock = vi.fn().mockResolvedValue({ status: 204 } as Response);
     vi.stubGlobal('fetch', fetchMock);
     const { uploadAttachment } = await import('./api');
@@ -83,24 +83,23 @@ describe('uploadAttachment', () => {
     expect(options.method).toBe('POST');
     expect(options.headers).toBeUndefined();
     const form = options.body as FormData;
-    expect(Array.from(form.keys())).toEqual([
-      'policy',
-      'signature',
-      'Content-Type',
-      'file',
-    ]);
-    expect(form.get('Content-Type')).toBe('text/plain');
+    expect(Array.from(form.keys())).toEqual(['policy', 'signature', 'file']);
   });
 
-  it('falls back to application/octet-stream when the file has no type', async () => {
+  // The server signs Content-Type into `fields`; a second Content-Type field
+  // fails S3's policy check (seen in prod as a 403 on every upload).
+  it('sends Content-Type exactly once, as signed in fields', async () => {
     const fetchMock = vi.fn().mockResolvedValue({ status: 204 } as Response);
     vi.stubGlobal('fetch', fetchMock);
     const { uploadAttachment } = await import('./api');
 
-    await uploadAttachment(post, new File(['x'], 'a'));
+    await uploadAttachment(
+      { ...post, fields: { ...post.fields, 'Content-Type': 'text/plain' } },
+      new File(['x'], 'a.txt', { type: 'text/plain' }),
+    );
 
     const form = fetchMock.mock.calls[0][1].body as FormData;
-    expect(form.get('Content-Type')).toBe('application/octet-stream');
+    expect(form.getAll('Content-Type')).toEqual(['text/plain']);
   });
 
   it("throws \"Couldn't upload <filename>\" on a non-204 response", async () => {
