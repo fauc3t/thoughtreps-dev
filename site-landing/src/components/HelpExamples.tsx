@@ -617,11 +617,27 @@ function SnoozeMenu() {
 
 function IntervalMenu() {
   const choices = ['Day', '3 days', 'Week', '2 weeks', 'Month', '3 months'];
+  const chip =
+    'grid h-9 place-content-center rounded-[10px] text-[13px] font-semibold';
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex items-baseline justify-between gap-3 text-[13px]">
-        <span className="text-muted">Back in 5 days · 2 views</span>
-        <span className="font-semibold">Every week</span>
+      <div className="flex items-baseline justify-between gap-3 text-[12px] text-muted">
+        <span>Back in</span>
+        <span>next: Oct 14</span>
+      </div>
+      <div className="grid grid-cols-5 gap-2">
+        {['1d', '3d', '7d', '30d', '…'].map((label) => (
+          <span
+            key={label}
+            className={
+              label === '7d'
+                ? `${chip} bg-ink text-paper`
+                : `${chip} border border-hl bg-paper`
+            }
+          >
+            {label}
+          </span>
+        ))}
       </div>
       <div className={`${panel} ml-auto w-full max-w-[15rem]`}>
         <MenuItem label="Default (7 days)" selected />

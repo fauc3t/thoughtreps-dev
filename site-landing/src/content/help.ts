@@ -216,7 +216,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
       {
         heading: 'Capture a thought',
         steps: [
-          'Tap the round {icon:plus} at the bottom right. It is there on every tab.',
+          'Tap {icon:plus} at the bottom right. It is there on every tab. It hides while a thought is open.',
           'The "New thought" editor opens with the keyboard up. Type your thought.',
           'Tap "Save" at the top right. The button stays off until you type something.',
         ],
@@ -890,17 +890,17 @@ export const HELP_ARTICLES: HelpArticle[] = [
         ],
         list: [
           'In the editor, under "Schedule", use the "Comes back every" menu.',
-          'On an open thought, use the menu at the bottom right. It reads like "Every week".',
+          'On an open thought, use the bar at the bottom. Tap 1d, 3d, 7d or 30d. The one in use is filled in.',
         ],
       },
       {
         paragraphs: [
-          'The menu offers "Default", which shows your default in parentheses, like "Default (7 days)". Then come Day, 3 days, Week, 2 weeks, Month and 3 months. "Custom…" is for anything else. Custom opens a wheel. Pick a number and days, weeks or months, up to a year.',
+          'For more choices, tap "…" on that bar. The menu offers "Default", which shows your default in parentheses, like "Default (7 days)". Then come Day, 3 days, Week, 2 weeks, Month and 3 months. "Custom…" is for anything else. Custom opens a wheel. Pick a number and days, weeks or months, up to a year.',
         ],
         example: {
           kind: 'interval-menu',
           caption:
-            'The interval menu on an open thought, with "Default (7 days)" chosen.',
+            'The bar at the bottom of an open thought with 7d chosen, and the menu that "…" opens.',
         },
       },
       {
