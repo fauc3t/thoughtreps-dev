@@ -1,0 +1,101 @@
+/* Brand tokens and sticker primitives from site-landing/src/index.css, scaled by --k for 4K. */
+/* Archivo is SIL OFL 1.1, see fonts/OFL.txt. */
+@font-face {
+  font-family: 'Archivo Variable';
+  src: url('fonts/archivo-latin-wdth-normal.woff2') format('woff2-variations');
+  font-weight: 100 900;
+  font-stretch: 62% 125%;
+}
+@font-face {
+  font-family: 'Paper Mono';
+  src: url('../../../site-landing/src/fonts/PaperMono-Variable.woff2') format('woff2');
+  font-weight: 100 800;
+}
+:root {
+  --paper: #ffffff;
+  --soft: #f2f2f0;
+  --ink: #111214;
+  --muted: #5e6066;
+  --hl: #e4e4e0;
+  --display: 'Archivo Variable', 'Arial Black', sans-serif;
+  --mono: 'Paper Mono', ui-monospace, Menlo, monospace;
+  --k: 3.2;
+}
+:root[data-theme='dark'] {
+  --paper: #111214;
+  --soft: #1d1e22;
+  --ink: #f2f2ef;
+  --muted: #a3a5ac;
+  --hl: #34353a;
+}
+html,
+body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--paper);
+  color: var(--ink);
+}
+/* 3840x1646 design frame, centred and scaled to the viewport width; 16:9 shows extra background above and below. */
+#stage {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 3840px;
+  height: 1646px;
+  font-family: var(--mono);
+}
+.stk {
+  background: var(--paper);
+  border: calc(2.5px * var(--k)) solid var(--ink);
+  border-radius: calc(14px * var(--k));
+  box-shadow: calc(4px * var(--k)) calc(4px * var(--k)) 0 var(--ink);
+}
+.note {
+  position: absolute;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: calc(10px * var(--k));
+  padding: calc(20px * var(--k)) calc(22px * var(--k));
+}
+.note .title {
+  font: 800 calc(24px * var(--k)) / 1.15 var(--display);
+  letter-spacing: -0.01em;
+  font-variation-settings: 'wdth' 100;
+}
+.note .body {
+  font: 400 calc(16px * var(--k)) / 1.5 var(--mono);
+  color: var(--muted);
+}
+.note .foot {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.chip {
+  font: 500 calc(12.5px * var(--k)) / 1 var(--mono);
+  padding: calc(5px * var(--k)) calc(8px * var(--k));
+  border: calc(2px * var(--k)) solid var(--ink);
+  border-radius: calc(8px * var(--k));
+  background: var(--paper);
+}
+.due {
+  font: 500 calc(12.5px * var(--k)) / 1 var(--mono);
+  color: var(--ink);
+}
+.due.quiet {
+  color: var(--muted);
+}
+.loop {
+  display: block;
+  color: var(--ink);
+}
+.badge {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+}

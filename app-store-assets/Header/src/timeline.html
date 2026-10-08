@@ -1,0 +1,72 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Header C: timeline</title>
+<link rel="stylesheet" href="shared.css" />
+<style>
+  :root { --k: 2.8; }
+  #line { position: absolute; left: -2000px; width: 7840px; top: 1150px; height: calc(2.5px * var(--k)); background: var(--ink); }
+  .stem { position: absolute; width: calc(2.5px * var(--k)); background: var(--ink); }
+  .dot { position: absolute; width: 44px; height: 44px; margin: -22px 0 0 -22px; border-radius: 50%; background: var(--paper); border: calc(2.5px * var(--k)) solid var(--ink); box-sizing: border-box; }
+  .gap { position: absolute; transform: translate(-50%, -50%); white-space: nowrap; }
+  .duebox { position: relative; flex: 1; height: calc(12.5px * var(--k)); }
+  .duebox span { position: absolute; right: 0; top: 50%; transform: translateY(-50%); white-space: nowrap; }
+  .duebox .now { padding: calc(8px * var(--k)) calc(11px * var(--k)); background: var(--ink); color: var(--paper); border-radius: calc(8px * var(--k)); font-weight: 600; }
+  .fade { position: absolute; top: 0; bottom: 0; width: 13vw; z-index: 20; pointer-events: none; }
+  #fl { left: 0; background: linear-gradient(90deg, var(--paper) 30%, transparent); }
+  #fr { right: 0; background: linear-gradient(270deg, var(--paper) 30%, transparent); }
+  .rise { position: absolute; right: calc(-34px * var(--k)); top: calc(-34px * var(--k)); width: calc(64px * var(--k)); height: calc(64px * var(--k)); }
+  .rise svg { width: calc(40px * var(--k)); height: calc(40px * var(--k)); }
+</style>
+<div id="stage"></div>
+<div id="fl" class="fade"></div>
+<div id="fr" class="fade"></div>
+<script src="shared.js"></script>
+<script>
+  // render(d): d is the drift in weeks. Content repeats every 3 weeks, so d=3 equals d=0.
+  const K = 2.8, S = 860, W = 680, H = 440, CX = 1920, LINE = 1150, REST = 116, LIFT = 170;
+  const smooth = (x) => x * x * (3 - 2 * x);
+  const mod = (n, m) => ((n % m) + m) % m;
+  const N = [];
+  for (let n = -4; n <= 7; n++) N.push(n);
+  stage.insertAdjacentHTML('beforeend', '<div id="line"></div>');
+
+  const items = N.map((n) => {
+    const note = NOTES[mod(n, 3)];
+    const stem = Object.assign(document.createElement('div'), { className: 'stem' });
+    const dot = Object.assign(document.createElement('div'), { className: 'dot' });
+    const gap = Object.assign(document.createElement('span'), { className: 'chip gap', textContent: '7 days' });
+    const card = document.createElement('article');
+    card.className = 'note stk';
+    Object.assign(card.style, { width: W + 'px', height: H + 'px', left: -W / 2 + 'px', top: -H + 'px' });
+    card.innerHTML = `<span class="title">${note.title}</span><div class="foot"><span class="chip">${note.tag}</span><div class="duebox"><span class="due quiet past">seen</span><span class="due now">back today</span><span class="due quiet next">due in 7 days</span></div></div><div class="badge stk rise"><svg class="loop"><use href="#loop" /></svg></div>`;
+    stage.append(stem, dot, gap, card);
+    return { n, stem, dot, gap, card, past: card.querySelector('.past'), now: card.querySelector('.now'), next: card.querySelector('.next'), rise: card.querySelector('.rise') };
+  });
+
+  window.render = (d) => {
+    for (const it of items) {
+      const dist = it.n - d, x = CX + dist * S;
+      const b = smooth(clamp01(1 - Math.abs(dist) / 0.9));
+      const bottom = LINE - REST - LIFT * b;
+      const rot = lerp((mod(it.n, 3) - 1) * 1.6, 0, b);
+      const c = it.card.style;
+      c.left = x - W / 2 + 'px';
+      c.top = bottom - H + 'px';
+      c.transform = `rotate(${rot}deg) scale(${1 + 0.1 * b})`;
+      c.transformOrigin = '50% 100%';
+      c.background = `color-mix(in srgb, var(--paper) ${b * 100}%, var(--soft))`;
+      const o = lerp(4, 8, b) * K;
+      c.boxShadow = `${o}px ${o}px 0 var(--ink)`;
+      it.stem.style.cssText = `left:${x - 3.5}px;top:${bottom}px;height:${LINE - bottom}px`;
+      it.dot.style.cssText = `left:${x}px;top:${LINE + 3.5}px;transform:scale(${1 + 0.5 * b});background:${b > 0.5 ? 'var(--ink)' : 'var(--paper)'}`;
+      it.gap.style.cssText = `left:${x + S / 2}px;top:${LINE + 3.5}px`;
+      const calm = clamp01(1 - b / 0.35), shown = clamp01((b - 0.65) / 0.35);
+      it.now.style.opacity = shown;
+      it.past.style.opacity = dist < 0 ? calm : 0;
+      it.next.style.opacity = dist < 0 ? 0 : calm;
+      it.rise.style.opacity = shown;
+      it.rise.style.transform = `scale(${0.4 + 0.6 * shown})`;
+    }
+  };
+  render(0);
+</script>

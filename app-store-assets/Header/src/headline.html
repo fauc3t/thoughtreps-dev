@@ -1,0 +1,25 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Header A: headline</title>
+<link rel="stylesheet" href="shared.css" />
+<style>
+  /* Centred safe zone: x 461..3379, y 190..1317. */
+  .safe { position: absolute; left: 461px; top: 190px; width: 2918px; height: 1127px; display: flex; align-items: center; justify-content: center; gap: 130px; }
+  .icon { width: 520px; height: 520px; border-radius: 116px; border: calc(2.5px * var(--k)) solid var(--ink); box-shadow: calc(7px * var(--k)) calc(7px * var(--k)) 0 var(--ink); box-sizing: border-box; flex: none; }
+  h1 { margin: 0; font: 900 232px / 0.92 var(--display); letter-spacing: -0.035em; font-variation-settings: 'wdth' 112; white-space: nowrap; }
+  h1 span.l2 { display: block; }
+  .hl { background: linear-gradient(transparent 60%, var(--hl) 60% 92%, transparent 92%); padding: 0 0.04em; }
+  .loop { display: inline-block; width: 0.7em; height: 0.7em; margin-left: 0.06em; vertical-align: -0.02em; }
+</style>
+<div id="stage">
+  <div class="safe">
+    <img class="icon" id="icon" alt="" />
+    <h1>Write it down.<span class="l2">It comes <span class="hl">back</span><svg class="loop"><use href="#loop" /></svg></span></h1>
+  </div>
+</div>
+<script src="shared.js"></script>
+<script>
+  const dark = document.documentElement.dataset.theme === 'dark';
+  document.getElementById('icon').src = `../../../design-assets/app-icon/${dark ? 'dark' : 'light'}.svg`;
+  window.render = () => {};
+</script>

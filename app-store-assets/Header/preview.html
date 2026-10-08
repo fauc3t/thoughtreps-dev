@@ -1,0 +1,55 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>App Store header: preview</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  body { margin: 0; padding: 24px 32px 64px; font: 15px/1.5 ui-monospace, Menlo, monospace; color: #111214; background: #e9e9e6; }
+  h1 { font: 800 22px/1.2 system-ui, sans-serif; margin: 0 0 4px; }
+  h2 { font: 700 16px/1.2 system-ui, sans-serif; margin: 40px 0 12px; }
+  p { margin: 0 0 12px; color: #5e6066; }
+  label { display: inline-flex; gap: 8px; align-items: center; cursor: pointer; padding: 6px 10px; border: 2px solid #111214; border-radius: 8px; background: #fff; }
+  label:hover { background: #f2f2f0; }
+  .row { display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start; }
+  figure { margin: 0; }
+  figcaption { margin-top: 6px; font-size: 13px; color: #5e6066; }
+  .frame { position: relative; line-height: 0; border: 2px solid #111214; background: #fff; }
+  .frame img, .frame video { width: 100%; height: auto; display: block; }
+  .f219 { width: 880px; max-width: 100%; }
+  .f169 { width: 520px; max-width: 100%; }
+  .safe, .crop { position: absolute; pointer-events: none; box-sizing: border-box; }
+  .safe { display: none; border: 3px solid #e5322d; }
+  .crop { border: 2px dashed #2d6be5; }
+  .crop::after { content: '21:9 crop'; position: absolute; left: 4px; top: 2px; font: 11px/1 ui-monospace, monospace; color: #2d6be5; }
+  body.show-safe .safe { display: block; }
+  /* Safe zone: outer 12% each side, bottom 20%, top 8% of the 21:9 frame. */
+  .f219 .safe { left: 12%; right: 12%; top: 8%; bottom: 20%; }
+  /* The 21:9 stage sits centred in the 16:9 frame at 1.3656x: 351 px of 2950 above and below. */
+  .f169 .crop { left: 0; right: 0; top: 11.9%; bottom: 11.9%; }
+  .f169 .safe { left: 12%; right: 12%; top: 18%; bottom: 27.15%; }
+</style>
+<h1>App Store header: preview</h1>
+<p>Every output in static/ and motion/. Dashed blue is the 21:9 center-crop of the 16:9 image.</p>
+<label><input type="checkbox" id="safe" /> Show safe zone</label>
+<div id="out"></div>
+<script>
+  const STATIC = [
+    ['A headline', 'A-headline'],
+    ['A headline (dark)', 'A-headline-dark'],
+    ['B card stack', 'B-card-stack'],
+    ['C timeline', 'C-timeline'],
+  ];
+  const MOTION = [
+    ['A card swing', 'A-card-swing'],
+    ['B timeline drift', 'B-timeline-drift'],
+  ];
+  const f219 = (el, cap) => `<figure><div class="frame f219">${el}<div class="safe"></div></div><figcaption>${cap}</figcaption></figure>`;
+  const f169 = (el, cap) => `<figure><div class="frame f169">${el}<div class="crop"></div><div class="safe"></div></div><figcaption>${cap}</figcaption></figure>`;
+  const img = (n, s) => `<img src="static/${n}-${s}.png" alt="" />`;
+  const vid = (n) => `<video src="motion/${n}-3840x1646.mp4" autoplay muted loop playsinline></video>`;
+  document.getElementById('out').innerHTML =
+    '<h2>Static</h2>' +
+    STATIC.map(([t, n]) => `<h2>${t}</h2><div class="row">${f219(img(n, '3840x1646'), `21:9, 3840x1646, static/${n}-3840x1646.png`)}${f169(img(n, '5244x2950'), `16:9, 5244x2950, static/${n}-5244x2950.png`)}</div>`).join('') +
+    '<h2>Motion</h2>' +
+    MOTION.map(([t, n]) => `<h2>${t}</h2><div class="row">${f219(vid(n), `21:9, 3840x1646, 30 fps, 12 s loop, motion/${n}-3840x1646.mp4`)}</div>`).join('');
+  document.getElementById('safe').addEventListener('change', (e) => document.body.classList.toggle('show-safe', e.target.checked));
+</script>

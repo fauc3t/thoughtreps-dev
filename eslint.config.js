@@ -24,6 +24,7 @@ export default tseslint.config(
       'Shared/**',
       'Config/**',
       'design-assets/**',
+      'app-store-assets/**',
       'designs/**',
       'landing/**',
     ],

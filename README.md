@@ -63,6 +63,7 @@ landing/           Static HTML landing-page design prototypes (not part of the a
 site-landing/      The real landing site for thoughtreps.com (Vite + React, prerendered)
 infra/             AWS CDK app (DNS, landing hosting, email, export links) and the mail inbox UI (infra/mail-web)
 transfer-web/      Export download page for transfer.thoughtreps.com (Vite + React)
+app-store-assets/  App Store creative assets, one folder per slot (see app-store-assets/Header/README.md)
 scripts/           Manual deploy scripts for the landing site, mail UI and download page
 ```
 

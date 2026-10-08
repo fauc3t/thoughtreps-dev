@@ -1,0 +1,63 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Header B: card stack</title>
+<link rel="stylesheet" href="shared.css" />
+<style>
+  #deck { position: absolute; left: 1850px; top: 810px; }
+  #badge { z-index: 5; width: calc(82px * var(--k)); height: calc(82px * var(--k)); }
+  #badge svg { width: calc(50px * var(--k)); height: calc(50px * var(--k)); }
+</style>
+<div id="stage">
+  <div id="deck"></div>
+  <div id="badge" class="badge stk"><svg class="loop"><use href="#loop" /></svg></div>
+</div>
+<script src="shared.js"></script>
+<script>
+  // render(t): t in seconds on a 12 s loop. Three swings, one per card, so t=12 equals t=0.
+  const K = 3.2, W = 340 * K, H = 230 * K;
+  const POS = [{ x: 0, y: 0, r: -2 }, { x: 16 * K, y: -16 * K, r: 3.5 }, { x: 32 * K, y: -32 * K, r: 9 }];
+  const START = [2.5, 6.5, 10.5], SWING = 1.0, SPRING = 0.6, SPIN = 0.8;
+  const swingEase = bezier(0.5, 0, 0.3, 1), springEase = bezier(0.3, 1.3, 0.5, 1);
+  const tf = (p) => `translate(${p.x}px,${p.y}px) rotate(${p.r}deg)`;
+  const mix = (a, b, p) => ({ x: lerp(a.x, b.x, p), y: lerp(a.y, b.y, p), r: lerp(a.r, b.r, p) });
+
+  const deck = document.getElementById('deck');
+  const cards = NOTES.map((n) => {
+    const el = document.createElement('article');
+    el.className = 'note stk';
+    Object.assign(el.style, { width: W + 'px', height: H + 'px', left: -W / 2 + 'px', top: -H / 2 + 'px' });
+    el.innerHTML = `<span class="title">${n.title}</span><span class="body">${n.body}</span><div class="foot"><span class="chip">${n.tag}</span><span class="due${n.quiet ? ' quiet' : ''}">${n.due}</span></div>`;
+    deck.append(el);
+    return el;
+  });
+  const badge = document.getElementById('badge');
+  Object.assign(badge.style, { left: 1850 - W / 2 - 150 + 'px', top: 810 + H / 2 - 150 + 'px' });
+
+  window.render = (t) => {
+    let pos = [0, 1, 2], prev = pos, sw = -1, t0 = 0, spins = 0;
+    for (let j = 0; j < START.length && t >= START[j]; j++) {
+      prev = pos.slice();
+      sw = pos.indexOf(0);
+      t0 = START[j];
+      pos = pos.map((p, k) => (k === sw ? p : p - 1));
+      if (t >= t0 + SWING) pos[sw] = 2;
+      spins = j + (t >= t0 + SPIN ? 1 : swingEase(clamp01((t - t0) / SPIN)));
+    }
+    const swinging = sw >= 0 && t < t0 + SWING;
+    cards.forEach((el, k) => {
+      let pose, z = 3 - pos[k];
+      if (k === sw && swinging) {
+        const p = (t - t0) / SWING;
+        const out = { x: -0.7 * W, y: 30 * K, r: -16 };
+        pose = p < 0.45 ? mix(POS[0], out, swingEase(p / 0.45)) : mix(out, POS[2], swingEase((p - 0.45) / 0.55));
+        z = p < 0.45 ? 4 : 0;
+      } else if (k === sw) pose = POS[2];
+      else pose = mix(POS[prev[k]], POS[pos[k]], sw < 0 ? 1 : springEase(clamp01((t - t0) / SPRING)));
+      el.style.transform = tf(pose);
+      el.style.zIndex = z;
+      el.style.background = pos[k] === 0 ? 'var(--paper)' : 'var(--soft)';
+    });
+    badge.firstElementChild.style.transform = `rotate(${spins * 360}deg)`;
+  };
+  render(0);
+</script>
