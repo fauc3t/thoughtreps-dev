@@ -1,0 +1,47 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>App Store Search Results: preview</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  body { margin: 0; padding: 24px 32px 64px; font: 15px/1.5 ui-monospace, Menlo, monospace; color: #111214; background: #e9e9e6; }
+  h1 { font: 800 22px/1.2 system-ui, sans-serif; margin: 0 0 4px; }
+  h2 { font: 700 16px/1.2 system-ui, sans-serif; margin: 40px 0 12px; }
+  p { margin: 0 0 12px; color: #5e6066; }
+  .row { display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start; }
+  figure { margin: 0; }
+  figcaption { margin-top: 6px; font-size: 13px; color: #5e6066; }
+  .frame { line-height: 0; border: 2px solid #111214; background: #fff; }
+  .frame img, .frame video { width: 100%; height: auto; display: block; }
+  .f32, .f169 { width: 640px; max-width: 100%; }
+  /* Mock search result: icon, name and Get button above the art, at about the size the store shows it. */
+  .card { width: 350px; background: #fff; border-radius: 16px; padding: 12px; box-sizing: border-box; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2); font: 14px/1.3 system-ui, sans-serif; }
+  .card .top { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .card .top img { width: 44px; height: 44px; border-radius: 10px; }
+  .card .top b { display: block; font-size: 15px; }
+  .card .top span { color: #6e6e73; font-size: 12px; }
+  .card .top .txt { flex: 1; }
+  .card .get { background: #eee; color: #0a64d6; font-weight: 700; padding: 5px 16px; border-radius: 14px; }
+  .card .art { line-height: 0; border-radius: 10px; overflow: hidden; border: 1px solid #ddd; }
+  .card .art img, .card .art video { width: 100%; display: block; }
+</style>
+<h1>App Store Search Results: preview</h1>
+<p>Every output in static/ and motion/. The small cards show each option at about the size it appears in search results, next to the icon, name and Get button.</p>
+<div id="out"></div>
+<script>
+  const OPTIONS = [
+    ['A timeline + headline', 'A-timeline-headline'],
+    ['B timeline only', 'B-timeline'],
+    ['C in the app', 'C-in-the-app'],
+  ];
+  const SIZES = [['3:2', '3840x2560'], ['16:9', '5244x2950']];
+  const img = (n, s) => `<img src="static/${n}-${s}.png" alt="" />`;
+  const vid = (n, s) => `<video src="motion/${n}-${s}.mp4" autoplay muted loop playsinline></video>`;
+  const fig = (el, cls, cap) => `<figure><div class="frame ${cls}">${el}</div><figcaption>${cap}</figcaption></figure>`;
+  const small = (el) => `<figure><div class="card"><div class="top"><img src="../../design-assets/app-icon/light.svg" alt="" /><div class="txt"><b>Thought Reps</b><span>Write it down. It comes back.</span></div><div class="get">Get</div></div><div class="art">${el}</div></div><figcaption>~350 px search card</figcaption></figure>`;
+  const cls = (r) => (r === '3:2' ? 'f32' : 'f169');
+  document.getElementById('out').innerHTML = OPTIONS.map(([t, n]) =>
+    `<h2>${t}</h2>` +
+    '<div class="row">' + SIZES.map(([r, s]) => fig(img(n, s), cls(r), `${r}, ${s}, static/${n}-${s}.png`)).join('') + small(img(n, '3840x2560')) + '</div>' +
+    '<div class="row" style="margin-top:24px">' + SIZES.map(([r, s]) => fig(vid(n, s), cls(r), `${r}, ${s}, 30 fps, 12 s loop, motion/${n}-${s}.mp4`)).join('') + small(vid(n, '3840x2560')) + '</div>'
+  ).join('');
+</script>

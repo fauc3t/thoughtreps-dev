@@ -1,0 +1,31 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Search Results A and B: timeline</title>
+<link rel="stylesheet" href="../../Header/src/shared.css" />
+<link rel="stylesheet" href="../../Header/src/timeline.css" />
+<link rel="stylesheet" href="frame.css" />
+<div id="stage"></div>
+<div id="fl" class="fade"></div>
+<div id="fr" class="fade"></div>
+<script src="../../Header/src/shared.js"></script>
+<script src="frame.js"></script>
+<script src="../../Header/src/timeline-core.js"></script>
+<script>
+  // ?headline=1 is option A (headline above the timeline); without it, option B (timeline only).
+  const withHeadline = new URLSearchParams(location.search).has('headline');
+  const tall = FH > 2400;
+  const s = withHeadline ? (tall ? 1.45 : 1.2) : 1.55;
+  const K = 2.8 * s, W = 680 * s, H = 440 * s, REST = 116 * s, LIFT = 170 * s;
+  document.documentElement.style.setProperty('--k', K);
+  document.documentElement.style.setProperty('--dot', 44 * s + 'px');
+
+  // Distance from the line up to the highest thing in the lifted card (the badge), and down to the "7 days" chip.
+  const above = REST + LIFT + 1.1 * H + 37 * K, below = 25 * K;
+  const fs = withHeadline ? (tall ? 330 : 260) : 0;
+  const headH = withHeadline ? 2 * 0.92 * fs : 0, gap = withHeadline ? 150 * s : 0;
+  const y0 = (FH - (headH + gap + above + below)) / 2;
+  if (withHeadline) {
+    stage.insertAdjacentHTML('beforeend', `<h1 style="position:absolute;left:0;width:3840px;top:${y0}px;text-align:center;font-size:${fs}px">${headlineHTML}</h1>`);
+  }
+  window.render = mountTimeline({ K, S: 860 * s, W, H, CX: 1920, LINE: y0 + headH + gap + above, REST, LIFT, half: 1.25 * K });
+</script>

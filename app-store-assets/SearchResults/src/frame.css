@@ -1,0 +1,5 @@
+/* Shared by the Search Results pages; brand tokens come from Header/src/shared.css. */
+h1 { margin: 0; font-family: var(--display); font-weight: 900; line-height: 0.92; letter-spacing: -0.035em; font-variation-settings: 'wdth' 112; white-space: nowrap; }
+h1 span.l2 { display: block; }
+.hl { background: linear-gradient(transparent 60%, var(--hl) 60% 92%, transparent 92%); padding: 0 0.04em; }
+h1 .loop { display: inline-block; width: 0.7em; height: 0.7em; margin-left: 0.06em; vertical-align: -0.02em; }

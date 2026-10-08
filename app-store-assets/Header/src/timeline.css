@@ -1,0 +1,13 @@
+/* Timeline drift primitives, used by timeline.html and SearchResults. */
+#line { position: absolute; left: -2000px; width: 7840px; height: calc(2.5px * var(--k)); background: var(--ink); }
+.stem { position: absolute; width: calc(2.5px * var(--k)); background: var(--ink); }
+.dot { position: absolute; width: var(--dot, 44px); height: var(--dot, 44px); margin: calc(var(--dot, 44px) / -2) 0 0 calc(var(--dot, 44px) / -2); border-radius: 50%; background: var(--paper); border: calc(2.5px * var(--k)) solid var(--ink); box-sizing: border-box; }
+.gap { position: absolute; transform: translate(-50%, -50%); white-space: nowrap; }
+.duebox { position: relative; flex: 1; height: calc(12.5px * var(--k)); }
+.duebox span { position: absolute; right: 0; top: 50%; transform: translateY(-50%); white-space: nowrap; }
+.duebox .now { padding: calc(8px * var(--k)) calc(11px * var(--k)); background: var(--ink); color: var(--paper); border-radius: calc(8px * var(--k)); font-weight: 600; }
+.fade { position: absolute; top: 0; bottom: 0; width: 13vw; z-index: 20; pointer-events: none; }
+#fl { left: 0; background: linear-gradient(90deg, var(--paper) 30%, transparent); }
+#fr { right: 0; background: linear-gradient(270deg, var(--paper) 30%, transparent); }
+.rise { position: absolute; right: calc(-34px * var(--k)); top: calc(-34px * var(--k)); width: calc(64px * var(--k)); height: calc(64px * var(--k)); }
+.rise svg { width: calc(40px * var(--k)); height: calc(40px * var(--k)); }

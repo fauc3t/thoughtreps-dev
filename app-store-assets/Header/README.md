@@ -28,6 +28,8 @@ node app-store-assets/Header/gen.mjs            # everything (about a minute)
 node app-store-assets/Header/gen.mjs B-card     # only outputs whose name contains the argument
 ```
 
+The timeline scene (`src/timeline-core.js`, `src/timeline.css`) is shared: `../SearchResults` imports it by relative path, so changes there affect both slots.
+
 Needs ffmpeg and Playwright's Chromium (`chromium-1243`). First run on a machine: `npx playwright@1.63 install chromium`. Playwright is not a repo dependency; `gen.mjs` runs it through `npx playwright@1.63`. Sources are in `src/`; each exposes `render(t)` and the motion frames are screenshotted one by one, so output is deterministic. Open `preview.html` to see every output with the 21:9 crop and safe zone.
 
 ## Upload
