@@ -15,7 +15,8 @@ const only = process.argv.slice(2).find((a) => !a.startsWith('--')) ?? '';
 const src = (page, q = '') => pathToFileURL(join(here, 'src', page)).href + q;
 
 const FPS = 30, SECONDS = 12;
-const SIZES = [['3840x2560', 3840, 2560], ['5244x2950', 5244, 2950]];
+// The 16:9 size is a still only: App Store Connect rejects a 5244x2950 Search Results video (see README).
+const SIZES = [['3840x2560', 3840, 2560, true], ['5244x2950', 5244, 2950, false]];
 const OPTIONS = [
   { name: 'A-timeline-headline', page: 'timeline.html', q: '?headline=1', still: 0, at: (i) => (3 * i) / (FPS * SECONDS) },
   { name: 'B-timeline', page: 'timeline.html', still: 0, at: (i) => (3 * i) / (FPS * SECONDS) },
@@ -42,7 +43,7 @@ const open = async (opt, w, h) => {
   return page;
 };
 
-// Level 6.0 allows both frame sizes at 30 fps (MaxFS 139,264 MBs, MaxMBPS 4,177,920).
+// Level 6.0 allows 3840x2560 at 30 fps (MaxFS 139,264 MBs, MaxMBPS 4,177,920).
 const encode = (frames, out) =>
   execFileSync('ffmpeg', ['-y', '-v', 'error', '-framerate', String(FPS), '-i', join(frames, '%04d.png'),
     '-vf', 'scale=out_color_matrix=bt709:out_range=tv,format=yuv420p', '-c:v', 'libx264', '-profile:v', 'high', '-level', '6.0',
@@ -59,7 +60,7 @@ try {
   mkdirSync(join(here, 'static'), { recursive: true });
   mkdirSync(join(here, 'motion'), { recursive: true });
   for (const opt of OPTIONS.filter((o) => o.name.includes(only))) {
-    for (const [label, w, h] of SIZES) {
+    for (const [label, w, h, video] of SIZES) {
       const page = await open(opt, w, h);
       await page.evaluate((a) => render(a), opt.still);
       const raw = join(tmp, 'raw.png');
@@ -68,7 +69,7 @@ try {
       const png = join(here, 'static', `${opt.name}-${label}.png`);
       execFileSync('ffmpeg', ['-y', '-v', 'error', '-i', raw, '-pix_fmt', 'rgb24', '-compression_level', '9', png]);
       console.log(png);
-      if (stillOnly) {
+      if (stillOnly || !video) {
         await page.close();
         continue;
       }

@@ -10,7 +10,7 @@ The Search Results creative (Apple's "Search Results" asset): a still or a muted
 
 ## Options
 
-Each is rendered at 3840x2560 (3:2) and 5244x2950 (16:9), as a PNG in `static/` and a 30 fps, 12 s seamless-loop H.264 MP4 in `motion/`.
+Each is rendered as a PNG in `static/` at 3840x2560 (3:2) and 5244x2950 (16:9), and as a 30 fps, 12 s seamless-loop H.264 MP4 in `motion/` at 3840x2560 only.
 
 - A timeline + headline: the Header timeline drift under "Write it down. It comes back."
 - B timeline only: the same drift with the cards scaled up to fill the frame.
@@ -18,12 +18,14 @@ Each is rendered at 3840x2560 (3:2) and 5244x2950 (16:9), as a PNG in `static/` 
 
 The 3:2 and 16:9 renders are laid out separately (not a crop), so each keeps its content centered.
 
-Video encoding: libx264 High, CRF 18, yuv420p, bt709, no audio, `-level 6.0`. Both sizes fit level 6.0 at 30 fps (MaxFS 139,264 macroblocks, MaxMBPS 4,177,920; 5244x2950 is 60,680 MBs, about 1.8M MB/s). Some hardware decoders and older players don't support level 6.x, and App Store Connect's acceptance of it is still to be confirmed with a test upload. If it is rejected, re-encode as HEVC: `ffmpeg -i in.mp4 -c:v libx265 -tag:v hvc1 -crf 20 -pix_fmt yuv420p -an out.mov`.
+Video encoding: libx264 High, CRF 18, yuv420p, bt709, no audio, `-level 6.0` (3840x2560 at 30 fps is 38,400 macroblocks, about 1.15M MB/s, within level 6.0's MaxFS 139,264 and MaxMBPS 4,177,920). App Store Connect accepted `A-timeline-headline-3840x2560.mp4` on 2026-10-08.
+
+No 16:9 video: on 2026-10-08 App Store Connect rejected a 5244x2950 Search Results MP4 with "File dimensions are invalid", although ffprobe, mdls and AVFoundation all read it as exactly 5244x2950 and playable. Apple's page lists 16:9 for video, but the upload doesn't take it, so `gen.mjs` renders 16:9 as a still only. If a 3840x2560 upload is ever refused, a 1920x1280 encode at `-level 4.2` is the fallback: `ffmpeg -i motion/A-timeline-headline-3840x2560.mp4 -vf scale=1920:1280 -c:v libx264 -profile:v high -level 4.2 -crf 18 -pix_fmt yuv420p -an out.mp4`.
 
 ## Regenerate
 
 ```
-node app-store-assets/SearchResults/gen.mjs            # everything (about 7 minutes)
+node app-store-assets/SearchResults/gen.mjs            # everything (several minutes)
 node app-store-assets/SearchResults/gen.mjs C-in       # only outputs whose name contains the argument
 node app-store-assets/SearchResults/gen.mjs --still    # PNGs only
 ```

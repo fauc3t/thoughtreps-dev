@@ -25,7 +25,7 @@
   .card .art img, .card .art video { width: 100%; display: block; }
 </style>
 <h1>App Store Search Results: preview</h1>
-<p>Every output in static/ and motion/. The small cards show each option at about the size it appears in search results, next to the icon, name and Get button.</p>
+<p>Every output in static/ and motion/ (video is 3:2 only). The small cards show each option at about the size it appears in search results, next to the icon, name and Get button.</p>
 <div id="out"></div>
 <script>
   const OPTIONS = [
@@ -42,6 +42,6 @@
   document.getElementById('out').innerHTML = OPTIONS.map(([t, n]) =>
     `<h2>${t}</h2>` +
     '<div class="row">' + SIZES.map(([r, s]) => fig(img(n, s), cls(r), `${r}, ${s}, static/${n}-${s}.png`)).join('') + small(img(n, '3840x2560')) + '</div>' +
-    '<div class="row" style="margin-top:24px">' + SIZES.map(([r, s]) => fig(vid(n, s), cls(r), `${r}, ${s}, 30 fps, 12 s loop, motion/${n}-${s}.mp4`)).join('') + small(vid(n, '3840x2560')) + '</div>'
+    '<div class="row" style="margin-top:24px">' + SIZES.slice(0, 1).map(([r, s]) => fig(vid(n, s), cls(r), `${r}, ${s}, 30 fps, 12 s loop, motion/${n}-${s}.mp4`)).join('') + small(vid(n, '3840x2560')) + '</div>'
   ).join('');
 </script>

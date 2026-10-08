@@ -20,12 +20,51 @@ Search ranking uses the name, the subtitle and the keywords field. The descripti
 | Field | Limit (chars) | Draft | Notes |
 | --- | --- | --- | --- |
 | Name | 30 | Thought Reps | Reserve it by creating the App Store Connect record. |
-| Subtitle | 30 | Spaced repetition thought log (29) | Highest-weight free text after the name. The wording is an open decision (below). |
-| Keywords | 100 | `notes,journal,ideas,remember,resurface,reflect,markdown,quotes,commonplace,memory,recall,brain` (94) | Commas, no spaces. Don't repeat words from the name or subtitle, and no competitor names (guideline 2.3.7). |
-| Promotional text | 170 | Write it down in five seconds. A week later it's back on your timeline, so the good ideas get a second look. $6.99 once. No account, no subscription. (149) | Can change without review, so use it for launch messages and updates. |
-| Description | 4,000 | Not yet written | The first 3 lines show before "more", so they carry the loop and the price. Then features, privacy, and how resurfacing works in 1.0 (a fixed interval). |
+| Subtitle | 30 | Spaced repetition thought log (29) | Highest-weight free text after the name. Entered in App Store Connect (Oct 8, 2026). |
+| Keywords | 100 | `notes,journal,ideas,remember,resurface,reflect,markdown,quotes,commonplace,memory,recall,srs,review` (99) | Commas, no spaces. Don't repeat words from the name or subtitle, and no competitor names (guideline 2.3.7). `srs` and `review` catch flashcard-style searches the subtitle doesn't. |
+| Promotional text | 170 | Save a quote, an idea or a link in seconds. Thought Reps brings it back, so the good ones don't vanish into a notes app. Bought once. No account, no subscription. (162) | Can change without review, so use it for launch messages and updates. No price, since the store shows it next to the button. |
+| Description | 4,000 | Final, below (1,601) | The first 3 lines show before "more", so they carry the loop and the bought-once promise. Then how resurfacing works in 1.0 (a fixed interval, no growing intervals), features and privacy. |
+| Support URL | n/a | https://thoughtreps.com/support | |
+| Privacy Policy URL | n/a | https://thoughtreps.com/privacy | |
 | Category | n/a | Productivity, with Education as the secondary | Paid Productivity is a smaller chart to place in than Free. |
 | What's New | 4,000 | Not yet written | For 1.0, one line. After that, write real notes, because people do read them. |
+
+### Description
+
+```
+Write it down. It comes back.
+
+Save a quote, an idea or a link in seconds. Thought Reps brings it back to your timeline later, so the good ones don't vanish into a notes app.
+
+Bought once. No account, no subscription, and your thoughts stay on your phone.
+
+HOW IT WORKS
+Every thought waits for its interval, 7 days by default, then shows up on your timeline. Open it and it goes back to waiting. Snooze it if today isn't the day, or archive it when you're done with it. Miss a day and nothing is lost: a due thought waits on your timeline until you get to it.
+
+WRITE IT YOUR WAY
+- Markdown formatting, with headings, lists, links and quotes
+- Images and photo galleries inside a thought
+- Blurred blocks that hide an answer, a spoiler or a punchline until you tap
+- Save from Safari and other apps with the share sheet
+
+CHOOSE THE PACE
+- Set a default interval from 1 to 90 days
+- Give any thought its own pace: daily for a word you're learning, monthly for a favorite quote
+- Snooze until tomorrow or for a week
+- Pin the thoughts you want in view all the time
+
+FIND AND ORGANIZE
+- Tags with their own colors and their own timelines
+- Full search across everything you've written
+- An archive for thoughts you want to keep but not see
+- Stats on how much you write and what you come back to most
+
+A GENTLE NUDGE
+An optional daily reminder, only on days when something is due.
+
+YOURS, ON YOUR PHONE
+There's no account and nothing to sign in to. The app works without the internet. Back up everything to a single file, restore it any time, or move to a new phone with a one-time, encrypted export link.
+```
 
 Revisit the keywords after 2 to 4 weeks of impressions data. Swap out any term that brings impressions but no downloads.
 
@@ -95,14 +134,14 @@ Review these weekly for the first month, then monthly. Record each metadata or s
 
 **Before the first TestFlight build**
 
-- [ ] Settle the subtitle and the price wording (see Open decisions)
+- [x] Settle the subtitle and the price wording (see Open decisions)
 - [ ] Create the App Store Connect record to reserve the name
 - [ ] Add the rating-prompt trigger (3rd resurfaced thought reviewed, 7+ days after install)
 - [ ] Build a realistic sample-content set for screenshots, separate from the debug seed
 
 **Before submitting 1.0**
 
-- [ ] Finalize the keywords, promotional text and description
+- [x] Finalize the keywords, promotional text and description
 - [ ] Make screenshots 1 to 6 at 1320×2868 with captions
 - [ ] Declare the Accessibility Nutrition Labels after the accessibility pass
 - [ ] Fix the landing hero's "Free" label and the Markdown export claim
@@ -125,7 +164,7 @@ Review these weekly for the first month, then monthly. Record each metadata or s
 
 ## Open decisions
 
-1. **Subtitle.** Recommended: **Notes that come back to you** (27). It describes 1.0 accurately, since thoughts come back on a fixed interval. "Spaced repetition thought log" ranks for a term with real search volume, but Anki users will expect growing intervals. A third option keeps both: use the recommended subtitle and put `spaced,repetition` in the keywords. To fit 100 characters, drop `notes` (now in the subtitle) and `brain`, which uses exactly 100 characters.
+1. **Subtitle.** Decided: **Spaced repetition thought log** (Oct 8, 2026), for the search volume on "spaced repetition". Anki users may expect growing intervals, so the description states the fixed interval up front ("Every thought waits for its interval, 7 days by default"). Watch the reviews for that mismatch; "Notes that come back to you" is the fallback.
 2. **Price on the website.** Decided: $6.99, bought once (Oct 7, 2026). The landing hero shows a "Coming soon to the App Store" badge, not the price yet.
 3. **Pre-order.** Recommended: yes, for about 2 weeks. The cost is that the 1.0 build has to pass review before the pre-order starts.
 4. **Apple Ads budget.** Recommended: $10 to $20 a day for the first 30 days, then keep only the terms with a cost per download under about half the price.
