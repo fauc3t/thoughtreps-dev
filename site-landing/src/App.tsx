@@ -1,4 +1,4 @@
-import { GuideArticleView, GuideIndex } from './components/Guides';
+import { BlogIndex, BlogPostView } from './components/Blog';
 import { HelpArticleView, HelpIndex, HelpShell } from './components/Help';
 import { Hero, Nav } from './components/Hero';
 import { PrivacyPolicy } from './components/PrivacyPolicy';
@@ -11,7 +11,7 @@ import {
 } from './components/Sections';
 import { SupportPage as SupportPageView } from './components/SupportPage';
 import { Sprites } from './components/shared';
-import type { Guide } from './content/guides';
+import type { BlogPost } from './content/blog';
 import type { HelpArticle } from './content/help';
 
 export function HelpIndexPage() {
@@ -30,18 +30,18 @@ export function HelpArticlePage({ article }: { article: HelpArticle }) {
   );
 }
 
-export function GuideIndexPage() {
+export function BlogIndexPage() {
   return (
     <HelpShell>
-      <GuideIndex />
+      <BlogIndex />
     </HelpShell>
   );
 }
 
-export function GuidePage({ guide }: { guide: Guide }) {
+export function BlogPostPage({ post }: { post: BlogPost }) {
   return (
     <HelpShell>
-      <GuideArticleView guide={guide} />
+      <BlogPostView post={post} />
     </HelpShell>
   );
 }

@@ -10,7 +10,7 @@ import {
   type HelpArticle,
   type HelpSection,
 } from '../content/help';
-import { GuideCards } from './Guides';
+import { PostCards } from './Blog';
 import { HelpExampleView } from './HelpExamples';
 import { InlineIcon } from './HelpIcons';
 import { Nav } from './Hero';
@@ -240,21 +240,21 @@ export function HelpIndex() {
       ))}
       <section
         className="border-t-[2.5px] border-ink py-12 max-[620px]:py-9"
-        aria-labelledby="cat-guides"
+        aria-labelledby="cat-blog"
       >
         <div className="mb-6 flex max-w-[680px] flex-col gap-2">
           <h2
-            id="cat-guides"
+            id="cat-blog"
             className="text-[clamp(28px,4vw,40px)] leading-tight font-black tracking-[-0.025em] [font-variation-settings:'wdth'_108]"
           >
-            Guides
+            From the blog
           </h2>
           <p className="text-[17px] text-muted">
-            Longer reads on the ideas behind the app.{' '}
-            <Inline text="[All guides](/guides)" />
+            Essays on the ideas behind the app.{' '}
+            <Inline text="[All posts](/blog)" />
           </p>
         </div>
-        <GuideCards />
+        <PostCards />
       </section>
       <p className="mt-12 text-[17px] text-muted">
         Still stuck? <Inline text="[Contact support](/support)." />

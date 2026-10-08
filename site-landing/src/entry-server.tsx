@@ -1,7 +1,7 @@
 import { renderToString } from 'react-dom/server';
 import {
-  GuideIndexPage,
-  GuidePage,
+  BlogIndexPage,
+  BlogPostPage,
   HelpArticlePage,
   HelpIndexPage,
   LandingPage,
@@ -19,13 +19,13 @@ import {
   type HelpArticle,
 } from './content/help';
 import {
-  getGuide,
-  getGuideBreadcrumb,
-  GUIDES,
-  GUIDES_INDEX_PATH,
-  guidePath,
-  type Guide,
-} from './content/guides';
+  getBlogPost,
+  getBlogBreadcrumb,
+  POSTS,
+  BLOG_INDEX_PATH,
+  blogPostPath,
+  type BlogPost,
+} from './content/blog';
 import {
   OG_IMAGE_HEIGHT,
   OG_IMAGE_WIDTH,
@@ -52,10 +52,10 @@ const HELP_TITLE = 'Help center | Thought Reps';
 const HELP_DESCRIPTION =
   'Guides for Thought Reps, the iPhone notebook that brings your ideas back. Learn to write, resurface, review, back up and move your thoughts.';
 const HELP_ARTICLE_TITLE_SUFFIX = ' | Thought Reps Help';
-const GUIDES_TITLE = 'Guides: keep what you learn | Thought Reps';
-const GUIDES_DESCRIPTION =
-  'Longer reads on the ideas behind Thought Reps: commonplace books, rereading your notes, and keeping the ideas worth keeping.';
-const GUIDE_TITLE_SUFFIX = ' | Thought Reps';
+const BLOG_TITLE = 'Blog: keep what you learn | Thought Reps';
+const BLOG_DESCRIPTION =
+  'Essays from Thought Reps on commonplace books, rereading your notes, and keeping the ideas worth keeping.';
+const BLOG_TITLE_SUFFIX = ' | Thought Reps';
 const NOT_FOUND_TITLE = 'Page not found | Thought Reps';
 
 export interface Route {
@@ -74,11 +74,11 @@ export const HELP_ROUTES: Route[] = [
   })),
 ];
 
-export const GUIDE_ROUTES: Route[] = [
-  { path: GUIDES_INDEX_PATH, file: 'guides/index.html', hydrate: false },
-  ...GUIDES.map((guide) => ({
-    path: guidePath(guide.slug),
-    file: `guides/${guide.slug}/index.html`,
+export const BLOG_ROUTES: Route[] = [
+  { path: BLOG_INDEX_PATH, file: 'blog/index.html', hydrate: false },
+  ...POSTS.map((post) => ({
+    path: blogPostPath(post.slug),
+    file: `blog/${post.slug}/index.html`,
     hydrate: false,
   })),
 ];
@@ -86,7 +86,7 @@ export const GUIDE_ROUTES: Route[] = [
 export const ROUTES: Route[] = [
   { path: '/', file: 'index.html', hydrate: true },
   ...HELP_ROUTES,
-  ...GUIDE_ROUTES,
+  ...BLOG_ROUTES,
   { path: PRIVACY_PATH, file: 'privacy/index.html', hydrate: false },
   { path: SUPPORT_PATH, file: 'support/index.html', hydrate: false },
   { path: '/404', file: '404.html', hydrate: false, noindex: true },
@@ -148,8 +148,8 @@ export function faqJsonLd(article: HelpArticle): object {
   };
 }
 
-export function guideArticleJsonLd(guide: Guide): object {
-  const url = SITE_URL + guidePath(guide.slug);
+export function blogPostingJsonLd(post: BlogPost): object {
+  const url = SITE_URL + blogPostPath(post.slug);
   const organization = {
     '@type': 'Organization',
     name: 'Thought Reps',
@@ -157,11 +157,11 @@ export function guideArticleJsonLd(guide: Guide): object {
   };
   return {
     '@context': 'https://schema.org',
-    '@type': 'Article',
-    headline: guide.title,
-    description: guide.description,
-    datePublished: guide.published,
-    dateModified: guide.updated ?? guide.published,
+    '@type': 'BlogPosting',
+    headline: post.title,
+    description: post.description,
+    datePublished: post.published,
+    dateModified: post.updated ?? post.published,
     mainEntityOfPage: url,
     url,
     author: organization,
@@ -169,10 +169,10 @@ export function guideArticleJsonLd(guide: Guide): object {
   };
 }
 
-function guideFor(path: string): Guide | undefined {
-  const prefix = `${GUIDES_INDEX_PATH}/`;
+function blogPostFor(path: string): BlogPost | undefined {
+  const prefix = `${BLOG_INDEX_PATH}/`;
   return path.startsWith(prefix)
-    ? getGuide(path.slice(prefix.length))
+    ? getBlogPost(path.slice(prefix.length))
     : undefined;
 }
 
@@ -233,26 +233,26 @@ export function getPageMeta(path: string): PageMeta {
       ogCard: pageCard(article.title, helpArticlePath(article.slug)),
     };
   }
-  if (path === GUIDES_INDEX_PATH) {
+  if (path === BLOG_INDEX_PATH) {
     return {
-      title: GUIDES_TITLE,
-      description: GUIDES_DESCRIPTION,
-      canonical: SITE_URL + GUIDES_INDEX_PATH,
+      title: BLOG_TITLE,
+      description: BLOG_DESCRIPTION,
+      canonical: SITE_URL + BLOG_INDEX_PATH,
       jsonLd: [],
-      ogCard: pageCard('Guides', GUIDES_INDEX_PATH),
+      ogCard: pageCard('Blog', BLOG_INDEX_PATH),
     };
   }
-  const guide = guideFor(path);
-  if (guide) {
+  const post = blogPostFor(path);
+  if (post) {
     return {
-      title: guide.title + GUIDE_TITLE_SUFFIX,
-      description: guide.description,
-      canonical: SITE_URL + guidePath(guide.slug),
+      title: post.title + BLOG_TITLE_SUFFIX,
+      description: post.description,
+      canonical: SITE_URL + blogPostPath(post.slug),
       jsonLd: [
-        breadcrumbJsonLd(getGuideBreadcrumb(guide)),
-        guideArticleJsonLd(guide),
+        breadcrumbJsonLd(getBlogBreadcrumb(post)),
+        blogPostingJsonLd(post),
       ],
-      ogCard: pageCard(guide.title, guidePath(guide.slug)),
+      ogCard: pageCard(post.title, blogPostPath(post.slug)),
     };
   }
   return {
@@ -336,9 +336,9 @@ function renderPage(path: string): string {
   if (path === HELP_INDEX_PATH) return renderToString(<HelpIndexPage />);
   const article = helpArticleFor(path);
   if (article) return renderToString(<HelpArticlePage article={article} />);
-  if (path === GUIDES_INDEX_PATH) return renderToString(<GuideIndexPage />);
-  const guide = guideFor(path);
-  if (guide) return renderToString(<GuidePage guide={guide} />);
+  if (path === BLOG_INDEX_PATH) return renderToString(<BlogIndexPage />);
+  const post = blogPostFor(path);
+  if (post) return renderToString(<BlogPostPage post={post} />);
   return renderToString(<NotFoundPage />);
 }
 
