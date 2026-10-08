@@ -525,6 +525,9 @@ export function Footer({ base = '' }: { base?: string }) {
         <a className={link} href="/help">
           Learn
         </a>
+        <a className={link} href="/guides">
+          Guides
+        </a>
         <a className={link} href="/support">
           Support
         </a>

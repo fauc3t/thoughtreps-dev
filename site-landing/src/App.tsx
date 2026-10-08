@@ -1,3 +1,4 @@
+import { GuideArticleView, GuideIndex } from './components/Guides';
 import { HelpArticleView, HelpIndex, HelpShell } from './components/Help';
 import { Hero, Nav } from './components/Hero';
 import { PrivacyPolicy } from './components/PrivacyPolicy';
@@ -10,6 +11,7 @@ import {
 } from './components/Sections';
 import { SupportPage as SupportPageView } from './components/SupportPage';
 import { Sprites } from './components/shared';
+import type { Guide } from './content/guides';
 import type { HelpArticle } from './content/help';
 
 export function HelpIndexPage() {
@@ -24,6 +26,22 @@ export function HelpArticlePage({ article }: { article: HelpArticle }) {
   return (
     <HelpShell>
       <HelpArticleView article={article} />
+    </HelpShell>
+  );
+}
+
+export function GuideIndexPage() {
+  return (
+    <HelpShell>
+      <GuideIndex />
+    </HelpShell>
+  );
+}
+
+export function GuidePage({ guide }: { guide: Guide }) {
+  return (
+    <HelpShell>
+      <GuideArticleView guide={guide} />
     </HelpShell>
   );
 }

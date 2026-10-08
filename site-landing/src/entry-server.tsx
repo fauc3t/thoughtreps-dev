@@ -1,5 +1,7 @@
 import { renderToString } from 'react-dom/server';
 import {
+  GuideIndexPage,
+  GuidePage,
   HelpArticlePage,
   HelpIndexPage,
   LandingPage,
@@ -16,7 +18,14 @@ import {
   helpArticlePath,
   type HelpArticle,
 } from './content/help';
-
+import {
+  getGuide,
+  getGuideBreadcrumb,
+  GUIDES,
+  GUIDES_INDEX_PATH,
+  guidePath,
+  type Guide,
+} from './content/guides';
 import {
   OG_IMAGE_HEIGHT,
   OG_IMAGE_WIDTH,
@@ -43,6 +52,10 @@ const HELP_TITLE = 'Help center | Thought Reps';
 const HELP_DESCRIPTION =
   'Guides for Thought Reps, the iPhone notebook that brings your ideas back. Learn to write, resurface, review, back up and move your thoughts.';
 const HELP_ARTICLE_TITLE_SUFFIX = ' | Thought Reps Help';
+const GUIDES_TITLE = 'Guides: keep what you learn | Thought Reps';
+const GUIDES_DESCRIPTION =
+  'Longer reads on the ideas behind Thought Reps: commonplace books, rereading your notes, and keeping the ideas worth keeping.';
+const GUIDE_TITLE_SUFFIX = ' | Thought Reps';
 const NOT_FOUND_TITLE = 'Page not found | Thought Reps';
 
 export interface Route {
@@ -61,9 +74,19 @@ export const HELP_ROUTES: Route[] = [
   })),
 ];
 
+export const GUIDE_ROUTES: Route[] = [
+  { path: GUIDES_INDEX_PATH, file: 'guides/index.html', hydrate: false },
+  ...GUIDES.map((guide) => ({
+    path: guidePath(guide.slug),
+    file: `guides/${guide.slug}/index.html`,
+    hydrate: false,
+  })),
+];
+
 export const ROUTES: Route[] = [
   { path: '/', file: 'index.html', hydrate: true },
   ...HELP_ROUTES,
+  ...GUIDE_ROUTES,
   { path: PRIVACY_PATH, file: 'privacy/index.html', hydrate: false },
   { path: SUPPORT_PATH, file: 'support/index.html', hydrate: false },
   { path: '/404', file: '404.html', hydrate: false, noindex: true },
@@ -98,11 +121,13 @@ export const EXPORT_LINK_OG_IMAGE = 'og/export-link.png';
 
 export { renderOgImage } from './og-image';
 
-export function breadcrumbJsonLd(article: HelpArticle): object {
+export function breadcrumbJsonLd(
+  items: { name: string; path: string }[],
+): object {
   return {
     '@context': 'https://schema.org',
     '@type': 'BreadcrumbList',
-    itemListElement: getHelpBreadcrumb(article).map((item, i) => ({
+    itemListElement: items.map((item, i) => ({
       '@type': 'ListItem',
       position: i + 1,
       name: item.name,
@@ -121,6 +146,34 @@ export function faqJsonLd(article: HelpArticle): object {
       acceptedAnswer: { '@type': 'Answer', text: entry.answer },
     })),
   };
+}
+
+export function guideArticleJsonLd(guide: Guide): object {
+  const url = SITE_URL + guidePath(guide.slug);
+  const organization = {
+    '@type': 'Organization',
+    name: 'Thought Reps',
+    url: `${SITE_URL}/`,
+  };
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'Article',
+    headline: guide.title,
+    description: guide.description,
+    datePublished: guide.published,
+    dateModified: guide.updated ?? guide.published,
+    mainEntityOfPage: url,
+    url,
+    author: organization,
+    publisher: organization,
+  };
+}
+
+function guideFor(path: string): Guide | undefined {
+  const prefix = `${GUIDES_INDEX_PATH}/`;
+  return path.startsWith(prefix)
+    ? getGuide(path.slice(prefix.length))
+    : undefined;
 }
 
 function helpArticleFor(path: string): HelpArticle | undefined {
@@ -174,10 +227,32 @@ export function getPageMeta(path: string): PageMeta {
       description: article.description,
       canonical: SITE_URL + helpArticlePath(article.slug),
       jsonLd: [
-        breadcrumbJsonLd(article),
+        breadcrumbJsonLd(getHelpBreadcrumb(article)),
         ...(article.faq ? [faqJsonLd(article)] : []),
       ],
       ogCard: pageCard(article.title, helpArticlePath(article.slug)),
+    };
+  }
+  if (path === GUIDES_INDEX_PATH) {
+    return {
+      title: GUIDES_TITLE,
+      description: GUIDES_DESCRIPTION,
+      canonical: SITE_URL + GUIDES_INDEX_PATH,
+      jsonLd: [],
+      ogCard: pageCard('Guides', GUIDES_INDEX_PATH),
+    };
+  }
+  const guide = guideFor(path);
+  if (guide) {
+    return {
+      title: guide.title + GUIDE_TITLE_SUFFIX,
+      description: guide.description,
+      canonical: SITE_URL + guidePath(guide.slug),
+      jsonLd: [
+        breadcrumbJsonLd(getGuideBreadcrumb(guide)),
+        guideArticleJsonLd(guide),
+      ],
+      ogCard: pageCard(guide.title, guidePath(guide.slug)),
     };
   }
   return {
@@ -261,6 +336,9 @@ function renderPage(path: string): string {
   if (path === HELP_INDEX_PATH) return renderToString(<HelpIndexPage />);
   const article = helpArticleFor(path);
   if (article) return renderToString(<HelpArticlePage article={article} />);
+  if (path === GUIDES_INDEX_PATH) return renderToString(<GuideIndexPage />);
+  const guide = guideFor(path);
+  if (guide) return renderToString(<GuidePage guide={guide} />);
   return renderToString(<NotFoundPage />);
 }
 

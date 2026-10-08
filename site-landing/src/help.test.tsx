@@ -1,6 +1,7 @@
 import { renderToString } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { LandingPage } from './App';
+import { bodyText, gradeLevel } from './readingLevel';
 import { HelpExampleView } from './components/HelpExamples';
 import { InlineIcon } from './components/HelpIcons';
 import {
@@ -13,8 +14,6 @@ import {
   helpArticlePath,
   parseInline,
   toPlainText,
-  type HelpArticle,
-  type HelpSection,
 } from './content/help';
 import {
   buildPage,
@@ -52,48 +51,6 @@ function allText(): string[] {
       ...a.sections.flatMap((s) => [s.heading ?? '', ...bodyText(s)]),
     ]),
   ];
-}
-
-function bodyText(section: HelpSection): string[] {
-  return [
-    ...(section.paragraphs ?? []),
-    ...(section.steps ?? []),
-    ...(section.list ?? []),
-    ...(section.example ? [section.example.caption] : []),
-  ];
-}
-
-function countSyllables(word: string): number {
-  const w = word.toLowerCase().replace(/[^a-z]/g, '');
-  if (w.length <= 3) return 1;
-  const stem = w
-    .replace(/(?:[^laeiouy]es|ed|[^laeiouy]e)$/, '')
-    .replace(/^y/, '');
-  return Math.max(1, stem.match(/[aeiouy]+/g)?.length ?? 1);
-}
-
-/** What a reader reads as prose: icons, `code` and "quoted UI labels" are dropped, link text is kept. */
-function proseOf(text: string): string {
-  const spoken = parseInline(text)
-    .map((t) => (t.kind === 'icon' || t.kind === 'code' ? '' : t.text))
-    .join('')
-    .replace(/["“][^"”]*["”]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-  return spoken === '' || /[.!?:]$/.test(spoken) ? spoken : `${spoken}.`;
-}
-
-/** Flesch-Kincaid grade level with a naive syllable count. */
-function gradeLevel(article: HelpArticle): number {
-  const text = article.sections.flatMap(bodyText).map(proseOf).join(' ');
-  const sentences = text.split(/[.!?:]+(?:\s|$)/).filter((s) => /\w/.test(s));
-  const words = text.match(/[A-Za-z0-9][A-Za-z0-9'’-]*/g) ?? [];
-  const syllables = words.reduce((n, w) => n + countSyllables(w), 0);
-  return (
-    0.39 * (words.length / sentences.length) +
-    11.8 * (syllables / words.length) -
-    15.59
-  );
 }
 
 describe('help content', () => {
@@ -174,7 +131,7 @@ const GRADE_LIMIT = 4.5;
 describe('reading level', () => {
   it('keeps every article at or below the grade limit', () => {
     for (const article of HELP_ARTICLES) {
-      expect(gradeLevel(article), article.slug).toBeLessThanOrEqual(
+      expect(gradeLevel(article.sections), article.slug).toBeLessThanOrEqual(
         GRADE_LIMIT,
       );
     }
@@ -191,8 +148,8 @@ describe('reading level', () => {
         },
       ],
     };
-    expect(gradeLevel(simple as HelpArticle)).toBeLessThan(2);
-    expect(gradeLevel(dense as HelpArticle)).toBeGreaterThan(GRADE_LIMIT + 5);
+    expect(gradeLevel(simple.sections)).toBeLessThan(2);
+    expect(gradeLevel(dense.sections)).toBeGreaterThan(GRADE_LIMIT + 5);
   });
 });
 

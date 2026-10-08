@@ -10,17 +10,18 @@ import {
   type HelpArticle,
   type HelpSection,
 } from '../content/help';
+import { GuideCards } from './Guides';
 import { HelpExampleView } from './HelpExamples';
 import { InlineIcon } from './HelpIcons';
 import { Nav } from './Hero';
 import { Footer } from './Sections';
 import { AppStoreButton, Sprites } from './shared';
 
-const displayHeading =
+export const displayHeading =
   "font-black tracking-[-0.03em] [font-variation-settings:'wdth'_110]";
-const card =
+export const card =
   'stk block min-w-0 p-5 no-underline transition-[transform,box-shadow] duration-150 hover:-translate-px hover:shadow-sticker-lg active:translate-[2px] active:shadow-none';
-const cardTitle =
+export const cardTitle =
   "text-[20px] leading-tight font-extrabold tracking-[-0.01em] [font-variation-settings:'wdth'_104]";
 
 export function HelpShell({ children }: { children: ReactNode }) {
@@ -68,7 +69,7 @@ export function Inline({ text }: { text: string }) {
   });
 }
 
-function Section({ section }: { section: HelpSection }) {
+export function Section({ section }: { section: HelpSection }) {
   return (
     <div>
       {section.heading && (
@@ -104,8 +105,11 @@ function Section({ section }: { section: HelpSection }) {
   );
 }
 
-function Breadcrumb({ article }: { article: HelpArticle }) {
-  const items = getHelpBreadcrumb(article);
+export function Breadcrumb({
+  items,
+}: {
+  items: { name: string; path: string }[];
+}) {
   return (
     <nav aria-label="Breadcrumb" className="mono text-muted">
       <ol className="m-0 flex list-none items-baseline gap-x-2 p-0">
@@ -160,7 +164,7 @@ function RelatedArticles({ article }: { article: HelpArticle }) {
   );
 }
 
-function HelpCta() {
+export function HelpCta() {
   return (
     <section
       className="mt-16 flex flex-col items-center gap-5 border-t-[2.5px] border-ink pt-14 pb-16 text-center"
@@ -234,6 +238,24 @@ export function HelpIndex() {
           </ul>
         </section>
       ))}
+      <section
+        className="border-t-[2.5px] border-ink py-12 max-[620px]:py-9"
+        aria-labelledby="cat-guides"
+      >
+        <div className="mb-6 flex max-w-[680px] flex-col gap-2">
+          <h2
+            id="cat-guides"
+            className="text-[clamp(28px,4vw,40px)] leading-tight font-black tracking-[-0.025em] [font-variation-settings:'wdth'_108]"
+          >
+            Guides
+          </h2>
+          <p className="text-[17px] text-muted">
+            Longer reads on the ideas behind the app.{' '}
+            <Inline text="[All guides](/guides)" />
+          </p>
+        </div>
+        <GuideCards />
+      </section>
       <p className="mt-12 text-[17px] text-muted">
         Still stuck? <Inline text="[Contact support](/support)." />
       </p>
@@ -246,7 +268,7 @@ export function HelpArticleView({ article }: { article: HelpArticle }) {
   return (
     <>
       <article className="mx-auto max-w-[65ch] pt-6 pb-4">
-        <Breadcrumb article={article} />
+        <Breadcrumb items={getHelpBreadcrumb(article)} />
         <header className="mt-8 flex flex-col gap-4">
           <h1
             className={`text-[clamp(34px,5vw,54px)] leading-[1] ${displayHeading}`}
