@@ -270,6 +270,8 @@ extension MarkdownTextView {
             view.textContainerInset = UIEdgeInsets(top: 8, left: 0, bottom: 8, right: 0)
             view.textContainer.lineFragmentPadding = 0
             view.isScrollEnabled = false
+            // Never scrolls, so nothing needs clipping; clipping cuts the caret in half at x = 0.
+            view.clipsToBounds = false
             // Smart delete ate the blank lines around a deleted image token. Autocorrect and the double-space period are separate.
             view.smartInsertDeleteType = .no
             view.font = applier.baseFont
