@@ -28,12 +28,17 @@ const ensureSimulator = () => {
   const find = () => Object.values(simctlJson('list', 'devices').devices).flat().find((d) => d.name === SIM_NAME && d.isAvailable);
   let sim = find();
   if (!sim) {
+    if (!simctlJson('list', 'devicetypes').devicetypes.some((t) => t.identifier === DEVICE_TYPE)) {
+      throw new Error(`Device type ${DEVICE_TYPE} (iPhone 18 Pro Max) is not installed. Update Xcode to a version that includes it, or change DEVICE_TYPE in gen.mjs to another 6.9" iPhone with a 1320x2868 screen (see \`xcrun simctl list devicetypes\`).`);
+    }
     const runtimes = simctlJson('list', 'runtimes').runtimes.filter((r) => r.isAvailable && r.identifier.includes('.iOS-'));
     if (!runtimes.length) throw new Error('No iOS simulator runtime is installed');
     run('xcrun', ['simctl', 'create', SIM_NAME, DEVICE_TYPE, runtimes.at(-1).identifier]);
     sim = find();
   }
-  if (sim.state !== 'Booted') run('xcrun', ['simctl', 'boot', sim.udid]);
+  const state = () => find().state;
+  while (state() === 'Shutting Down') run('sleep', ['1']);
+  if (state() === 'Shutdown') run('xcrun', ['simctl', 'boot', sim.udid]);
   run('xcrun', ['simctl', 'bootstatus', sim.udid, '-b']);
   run('xcrun', ['simctl', 'status_bar', sim.udid, 'override', '--time', '9:41', '--dataNetwork', 'wifi', '--wifiMode', 'active',
     '--wifiBars', '3', '--cellularMode', 'active', '--cellularBars', '4', '--operatorName', '', '--batteryState', 'charged', '--batteryLevel', '100']);

@@ -142,7 +142,9 @@ enum ScreenshotSeed {
             }
             let created = Scheduler.adding(days: -item.createdDaysAgo, to: now, calendar: calendar)
             let thought = store.create(body: item.body, blocks: blocks, now: created)
-            guard thought.modelContext != nil else { return }
+            guard thought.modelContext != nil else {
+                preconditionFailure("Screenshot seed: saving \"\(item.body.prefix(40))\" failed")
+            }
             let nextDueAt = Scheduler.adding(days: item.dueInDays, to: now, calendar: calendar)
                 .addingTimeInterval(item.dueInDays == 0 ? -3600 : 0)
             let lastViewedAt = item.views > 0
