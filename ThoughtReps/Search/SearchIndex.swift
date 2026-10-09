@@ -362,7 +362,10 @@ actor SearchIndex {
 
         let fields: [SearchField] = [.body, .blockText, .blockTitle, .tag]
         return hits.map { hit in
-            let candidates = snippets[hit.rowID] ?? []
+            var candidates = snippets[hit.rowID] ?? []
+            if let body = candidates.first {
+                candidates[0] = SearchSnippet.droppingTitleLine(from: body)
+            }
             let index = candidates.firstIndex { $0.contains(SearchSnippet.matchStart) } ?? 0
             let text = candidates.indices.contains(index) ? candidates[index] : ""
             return SearchResult(

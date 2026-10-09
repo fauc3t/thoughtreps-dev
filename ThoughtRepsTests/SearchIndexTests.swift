@@ -138,6 +138,50 @@ struct SearchIndexTests {
         #expect(!result.snippet.contains("\n"))
     }
 
+    @Test func snippetNearTheTopDoesNotRepeatTheTitle() async throws {
+        let doc = searchDocument(SearchText.plain("# Evening pages\nThree pages, no editing. Reflection tends to show up around page two."))
+        await index.upsert([doc])
+        let result = try await #require(index.search("reflection").first)
+        #expect(result.snippet == "Three pages, no editing. \u{E000}Reflection\u{E001} tends to show up around page two.")
+        #expect(!SearchSnippet.plain(result.snippet).contains("Evening"))
+    }
+
+    @Test func titleOnlyMatchShowsTheStartOfThePreview() async throws {
+        let doc = searchDocument("Evening pages\nThree pages, no editing.")
+        await index.upsert([doc])
+        let result = try await #require(index.search("evening").first)
+        #expect(result.snippet == "Three pages, no editing.")
+    }
+
+    @Test func titleOnlyThoughtKeepsTheTitleMatch() async throws {
+        await index.upsert([searchDocument("Evening pages")])
+        let result = try await #require(index.search("evening").first)
+        #expect(result.snippet == "\u{E000}Evening\u{E001} pages")
+    }
+
+    @Test func titleMatchPrefersAMatchInAnotherField() async throws {
+        await index.upsert([searchDocument("Evening pages\nThree pages", tags: "evening")])
+        let result = try await #require(index.search("evening").first)
+        #expect(result.matchedField == .tag)
+    }
+
+    @Test func deepMatchKeepsItsWindowAndNoHeadingBodyIsUnchanged() async throws {
+        let filler = String(repeating: "filler ", count: 40)
+        let deep = searchDocument("Title line\n\(filler)needle \(filler)")
+        let flat = searchDocument("- first needle item\nsecond line")
+        await index.upsert([deep, flat])
+        let deepResult = try await #require(index.search("needle").first { $0.id == deep.id })
+        #expect(deepResult.snippet.hasPrefix("…") && deepResult.snippet.contains("\u{E000}needle\u{E001}"))
+        #expect(!SearchSnippet.plain(deepResult.snippet).contains("Title"))
+    }
+
+    @Test func droppingTheTitleLineKeepsMarkersPaired() {
+        #expect(SearchSnippet.droppingTitleLine(from: "Title\nrest \u{E000}hit\u{E001}") == "rest \u{E000}hit\u{E001}")
+        #expect(SearchSnippet.droppingTitleLine(from: "\u{E000}a\nb\u{E001} rest") == "\u{E000}b\u{E001} rest")
+        #expect(SearchSnippet.droppingTitleLine(from: "…mid\nrest") == "…mid\nrest")
+        #expect(SearchSnippet.droppingTitleLine(from: "no newline") == "no newline")
+    }
+
     @Test func snippetBecomesAttributedStringWithBoldMatches() {
         let attributed = SearchSnippet.attributed("\u{2026}the \u{E000}quick\u{E001} brown \u{E000}fox\u{E001}")
         #expect(String(attributed.characters) == "\u{2026}the quick brown fox")

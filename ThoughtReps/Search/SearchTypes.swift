@@ -62,6 +62,21 @@ enum SearchSnippet {
         return result
     }
 
+    /// A body snippet without the title line the result card already shows (the first line of the
+    /// indexed body, as `Thought.title` and `Thought.preview` treat it). Only a window that reaches
+    /// the top of the body (no leading "…") contains that line. If nothing else is in the window,
+    /// the snippet is kept as is, so a title-only match still shows where it matched.
+    static func droppingTitleLine(from snippet: String) -> String {
+        guard !snippet.hasPrefix("…"), let newline = snippet.firstIndex(where: \.isNewline) else { return snippet }
+        let title = snippet[..<newline]
+        var rest = String(snippet[snippet.index(after: newline)...])
+        guard !plain(rest).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return snippet }
+        if title.filter({ $0 == matchStart }).count > title.filter({ $0 == matchEnd }).count {
+            rest = String(matchStart) + rest
+        }
+        return rest
+    }
+
     /// The snippet as plain text, markers removed.
     static func plain(_ snippet: String) -> String {
         snippet.filter { $0 != matchStart && $0 != matchEnd }
