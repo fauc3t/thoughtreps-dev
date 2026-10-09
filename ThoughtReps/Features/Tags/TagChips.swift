@@ -30,7 +30,7 @@ struct TagChips: View {
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 3)
-        .background(RoundedRectangle(cornerRadius: 6).fill(Color.soft))
+        .background(RoundedRectangle(cornerRadius: 6).fill(ThemeManager.shared.current.card.alwaysFilled ? Color.hl : Color.soft))
         .foregroundStyle(Color.ink)
     }
 }

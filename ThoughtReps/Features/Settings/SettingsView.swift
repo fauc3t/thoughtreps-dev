@@ -76,6 +76,11 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    NavigationLink {
+                        ThemePickerView()
+                    } label: {
+                        LabeledContent("Theme", value: ThemeManager.shared.current.name)
+                    }
                     Picker("Thought text", selection: $thoughtFont) {
                         ForEach(ThoughtFont.allCases) { font in
                             Text(font.label).tag(font)
@@ -84,7 +89,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Appearance")
                 } footer: {
-                    Text("The font for your thoughts, card previews and the editor. Titles stay the same.")
+                    Text("The font for your thoughts, card previews and the editor.")
                 }
 
                 Section("Send Feedback") {

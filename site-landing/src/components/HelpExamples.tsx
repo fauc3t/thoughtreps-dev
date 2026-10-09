@@ -880,6 +880,42 @@ function Stats() {
   );
 }
 
+const THEMES = [
+  { name: 'Ink', tagline: 'Clean outlines, Archivo and Paper Mono.' },
+  { name: 'Library', tagline: 'Warm paper, old-style serifs, oxblood ink.' },
+  { name: 'Midnight', tagline: 'Deep navy and gold, always dark.' },
+  { name: 'Garden', tagline: 'Soft sage, rounded type, pillowy cards.' },
+  { name: 'Terminal', tagline: 'Green phosphor on black. Menlo everywhere.' },
+  { name: 'Pop', tagline: 'Cream, coral and thick ink outlines.' },
+];
+
+function Themes() {
+  return (
+    <div className="flex flex-col gap-2">
+      <div className={`${panel} ${rows}`}>
+        {THEMES.map((t, i) => (
+          <div key={t.name} className="px-3 py-3">
+            <div className="flex items-center justify-between gap-2 text-[15px]">
+              <span className="font-bold">{t.name}</span>
+              {i === 0 && (
+                <span className="flex items-center gap-1 text-[13px]">
+                  <IconGlyph name="check" className="size-[14px]" />
+                  In use
+                </span>
+              )}
+            </div>
+            <p className="text-[12.5px] leading-snug text-muted">{t.tagline}</p>
+          </div>
+        ))}
+      </div>
+      <p className="text-[12.5px] leading-snug text-muted">
+        Themes change colors, title fonts and cards. Your thought text font is
+        set under Appearance.
+      </p>
+    </div>
+  );
+}
+
 const EXAMPLES: Record<
   HelpExampleKind,
   { Mock: () => ReactNode; interactive?: boolean }
@@ -907,6 +943,7 @@ const EXAMPLES: Record<
   'import-link': { Mock: ImportLink },
   'import-menu': { Mock: ImportMenu },
   stats: { Mock: Stats },
+  themes: { Mock: Themes },
 };
 
 /** The mockup is hidden from screen readers; the caption stands in for it. Only the blurred block is real, focusable UI. */

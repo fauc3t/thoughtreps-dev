@@ -5,20 +5,34 @@ import UIKit
 // catalog with dark variants; fonts are bundled (see ThoughtReps/Resources/Fonts) and scale with
 // Dynamic Type.
 
+// The tokens come from the current theme (AppTheme.swift) instead of the asset catalog.
+@MainActor
 extension Color {
-    static let paper = Color("Paper")
-    static let soft = Color("Soft")
-    static let ink = Color("Ink")
-    static let muted = Color("Muted")
-    static let hl = Color("Hl")
+    static var paper: Color { ThemeManager.shared.current.palette.paper }
+    static var soft: Color { ThemeManager.shared.current.palette.soft }
+    static var ink: Color { ThemeManager.shared.current.palette.ink }
+    static var muted: Color { ThemeManager.shared.current.palette.muted }
+    static var hl: Color { ThemeManager.shared.current.palette.hl }
+    static var accent: Color { ThemeManager.shared.current.palette.accent }
+    static var cardBorder: Color { ThemeManager.shared.current.palette.border }
 }
 
+// Ink keeps the system colors it used before themes; the others use their tokens.
+@MainActor
+extension Color {
+    private static var isInk: Bool { ThemeManager.shared.current == .ink }
+    static var subtle: Color { isInk ? .secondary : muted }
+    static var surface: Color { isInk ? Color(.secondarySystemBackground) : soft }
+    static var codeSpan: Color { isInk ? Color.secondary.opacity(0.15) : muted.opacity(0.2) }
+}
+
+@MainActor
 extension ShapeStyle where Self == Color {
-    static var paper: Color { .paper }
-    static var soft: Color { .soft }
-    static var ink: Color { .ink }
-    static var muted: Color { .muted }
-    static var hl: Color { .hl }
+    static var paper: Color { Color.paper }
+    static var soft: Color { Color.soft }
+    static var ink: Color { Color.ink }
+    static var muted: Color { Color.muted }
+    static var hl: Color { Color.hl }
 }
 
 enum InkFontName {
@@ -34,15 +48,16 @@ enum InkFontName {
     static let all = [archivoSemiBold, archivoBold, archivoExtraBold, monoRegular, monoSemiBold, monoItalic, monoSemiBoldItalic]
 }
 
+@MainActor
 extension Font {
-    /// Archivo, for titles.
+    /// The theme's title face (Archivo in Ink).
     static func archivo(_ size: CGFloat, weight: ArchivoWeight = .semibold, relativeTo style: Font.TextStyle = .headline) -> Font {
-        .custom(weight.fontName, size: size, relativeTo: style)
+        ThemeManager.shared.current.title.font(size, weight: weight.themeWeight, relativeTo: style)
     }
 
-    /// Paper Mono, for small metadata only.
+    /// The theme's metadata face (Paper Mono in Ink), for small metadata only.
     static func mono(_ size: CGFloat = 11, semibold: Bool = false, relativeTo style: Font.TextStyle = .caption) -> Font {
-        .custom(semibold ? InkFontName.monoSemiBold : InkFontName.monoRegular, size: size, relativeTo: style)
+        ThemeManager.shared.current.meta.font(size, weight: semibold ? .semibold : .regular, relativeTo: style)
     }
 
     /// Thought text (previews, snippets) in the font chosen in Settings, at a text style's size.
@@ -63,6 +78,14 @@ extension Font {
             case .extrabold: InkFontName.archivoExtraBold
             }
         }
+
+        var themeWeight: ThemeFace.Weight {
+            switch self {
+            case .semibold: .semibold
+            case .bold: .bold
+            case .extrabold: .heavy
+            }
+        }
     }
 }
 
@@ -71,24 +94,35 @@ enum InkAppearance {
     @MainActor static func install() {
         let appearance = UINavigationBarAppearance()
         appearance.configureWithDefaultBackground()
-        let ink = UIColor(named: "Ink") ?? .label
+        let theme = ThemeManager.shared.current
+        let ink = UIColor(theme.palette.ink)
         appearance.largeTitleTextAttributes = [
-            .font: scaled(InkFontName.archivoExtraBold, size: 32, style: .largeTitle),
+            .font: UIFontMetrics(forTextStyle: .largeTitle).scaledFont(for: theme.title.uiFont(32, weight: .heavy)),
             .foregroundColor: ink,
         ]
         appearance.titleTextAttributes = [
-            .font: scaled(InkFontName.archivoSemiBold, size: 17, style: .headline),
+            .font: UIFontMetrics(forTextStyle: .headline).scaledFont(for: theme.title.uiFont(17, weight: .semibold)),
             .foregroundColor: ink,
         ]
         let bar = UINavigationBar.appearance()
         bar.standardAppearance = appearance
         bar.compactAppearance = appearance
         bar.scrollEdgeAppearance = appearance
+        // Appearance proxies only reach new bars; restyle the ones already on screen.
+        for scene in UIApplication.shared.connectedScenes {
+            for window in (scene as? UIWindowScene)?.windows ?? [] {
+                restyle(window, with: appearance)
+            }
+        }
     }
 
-    private static func scaled(_ name: String, size: CGFloat, style: UIFont.TextStyle) -> UIFont {
-        let font = UIFont(name: name, size: size) ?? .systemFont(ofSize: size, weight: .bold)
-        return UIFontMetrics(forTextStyle: style).scaledFont(for: font)
+    private static func restyle(_ view: UIView, with appearance: UINavigationBarAppearance) {
+        if let bar = view as? UINavigationBar {
+            bar.standardAppearance = appearance
+            bar.compactAppearance = appearance
+            bar.scrollEdgeAppearance = appearance
+        }
+        view.subviews.forEach { restyle($0, with: appearance) }
     }
 }
 
@@ -96,26 +130,33 @@ private struct InkCard: ViewModifier {
     var filled: Bool
 
     func body(content: Content) -> some View {
+        let shape = ThemeManager.shared.current.card
+        let filled = filled || shape.alwaysFilled
+        let rect = RoundedRectangle(cornerRadius: shape.cornerRadius)
         content
             .padding(14)
-            .background(
-                RoundedRectangle(cornerRadius: 12).fill(filled ? Color.soft : Color.paper)
-            )
+            .background(rect.fill(filled ? Color.soft : Color.paper))
             .overlay {
-                if !filled {
-                    RoundedRectangle(cornerRadius: 12).strokeBorder(Color.hl, lineWidth: 1)
+                if !filled || shape.hardShadow > 0 {
+                    rect.strokeBorder(Color.cardBorder, lineWidth: shape.borderWidth)
+                }
+            }
+            .background {
+                if shape.hardShadow > 0 {
+                    rect.fill(Color.cardBorder).offset(x: shape.hardShadow, y: shape.hardShadow)
                 }
             }
     }
 }
 
 /// Press feedback for cards and ink buttons: a slight shrink plus an ink wash over the shape.
+@MainActor
 struct InkPressStyle: ButtonStyle {
-    var cornerRadius: CGFloat = 12
+    var cornerRadius: CGFloat?
     var pressedScale: CGFloat = 0.98
 
     func makeBody(configuration: Configuration) -> some View {
-        let shape = RoundedRectangle(cornerRadius: cornerRadius)
+        let shape = RoundedRectangle(cornerRadius: cornerRadius ?? ThemeManager.shared.current.card.cornerRadius)
         configuration.label
             .contentShape(shape)
             .overlay {

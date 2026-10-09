@@ -222,7 +222,7 @@ private struct TimelineList: View {
             } label: {
                 Label(thought.isPinned ? "Unpin" : "Pin", systemImage: thought.isPinned ? "pin.slash" : "pin")
             }
-            .tint(.accentColor)
+            .tint(ThemeManager.shared.current.swipe.pin)
         }
         .swipeActions(edge: .trailing) {
             Button {
@@ -230,21 +230,21 @@ private struct TimelineList: View {
             } label: {
                 Label("Archive", systemImage: "archivebox")
             }
-            .tint(.gray)
+            .tint(ThemeManager.shared.current.swipe.archive)
             if thought.isPinned {
                 Button {
                     store.setPinned(thought, false)
                 } label: {
                     Label("Unpin", systemImage: "pin.slash")
                 }
-                .tint(.accentColor)
+                .tint(ThemeManager.shared.current.swipe.pin)
             } else {
                 Button {
                     store.snooze(thought, days: 1, now: .now)
                 } label: {
                     Label("Tomorrow", systemImage: "moon.zzz")
                 }
-                .tint(.orange)
+                .tint(ThemeManager.shared.current.swipe.tomorrow)
             }
         }
     }

@@ -13,6 +13,8 @@ struct ThoughtRepsApp: App {
         return try ModelContainer.thoughtReps()
     }
 
+    private let themes = ThemeManager.shared
+
     init() {
         InkAppearance.install()
     }
@@ -23,9 +25,8 @@ struct ThoughtRepsApp: App {
             case .success(let container):
                 RootTabView()
                     .modelContainer(container)
-                    #if DEBUG
-                    .preferredColorScheme(ScreenshotMode.isActive ? .light : nil)
-                    #endif
+                    .tint(Color.accent)
+                    .onAppear { themes.applyInterfaceStyle() }
             case .failure(let error):
                 StoreUnavailableView(error: error)
             }

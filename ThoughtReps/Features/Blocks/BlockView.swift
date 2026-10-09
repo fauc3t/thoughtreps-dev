@@ -41,7 +41,7 @@ struct GalleryBlockView: View {
             if let heading {
                 Text(heading)
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.subtle)
             }
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
@@ -88,7 +88,7 @@ struct MarkdownBlockView: View {
                 if let heading {
                     Text(heading)
                         .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Color.subtle)
                         .accessibilityAddTraits(.isHeader)
                 }
                 ThoughtRenderer(markdown: content, images: images) { onOpenImage($0) }
@@ -113,11 +113,11 @@ struct BlurredBlockView: View {
             HStack {
                 Text(title ?? "Hidden")
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color.subtle)
                 Spacer()
                 Text(isRevealed ? "Hide" : "Tap to reveal")
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.tint)
+                    .foregroundStyle(Color.accent)
             }
             ThoughtRenderer(markdown: content, images: images) { onOpenImage($0) }
                 .allowsHitTesting(isRevealed)
@@ -127,7 +127,7 @@ struct BlurredBlockView: View {
         .padding(14)
         .background(
             RoundedRectangle(cornerRadius: 14)
-                .fill(Color(.secondarySystemBackground))
+                .fill(Color.surface)
         )
         .clipShape(RoundedRectangle(cornerRadius: 14))
         .contentShape(Rectangle())

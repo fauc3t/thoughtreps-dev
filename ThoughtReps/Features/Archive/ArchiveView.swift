@@ -74,7 +74,7 @@ struct ArchiveView: View {
                 } label: {
                     Label("Restore", systemImage: "arrow.uturn.backward")
                 }
-                .tint(.accentColor)
+                .tint(ThemeManager.shared.current.swipe.pin)
             }
             .swipeActions(edge: .trailing, allowsFullSwipe: false) { deleteAction(for: row.thought) }
         }
@@ -108,7 +108,7 @@ struct ArchiveView: View {
                 } label: {
                     Label("Restore", systemImage: "arrow.uturn.backward")
                 }
-                .tint(.accentColor)
+                .tint(ThemeManager.shared.current.swipe.pin)
             }
             .swipeActions(edge: .trailing, allowsFullSwipe: false) { deleteAction(for: thought) }
         }

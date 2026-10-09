@@ -82,6 +82,7 @@ export const HELP_EXAMPLE_KINDS = [
   'import-link',
   'import-menu',
   'stats',
+  'themes',
 ] as const;
 
 export type HelpExampleKind = (typeof HELP_EXAMPLE_KINDS)[number];
@@ -460,6 +461,55 @@ export const HELP_ARTICLES: HelpArticle[] = [
           'Search runs on your phone and works offline.',
           'You may see "Indexing… results may be incomplete." That means Thought Reps is still updating its search list. It can happen right after the app starts. Results fill in when it is done.',
           'The app rebuilds the search list by itself. It is not part of your backup file.',
+        ],
+      },
+    ],
+  },
+  {
+    slug: 'themes',
+    category: 'getting-started',
+    title: 'Change the look with themes',
+    description:
+      'Pick one of six free themes to change the colors, title fonts and cards in Thought Reps. Your choice stays on your phone.',
+    related: ['the-timeline', 'tags', 'faq'],
+    sections: [
+      {
+        paragraphs: [
+          'A theme changes how the app looks: colors, title fonts and the shape of your cards. All six themes are free.',
+        ],
+        steps: [
+          'Tap {icon:settings} on the Timeline to open Settings.',
+          'Under "Appearance", tap "Theme". It shows the one you use now.',
+          'Tap a theme. It applies right away, and "In use" moves to it.',
+        ],
+        example: {
+          kind: 'themes',
+          caption:
+            'The Themes screen. Each card previews its theme, and the one in use is marked.',
+        },
+      },
+      {
+        heading: 'The six themes',
+        list: [
+          '"Ink" is the default. Clean outlines, Archivo and Paper Mono.',
+          '"Library" has warm paper, old-style serifs and oxblood ink.',
+          '"Midnight" is deep navy and gold.',
+          '"Garden" has soft sage, rounded type and pillowy cards.',
+          '"Terminal" is green on black, with Menlo everywhere.',
+          '"Pop" is cream and coral, with thick ink outlines.',
+        ],
+      },
+      {
+        heading: 'Light and dark',
+        paragraphs: [
+          '"Midnight" and "Terminal" are always dark, whatever your iPhone is set to. The other four follow your iPhone, so they switch between light and dark with it.',
+        ],
+      },
+      {
+        heading: 'What a theme does not change',
+        paragraphs: [
+          'Your thought text font is its own setting. Under "Appearance", "Thought text" stays "Paper Mono" or "System" whichever theme you pick. Settings and the editor keep the standard iPhone look.',
+          'Your theme is saved on your phone only. It is not part of a backup, so choose it again on a new phone.',
         ],
       },
     ],
@@ -1347,7 +1397,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
       'how-resurfacing-works',
       'privacy',
       'backup-and-restore',
-      'send-feedback',
+      'themes',
     ],
     faq: true,
     sections: [
@@ -1382,9 +1432,15 @@ export const HELP_ARTICLES: HelpArticle[] = [
         ],
       },
       {
+        heading: 'Can I change the look of the app?',
+        paragraphs: [
+          'Yes. Open Settings, tap "Theme" and pick one of six free themes. "Midnight" and "Terminal" are always dark. The others follow your iPhone. See [Change the look with themes](/help/themes).',
+        ],
+      },
+      {
         heading: 'Can I change the font of my thoughts?',
         paragraphs: [
-          'Yes. Tap {icon:settings} on the Timeline to open Settings. Under "Appearance", set "Thought text" to "Paper Mono" or "System". It changes your thoughts, card previews, search results and the editor. Titles stay the same.',
+          'Yes. Tap {icon:settings} on the Timeline to open Settings. Under "Appearance", set "Thought text" to "Paper Mono" or "System". It changes your thoughts, card previews, search results and the editor. Titles follow your theme. See [Change the look with themes](/help/themes).',
         ],
       },
       {
