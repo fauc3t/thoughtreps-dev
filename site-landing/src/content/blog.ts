@@ -8,7 +8,7 @@
 // lightly, and only for what the shipped app does. Check historical claims
 // before publishing.
 
-import type { HelpSection } from './help';
+import { toPlainText, type HelpSection } from './help';
 
 export interface BlogPost {
   slug: string;
@@ -156,4 +156,19 @@ export function formatPostDate(iso: string): string {
     year: 'numeric',
     timeZone: 'UTC',
   });
+}
+
+/** Minutes to read the post's text at about 230 words a minute, at least 1. */
+export function readingMinutes(post: BlogPost): number {
+  const text = post.sections
+    .flatMap((s) => [
+      s.heading ?? '',
+      ...(s.paragraphs ?? []),
+      ...(s.steps ?? []),
+      ...(s.list ?? []),
+    ])
+    .map(toPlainText)
+    .join(' ');
+  const words = text.split(/\s+/).filter(Boolean).length;
+  return Math.max(1, Math.round(words / 230));
 }

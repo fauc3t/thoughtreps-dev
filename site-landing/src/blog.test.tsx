@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { blogPostPath, formatPostDate, POSTS } from './content/blog';
+import {
+  blogPostPath,
+  formatPostDate,
+  POSTS,
+  readingMinutes,
+} from './content/blog';
 import {
   HELP_ARTICLES,
   HELP_ICONS,
@@ -79,6 +84,14 @@ describe('blog content', () => {
     expect(formatPostDate('2026-10-08')).toBe('8 October 2026');
   });
 
+  it('estimates a reading time of at least a minute', () => {
+    for (const post of POSTS) {
+      expect(readingMinutes(post)).toBeGreaterThanOrEqual(1);
+    }
+    const short = { ...POSTS[0], sections: [{ paragraphs: ['Hi.'] }] };
+    expect(readingMinutes(short)).toBe(1);
+  });
+
   it('keeps every post at or below the grade limit', () => {
     for (const post of POSTS) {
       expect(gradeLevel(post.sections), post.slug).toBeLessThanOrEqual(
@@ -110,6 +123,7 @@ describe('blog routes', () => {
         if (section.heading) expect(html).toContain(section.heading);
       }
       expect(html).toContain(`dateTime="${post.published}"`);
+      expect(html).toContain(`${readingMinutes(post)} min read`);
       const figures = post.sections.filter((s) => s.example).length;
       expect(html.match(/<figure/g)?.length ?? 0).toBe(figures);
     }

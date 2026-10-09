@@ -4,6 +4,7 @@ import {
   formatPostDate,
   getBlogBreadcrumb,
   POSTS,
+  readingMinutes,
   type BlogPost,
 } from '../content/blog';
 import {
@@ -69,16 +70,19 @@ export function BlogPostView({ post }: { post: BlogPost }) {
       <article className="mx-auto max-w-[65ch] pt-6 pb-4">
         <Breadcrumb items={getBlogBreadcrumb(post)} />
         <header className="mt-8 flex flex-col gap-4">
+          <p className="mono text-[14px] font-medium text-ink">
+            {post.updated ? 'Updated ' : ''}
+            <time dateTime={date}>{formatPostDate(date)}</time>
+            <span aria-hidden="true"> · </span>
+            <span className="sr-only">, </span>
+            {`${readingMinutes(post)} min read`}
+          </p>
           <h1
             className={`text-[clamp(34px,5vw,54px)] leading-[1] ${displayHeading}`}
           >
             {post.title}
           </h1>
           <p className="text-[19px] text-muted">{post.description}</p>
-          <p className="mono text-muted">
-            {post.updated ? 'Updated ' : ''}
-            <time dateTime={date}>{formatPostDate(date)}</time>
-          </p>
         </header>
         <div className="mt-2">
           {post.sections.map((section, i) => (
