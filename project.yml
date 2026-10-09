@@ -143,7 +143,28 @@ targets:
         TEST_HOST: "$(BUILT_PRODUCTS_DIR)/ThoughtReps.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/ThoughtReps"
         BUNDLE_LOADER: "$(TEST_HOST)"
 
+  ThoughtRepsUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: ThoughtRepsUITests
+    dependencies:
+      - target: ThoughtReps
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(TR_BUNDLE_ID).uitests
+        GENERATE_INFOPLIST_FILE: YES
+
 schemes:
+  ThoughtRepsScreenshots:
+    build:
+      targets:
+        ThoughtReps: all
+        ThoughtRepsUITests: [test]
+    test:
+      config: Debug
+      targets:
+        - ThoughtRepsUITests
   ThoughtReps:
     build:
       targets:

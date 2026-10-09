@@ -4,7 +4,14 @@ import SwiftData
 @main
 struct ThoughtRepsApp: App {
     @UIApplicationDelegateAdaptor private var appDelegate: AppDelegate
-    private static let container = Result { try ModelContainer.thoughtReps() }
+    private static let container = Result { try makeContainer() }
+
+    private static func makeContainer() throws -> ModelContainer {
+        #if DEBUG
+        if ScreenshotMode.isActive { return try ScreenshotMode.makeContainer() }
+        #endif
+        return try ModelContainer.thoughtReps()
+    }
 
     init() {
         InkAppearance.install()
@@ -16,6 +23,9 @@ struct ThoughtRepsApp: App {
             case .success(let container):
                 RootTabView()
                     .modelContainer(container)
+                    #if DEBUG
+                    .preferredColorScheme(ScreenshotMode.isActive ? .light : nil)
+                    #endif
             case .failure(let error):
                 StoreUnavailableView(error: error)
             }

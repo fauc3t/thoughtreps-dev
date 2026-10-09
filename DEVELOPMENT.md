@@ -43,6 +43,8 @@ Search uses an FTS5 index at `Application Support/Search/search-index.sqlite` (d
 
 Before launch, a schema change means regenerating `ThoughtRepsTests/Fixtures/default.store`; the steps are in `ThoughtRepsTests/Fixtures/README.md` (`FixtureGenerator` runs only when `TEST_RUNNER_GENERATE_FIXTURE_TO` is set).
 
+Debug builds also have a screenshot mode for the App Store screenshots: launch with `-screenshotMode` (`ScreenshotMode.swift`) for an in-memory store with a fixed marketing seed, light mode and no prompts. It is driven by the `ThoughtRepsScreenshots` scheme and `app-store-assets/Screenshots/gen.mjs --capture`; see that folder's README.
+
 ## Running on an iPhone
 
 1. Connect the phone and turn on Developer Mode (Settings > Privacy & Security).

@@ -117,18 +117,20 @@ struct SettingsView: View {
                 }
 
                 #if DEBUG
-                Section("Developer") {
-                    Button("Add sample thoughts") {
-                        SampleData.insert(into: context, now: .now)
-                    }
-                    Button("Send test reminder in 5 seconds") {
-                        Task {
-                            testReminderSent = await NotificationScheduler.sendTestReminder(context: context, now: .now)
-                            notificationStatus = await NotificationScheduler.authorizationStatus()
+                if !ScreenshotMode.isActive {
+                    Section("Developer") {
+                        Button("Add sample thoughts") {
+                            SampleData.insert(into: context, now: .now)
                         }
-                    }
-                    Button("Delete all thoughts", role: .destructive) {
-                        confirmWipe = true
+                        Button("Send test reminder in 5 seconds") {
+                            Task {
+                                testReminderSent = await NotificationScheduler.sendTestReminder(context: context, now: .now)
+                                notificationStatus = await NotificationScheduler.authorizationStatus()
+                            }
+                        }
+                        Button("Delete all thoughts", role: .destructive) {
+                            confirmWipe = true
+                        }
                     }
                 }
                 #endif
