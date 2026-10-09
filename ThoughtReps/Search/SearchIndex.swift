@@ -31,11 +31,14 @@ actor SearchIndex {
         case removeAll
     }
 
-    /// The app's index, in Application Support, opened on first use. Under tests and previews it is
-    /// in memory, so they never touch the real file.
+    /// The app's index, in Application Support, opened on first use. Under tests, previews and
+    /// screenshot mode it is in memory, so they never touch the real file.
     static let shared = SearchIndex(location: isRunningTestsOrPreviews ? .inMemory : .file(defaultFileURL))
 
     static var isRunningTestsOrPreviews: Bool {
+        #if DEBUG
+        if ScreenshotMode.isActive { return true }
+        #endif
         let environment = ProcessInfo.processInfo.environment
         return environment["XCTestConfigurationFilePath"] != nil || environment["XCTestBundlePath"] != nil
             || environment["XCODE_RUNNING_FOR_PREVIEWS"] != nil

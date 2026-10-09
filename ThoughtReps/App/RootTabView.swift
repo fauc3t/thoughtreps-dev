@@ -97,6 +97,9 @@ struct RootTabView: View {
             if let url = activity.webpageURL { open(url) }
         }
         .onChange(of: scenePhase, initial: true) { _, phase in
+            #if DEBUG
+            if ScreenshotMode.isActive { return }
+            #endif
             switch phase {
             case .active:
                 importInbox()
@@ -117,7 +120,10 @@ struct RootTabView: View {
             ThoughtStore(context: context).migrateLegacyBlurredBlocks()
             ThoughtStore(context: context).cleanUpPendingImageSaves()
             #if DEBUG
-            SampleData.seedIfNeeded(context: context)
+            if !ScreenshotMode.isActive { SampleData.seedIfNeeded(context: context) }
+            if ScreenshotMode.sendsTestReminder {
+                Task { _ = await NotificationScheduler.sendTestReminder(context: context, now: .now) }
+            }
             IntegrityChecker.logViolations(in: context)
             #endif
             await SearchIndexStatus.shared.reconcile(container: context.container)

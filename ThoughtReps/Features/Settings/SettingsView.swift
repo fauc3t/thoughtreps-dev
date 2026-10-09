@@ -29,6 +29,13 @@ struct SettingsView: View {
         )
     }
 
+    private func refreshExportLink() async {
+        #if DEBUG
+        if ScreenshotMode.isActive { return }
+        #endif
+        await exportLink.refresh()
+    }
+
     private func reschedule() {
         Task { await NotificationScheduler.reschedule(context: context, now: .now) }
     }
@@ -117,18 +124,20 @@ struct SettingsView: View {
                 }
 
                 #if DEBUG
-                Section("Developer") {
-                    Button("Add sample thoughts") {
-                        SampleData.insert(into: context, now: .now)
-                    }
-                    Button("Send test reminder in 5 seconds") {
-                        Task {
-                            testReminderSent = await NotificationScheduler.sendTestReminder(context: context, now: .now)
-                            notificationStatus = await NotificationScheduler.authorizationStatus()
+                if !ScreenshotMode.isActive {
+                    Section("Developer") {
+                        Button("Add sample thoughts") {
+                            SampleData.insert(into: context, now: .now)
                         }
-                    }
-                    Button("Delete all thoughts", role: .destructive) {
-                        confirmWipe = true
+                        Button("Send test reminder in 5 seconds") {
+                            Task {
+                                testReminderSent = await NotificationScheduler.sendTestReminder(context: context, now: .now)
+                                notificationStatus = await NotificationScheduler.authorizationStatus()
+                            }
+                        }
+                        Button("Delete all thoughts", role: .destructive) {
+                            confirmWipe = true
+                        }
                     }
                 }
                 #endif
@@ -138,7 +147,7 @@ struct SettingsView: View {
                 }
             }
             .task { notificationStatus = await NotificationScheduler.authorizationStatus() }
-            .task { await exportLink.refresh() }
+            .task { await refreshExportLink() }
             .onAppear { backup.host = .settings }
             .onDisappear { backup.host = .root }
             .fileImporter(isPresented: $showImporter, allowedContentTypes: [.thoughtRepsExport, .zip]) { result in
@@ -158,7 +167,7 @@ struct SettingsView: View {
             }
             .onChange(of: scenePhase) { _, phase in
                 guard phase == .active else { return }
-                Task { await exportLink.refresh() }
+                Task { await refreshExportLink() }
                 Task { notificationStatus = await NotificationScheduler.authorizationStatus() }
             }
             .onChange(of: reminderEnabled) { _, enabled in
