@@ -155,7 +155,7 @@ final class SearchModel {
         }
         let byID = Dictionary(thoughts.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         return results.compactMap { result in
-            byID[result.id].map { Row(thought: $0, result: result) }
+            byID[result.id].map { Row(thought: $0, result: result.showing(title: $0.title)) }
         }
     }
 }

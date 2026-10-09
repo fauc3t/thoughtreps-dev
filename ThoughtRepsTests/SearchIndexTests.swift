@@ -138,48 +138,72 @@ struct SearchIndexTests {
         #expect(!result.snippet.contains("\n"))
     }
 
+    /// What the card shows for the first result of `query`, given the thought's real title.
+    func shown(_ query: String, title: String) async throws -> SearchResult {
+        try await #require(index.search(query).first).showing(title: title)
+    }
+
     @Test func snippetNearTheTopDoesNotRepeatTheTitle() async throws {
-        let doc = searchDocument(SearchText.plain("# Evening pages\nThree pages, no editing. Reflection tends to show up around page two."))
-        await index.upsert([doc])
-        let result = try await #require(index.search("reflection").first)
+        await index.upsert([searchDocument(SearchText.plain("# Evening pages\nThree pages, no editing. Reflection tends to show up around page two."))])
+        let result = try await shown("reflection", title: "Evening pages")
         #expect(result.snippet == "Three pages, no editing. \u{E000}Reflection\u{E001} tends to show up around page two.")
-        #expect(!SearchSnippet.plain(result.snippet).contains("Evening"))
     }
 
     @Test func titleOnlyMatchShowsTheStartOfThePreview() async throws {
-        let doc = searchDocument("Evening pages\nThree pages, no editing.")
-        await index.upsert([doc])
-        let result = try await #require(index.search("evening").first)
-        #expect(result.snippet == "Three pages, no editing.")
+        await index.upsert([searchDocument("Evening pages\nThree pages, no editing.")])
+        #expect(try await shown("evening", title: "Evening pages").snippet == "Three pages, no editing.")
     }
 
     @Test func titleOnlyThoughtKeepsTheTitleMatch() async throws {
         await index.upsert([searchDocument("Evening pages")])
-        let result = try await #require(index.search("evening").first)
-        #expect(result.snippet == "\u{E000}Evening\u{E001} pages")
+        #expect(try await shown("evening", title: "Evening pages").snippet == "\u{E000}Evening\u{E001} pages")
     }
 
-    @Test func titleMatchPrefersAMatchInAnotherField() async throws {
+    @Test func titleMatchGivesWayToAMatchInAnotherField() async throws {
         await index.upsert([searchDocument("Evening pages\nThree pages", tags: "evening")])
-        let result = try await #require(index.search("evening").first)
-        #expect(result.matchedField == .tag)
+        #expect(try await shown("evening", title: "Evening pages").matchedField == .tag)
     }
 
-    @Test func deepMatchKeepsItsWindowAndNoHeadingBodyIsUnchanged() async throws {
+    @Test func deepMatchKeepsItsWindow() async throws {
         let filler = String(repeating: "filler ", count: 40)
-        let deep = searchDocument("Title line\n\(filler)needle \(filler)")
-        let flat = searchDocument("- first needle item\nsecond line")
-        await index.upsert([deep, flat])
-        let deepResult = try await #require(index.search("needle").first { $0.id == deep.id })
-        #expect(deepResult.snippet.hasPrefix("…") && deepResult.snippet.contains("\u{E000}needle\u{E001}"))
-        #expect(!SearchSnippet.plain(deepResult.snippet).contains("Title"))
+        await index.upsert([searchDocument("Title line\n\(filler)needle \(filler)")])
+        let result = try await shown("needle", title: "Title line")
+        #expect(result.snippet.hasPrefix("…") && result.snippet.contains("\u{E000}needle\u{E001}"))
+        #expect(!SearchSnippet.plain(result.snippet).contains("Title"))
+    }
+
+    @Test func firstLineThatIsNotTheCardTitleIsKept() async throws {
+        await index.upsert([searchDocument("first needle item\nsecond line")])
+        let result = try await shown("needle", title: "Untitled thought")
+        #expect(result.snippet == "first \u{E000}needle\u{E001} item second line")
+    }
+
+    @Test func imageTokenFirstBodyKeepsItsContent() async throws {
+        let body = SearchText.plain("![](img:\(UUID().uuidString))\nGood morning notes about tea")
+        await index.upsert([searchDocument(body)])
+        let result = try await shown("morning", title: "Untitled thought")
+        #expect(result.snippet == "Good \u{E000}morning\u{E001} notes about tea")
+    }
+
+    @Test func codeFenceFirstBodyKeepsItsContent() async throws {
+        let body = SearchText.plain("```\nlet x = 1\n```\nnotes about tea")
+        await index.upsert([searchDocument(body)])
+        let result = try await shown("let", title: "```")
+        #expect(result.snippet == "\u{E000}let\u{E001} x = 1 notes about tea")
+    }
+
+    @Test func titleStartingWithEllipsisKeepsItself() async throws {
+        await index.upsert([searchDocument("\u{2026}and so it begins\nthe tea scene")])
+        let result = try await shown("tea", title: "\u{2026}and so it begins")
+        #expect(SearchSnippet.plain(result.snippet).contains("and so it begins"))
     }
 
     @Test func droppingTheTitleLineKeepsMarkersPaired() {
-        #expect(SearchSnippet.droppingTitleLine(from: "Title\nrest \u{E000}hit\u{E001}") == "rest \u{E000}hit\u{E001}")
-        #expect(SearchSnippet.droppingTitleLine(from: "\u{E000}a\nb\u{E001} rest") == "\u{E000}b\u{E001} rest")
-        #expect(SearchSnippet.droppingTitleLine(from: "…mid\nrest") == "…mid\nrest")
-        #expect(SearchSnippet.droppingTitleLine(from: "no newline") == "no newline")
+        #expect(SearchSnippet.droppingTitleLine(from: "Title\nrest \u{E000}hit\u{E001}", title: "Title") == "rest \u{E000}hit\u{E001}")
+        #expect(SearchSnippet.droppingTitleLine(from: "\u{E000}a\nb\u{E001} rest", title: "a") == "\u{E000}b\u{E001} rest")
+        #expect(SearchSnippet.droppingTitleLine(from: "Other\nrest", title: "Title") == "Other\nrest")
+        #expect(SearchSnippet.droppingTitleLine(from: "\u{2026}mid\nrest", title: "mid") == "\u{2026}mid\nrest")
+        #expect(SearchSnippet.droppingTitleLine(from: "no newline", title: "no newline") == "no newline")
     }
 
     @Test func snippetBecomesAttributedStringWithBoldMatches() {

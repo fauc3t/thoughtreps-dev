@@ -362,16 +362,16 @@ actor SearchIndex {
 
         let fields: [SearchField] = [.body, .blockText, .blockTitle, .tag]
         return hits.map { hit in
-            var candidates = snippets[hit.rowID] ?? []
-            if let body = candidates.first {
-                candidates[0] = SearchSnippet.droppingTitleLine(from: body)
-            }
+            let candidates = snippets[hit.rowID] ?? []
             let index = candidates.firstIndex { $0.contains(SearchSnippet.matchStart) } ?? 0
             let text = candidates.indices.contains(index) ? candidates[index] : ""
-            return SearchResult(
-                id: hit.id, isArchived: hit.isArchived, matchedField: fields[index],
-                snippet: text.split(whereSeparator: \.isNewline).joined(separator: " ")
-            )
+            var result = SearchResult(id: hit.id, isArchived: hit.isArchived, matchedField: fields[index], snippet: SearchSnippet.singleLine(text))
+            if index == 0 {
+                result.bodySnippet = text
+                result.otherMatch = candidates.indices.dropFirst().first { candidates[$0].contains(SearchSnippet.matchStart) }
+                    .map { SearchResult.Other(field: fields[$0], snippet: SearchSnippet.singleLine(candidates[$0])) }
+            }
+            return result
         }
     }
 }
