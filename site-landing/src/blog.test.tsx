@@ -81,7 +81,7 @@ describe('blog content', () => {
         expect(Number.isNaN(Date.parse(date))).toBe(false);
       }
     }
-    expect(formatPostDate('2026-10-08')).toBe('8 October 2026');
+    expect(formatPostDate('2026-10-08')).toBe('October 8, 2026');
   });
 
   it('estimates a reading time of at least a minute', () => {

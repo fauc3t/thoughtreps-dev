@@ -9,6 +9,7 @@
 // before publishing.
 
 import { toPlainText, type HelpSection } from './help';
+import { formatLastUpdated } from './privacy';
 
 export interface BlogPost {
   slug: string;
@@ -148,14 +149,9 @@ export function getBlogBreadcrumb(
   ];
 }
 
-/** "8 October 2026", fixed to UTC so the prerender doesn't depend on the build machine. */
+/** "October 8, 2026", the same format as the privacy policy's date. */
 export function formatPostDate(iso: string): string {
-  return new Date(`${iso}T00:00:00Z`).toLocaleDateString('en-GB', {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-    timeZone: 'UTC',
-  });
+  return formatLastUpdated(iso);
 }
 
 /** Minutes to read the post's text at about 230 words a minute, at least 1. */

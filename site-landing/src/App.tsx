@@ -22,10 +22,16 @@ export function HelpIndexPage() {
   );
 }
 
-export function HelpArticlePage({ article }: { article: HelpArticle }) {
+export function HelpArticlePage({
+  article,
+  updated,
+}: {
+  article: HelpArticle;
+  updated?: string;
+}) {
   return (
     <HelpShell>
-      <HelpArticleView article={article} />
+      <HelpArticleView article={article} updated={updated} />
     </HelpShell>
   );
 }

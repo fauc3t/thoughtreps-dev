@@ -1,5 +1,6 @@
 // Writes each route's prerendered page into dist/ using the bundle built by
 // `vite build --ssr`. The page logic lives in src/entry-server.tsx (buildPage).
+import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve, dirname } from 'node:path';
@@ -12,6 +13,8 @@ const {
   EXPORT_LINK_OG_CARD,
   EXPORT_LINK_OG_IMAGE,
   getPageMeta,
+  helpDatesFromGitBlame,
+  helpDatesSourceFile,
   ogImageUrl,
   renderOgImage,
   ROUTES,
@@ -20,6 +23,23 @@ const {
 } = await import(
   pathToFileURL(resolve(root, 'dist-server/entry-server.js')).href
 );
+
+// Each help article's "Updated" date is its newest line in git. Without git
+// (or history), pages still build, just undated.
+function helpDates() {
+  try {
+    const blame = execFileSync(
+      'git',
+      ['blame', '--line-porcelain', '--', helpDatesSourceFile()],
+      { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 },
+    );
+    return helpDatesFromGitBlame(blame);
+  } catch (error) {
+    console.warn(`Help dates unavailable, building undated: ${error.message}`);
+    return {};
+  }
+}
+const dates = { help: helpDates() };
 
 const template = await readFile(resolve(dist, 'index.html'), 'utf8');
 await mkdir(resolve(dist, 'og'), { recursive: true });
@@ -41,7 +61,7 @@ for (const route of ROUTES) {
   const ogImage = await writeOgImage(route, getPageMeta(route.path).ogCard);
   const file = resolve(dist, route.file);
   await mkdir(dirname(file), { recursive: true });
-  await writeFile(file, buildPage(template, route, ogImage));
+  await writeFile(file, buildPage(template, route, ogImage, dates));
 }
 
 await writeFile(

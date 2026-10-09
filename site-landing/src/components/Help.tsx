@@ -11,6 +11,7 @@ import {
   type HelpSection,
 } from '../content/help';
 import { PostCards } from './Blog';
+import { formatLastUpdated } from '../content/privacy';
 import { HelpExampleView } from './HelpExamples';
 import { InlineIcon } from './HelpIcons';
 import { Nav } from './Hero';
@@ -264,12 +265,25 @@ export function HelpIndex() {
   );
 }
 
-export function HelpArticleView({ article }: { article: HelpArticle }) {
+export function HelpArticleView({
+  article,
+  updated,
+}: {
+  article: HelpArticle;
+  /** ISO date of the article's last change, from git at prerender. */
+  updated?: string;
+}) {
   return (
     <>
       <article className="mx-auto max-w-[65ch] pt-6 pb-4">
         <Breadcrumb items={getHelpBreadcrumb(article)} />
         <header className="mt-8 flex flex-col gap-4">
+          {updated && (
+            <p className="mono text-[14px] font-medium text-ink">
+              {'Updated '}
+              <time dateTime={updated}>{formatLastUpdated(updated)}</time>
+            </p>
+          )}
           <h1
             className={`text-[clamp(34px,5vw,54px)] leading-[1] ${displayHeading}`}
           >

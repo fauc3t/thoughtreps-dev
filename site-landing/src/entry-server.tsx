@@ -9,6 +9,7 @@ import {
   PrivacyPolicyPage,
   SupportPage,
 } from './App';
+import { HELP_SOURCE_FILE, helpDatesFromBlame } from './content/helpDates';
 import {
   getFaqEntries,
   getHelpArticle,
@@ -120,6 +121,27 @@ function pageCard(title: string, path: string): OgCard {
 export const EXPORT_LINK_OG_IMAGE = 'og/export-link.png';
 
 export { renderOgImage } from './og-image';
+
+/** The help source file prerender blames for each article's date. */
+export function helpDatesSourceFile(): string {
+  return HELP_SOURCE_FILE;
+}
+
+/** Help article dates from `git blame --line-porcelain` output on help.ts. */
+export function helpDatesFromGitBlame(
+  porcelain: string,
+): Record<string, string> {
+  return helpDatesFromBlame(
+    porcelain,
+    HELP_ARTICLES.map((a) => a.slug),
+  );
+}
+
+/** Dates only prerender knows (from git). Without them, pages render undated. */
+export interface SiteDates {
+  /** Help article slug -> ISO date of its last change. */
+  help?: Record<string, string>;
+}
 
 export function breadcrumbJsonLd(
   items: { name: string; path: string }[],
@@ -329,13 +351,20 @@ export function renderHead(meta: PageMeta, ogImage?: string): string {
   return tags.join('\n    ');
 }
 
-function renderPage(path: string): string {
+function renderPage(path: string, dates: SiteDates = {}): string {
   if (path === '/') return renderToString(<LandingPage />);
   if (path === PRIVACY_PATH) return renderToString(<PrivacyPolicyPage />);
   if (path === SUPPORT_PATH) return renderToString(<SupportPage />);
   if (path === HELP_INDEX_PATH) return renderToString(<HelpIndexPage />);
   const article = helpArticleFor(path);
-  if (article) return renderToString(<HelpArticlePage article={article} />);
+  if (article) {
+    return renderToString(
+      <HelpArticlePage
+        article={article}
+        updated={dates.help?.[article.slug]}
+      />,
+    );
+  }
   if (path === BLOG_INDEX_PATH) return renderToString(<BlogIndexPage />);
   const post = blogPostFor(path);
   if (post) return renderToString(<BlogPostPage post={post} />);
@@ -345,9 +374,10 @@ function renderPage(path: string): string {
 export function renderRoute(
   path: string,
   ogImage?: string,
+  dates?: SiteDates,
 ): { html: string; head: string } {
   return {
-    html: renderPage(path),
+    html: renderPage(path, dates),
     head: renderHead(getPageMeta(path), ogImage),
   };
 }
@@ -383,13 +413,14 @@ export function buildPage(
   template: string,
   route: { path: string; hydrate: boolean },
   ogImage?: string,
+  dates?: SiteDates,
 ): string {
   if (!HEAD_MARKER.test(template) || !template.includes(OUTLET_MARKER)) {
     throw new Error(
       'index.html is missing the ssr-head/ssr-outlet markers. Run `vite build` first; prerender is not re-runnable on its own output.',
     );
   }
-  const { html, head } = renderRoute(route.path, ogImage);
+  const { html, head } = renderRoute(route.path, ogImage, dates);
   let page = template
     .replace(HEAD_MARKER, () => head)
     .replace(OUTLET_MARKER, () => html);
