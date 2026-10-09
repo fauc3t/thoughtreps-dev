@@ -10,6 +10,9 @@ import UniformTypeIdentifiers
 /// real store is never opened. Light mode, no prompts, no notification calls.
 enum ScreenshotMode {
     static let isActive = CommandLine.arguments.contains("-screenshotMode")
+    /// Also schedules the "Send test reminder" notification at launch. The one screenshot mode side
+    /// effect outside the app: it asks the simulator for notification permission.
+    static let sendsTestReminder = CommandLine.arguments.contains("-screenshotReminder")
 
     /// Overrides settings for this launch only: the argument domain is volatile, so nothing is persisted.
     static func overrideDefaults() {
@@ -58,19 +61,30 @@ enum ScreenshotSeed {
         ),
         Item(
             body: "# Read later: the case for slow email\nSaved Tuesday, 12 min read. You said you'd get to it.\n\n#toread",
-            createdDaysAgo: 10, dueInDays: -2, views: 1
+            createdDaysAgo: 10, dueInDays: 1, views: 1
         ),
         Item(
             body: "# Why journals work\nWriting builds reflection into the day. Notice what keeps coming back.\n\n#journal",
             createdDaysAgo: 17, dueInDays: -2, views: 1
         ),
         Item(
-            body: "# Margin of safety\nBuy only when the price leaves room for being **wrong**.\n\n#investing",
+            body: """
+            # Margin of safety
+            Buy only when the price leaves room for being **wrong**.
+
+            1. Estimate value conservatively
+            2. Demand a discount to it
+            3. Be patient: the *price* will come to you
+
+            > The three most important words in investing.
+
+            #investing
+            """,
             createdDaysAgo: 15, dueInDays: -1, views: 1
         ),
         Item(
             body: "# Rubber-duck before asking\nExplain the bug out loud in full sentences first. Half the time the answer shows up.\n\n#work",
-            createdDaysAgo: 7, dueInDays: 0
+            createdDaysAgo: 7, dueInDays: 2
         ),
         Item(
             body: """
@@ -148,10 +162,13 @@ enum ScreenshotSeed {
             let nextDueAt = Scheduler.adding(days: item.dueInDays, to: now, calendar: calendar)
                 .addingTimeInterval(item.dueInDays == 0 ? -3600 : 0)
             let lastViewedAt = item.views > 0
-                ? Scheduler.adding(
-                    days: -thought.effectiveIntervalDays(defaultDays: Scheduler.defaultIntervalDays),
-                    to: nextDueAt,
-                    calendar: calendar
+                ? min(
+                    Scheduler.adding(
+                        days: -thought.effectiveIntervalDays(defaultDays: Scheduler.defaultIntervalDays),
+                        to: nextDueAt,
+                        calendar: calendar
+                    ),
+                    Scheduler.adding(days: -1, to: now, calendar: calendar)
                 )
                 : nil
             store.overrideSchedule(thought, nextDueAt: nextDueAt, lastViewedAt: lastViewedAt, viewCount: item.views)

@@ -121,6 +121,9 @@ struct RootTabView: View {
             ThoughtStore(context: context).cleanUpPendingImageSaves()
             #if DEBUG
             if !ScreenshotMode.isActive { SampleData.seedIfNeeded(context: context) }
+            if ScreenshotMode.sendsTestReminder {
+                Task { _ = await NotificationScheduler.sendTestReminder(context: context, now: .now) }
+            }
             IntegrityChecker.logViolations(in: context)
             #endif
             await SearchIndexStatus.shared.reconcile(container: context.container)

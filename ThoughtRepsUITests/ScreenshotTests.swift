@@ -8,14 +8,17 @@ final class ScreenshotTests: XCTestCase {
 
     override func setUp() {
         continueAfterFailure = false
-        app = XCUIApplication()
-        app.launchArguments = ["-screenshotMode", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         XCUIDevice.shared.orientation = .portrait
+    }
+
+    private func launch(_ extraArguments: [String] = []) {
+        app = XCUIApplication()
+        app.launchArguments = ["-screenshotMode", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"] + extraArguments
         app.launch()
     }
 
-    private func snap(_ name: String) {
-        Thread.sleep(forTimeInterval: 1.0)
+    private func snap(_ name: String, settle: TimeInterval = 1.0) {
+        Thread.sleep(forTimeInterval: settle)
         let attachment = XCTAttachment(data: XCUIScreen.main.screenshot().pngRepresentation, uniformTypeIdentifier: "public.png")
         attachment.name = name
         attachment.lifetime = .keepAlways
@@ -29,26 +32,27 @@ final class ScreenshotTests: XCTestCase {
     }
 
     func testTimeline() {
-        XCTAssertTrue(app.staticTexts["Margin of safety"].waitForExistence(timeout: 10))
+        launch()
+        XCTAssertTrue(app.staticTexts["Weekend in the mountains"].waitForExistence(timeout: 10))
         snap("01-timeline")
     }
 
     func testIntervalPicker() {
-        openThought("Rubber-duck before asking")
-        let more = app.buttons["More intervals"]
-        XCTAssertTrue(more.waitForExistence(timeout: 10))
-        more.tap()
-        XCTAssertTrue(app.buttons["Custom…"].waitForExistence(timeout: 10))
+        launch()
+        openThought("Margin of safety")
+        XCTAssertTrue(app.buttons["More intervals"].waitForExistence(timeout: 10))
         snap("02-interval")
     }
 
     func testMarkdownAndPhotos() {
+        launch()
         openThought("Weekend in the mountains")
         XCTAssertTrue(app.buttons["Moodboard image 1 of 4"].waitForExistence(timeout: 10))
         snap("03-markdown-photos")
     }
 
     func testSearch() {
+        launch()
         app.buttons["Search"].tap()
         let field = app.searchFields.firstMatch
         XCTAssertTrue(field.waitForExistence(timeout: 10))
@@ -62,14 +66,22 @@ final class ScreenshotTests: XCTestCase {
     }
 
     func testTags() {
+        launch()
         app.tabBars.buttons["Tags"].tap()
         XCTAssertTrue(app.staticTexts["#journal"].waitForExistence(timeout: 10))
         snap("05-tags")
     }
 
-    func testReminders() {
-        app.buttons["Settings"].tap()
-        XCTAssertTrue(app.staticTexts["Reminder"].waitForExistence(timeout: 10))
-        snap("06-reminders")
+    /// The app schedules its test reminder 5 seconds out (asking for permission the first time on a
+    /// simulator); the device is locked and the notification captured on the Lock Screen once it arrives.
+    func testReminderNotification() {
+        launch(["-screenshotReminder"])
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        let allow = springboard.alerts.buttons["Allow"]
+        if allow.waitForExistence(timeout: 2) { allow.tap() }
+        XCUIDevice.shared.perform(NSSelectorFromString("pressLockButton"))
+        let banner = springboard.staticTexts["4 thoughts are back today"]
+        XCTAssertTrue(banner.waitForExistence(timeout: 20), springboard.debugDescription)
+        snap("06-reminders", settle: 0.6)
     }
 }

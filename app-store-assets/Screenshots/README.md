@@ -12,18 +12,20 @@ The product page screenshots (Apple's "Screenshots" asset): real simulator captu
 
 Output is `static/<name>-1320x2868.png`. The copy lives in one place, `src/copy.js`. Claims are checked against the shipped app (default interval 7 days, 1d/3d/7d/30d chips plus more intervals and "Custom…", Markdown and gallery blocks, Active/Archived/All search, tag colors, one daily reminder at the chosen time); nothing from Study mode.
 
-1. `01-timeline`: "Write it down. It comes back." / "Write a thought and it returns to your timeline in 7 days." The Timeline with a pinned thought and due thoughts.
-2. `02-interval`: "Pick when you see it again." / "Bring it back in 1, 3, 7 or 30 days, or set your own." A thought's "Back in" bar with the more-intervals menu open.
+1. `01-timeline`: "Write it down. It comes back." / "Write a thought and it returns to your timeline in 7 days." The Timeline with a pinned thought and four due thoughts (the seed keeps the list ending above the + button).
+2. `02-interval`: "Pick when you see it again." / "Bring it back in 1, 3, 7 or 30 days, or set your own." A thought with its "Back in" bar: 1d, 3d, 7d (selected), 30d and the more-intervals chip.
 3. `03-markdown-photos`: "Write in Markdown, add photos." / "Headings, lists, quotes and photo galleries in any thought." A thought with bold, italic, a list, a quote and a gallery.
 4. `04-search`: "Find any thought in a second." / "Search everything you have written, active or archived." Search for "reflect", matches in bold.
 5. `05-tags`: "Sort with #tags." / "Tag thoughts as you write, and give each tag its own color." The Tags list.
-6. `06-reminders`: "Get a nudge, not a nag." / "One reminder a day at the time you pick, only when thoughts are due." Settings, Reminder section turned on.
+6. `06-reminders`: "Get a nudge, not a nag." / "One reminder a day at the time you pick, only when thoughts are due." The reminder notification on the Lock Screen ("Thought Reps", "4 thoughts are back today").
 
 The phone is drawn in CSS (ink border, hard offset shadow, a plain island); it is not Apple artwork. All six use one headline size, the largest at which the widest headline fits.
 
 ## How the captures work
 
-`ThoughtRepsUITests/ScreenshotTests.swift` launches the app with the DEBUG-only `-screenshotMode` argument (`ThoughtReps/App/ScreenshotMode.swift`, compiled out of Release). In that mode the store and search index are in memory and filled by `ScreenshotSeed` through `ThoughtStore` (so the real store is never opened), the app is forced to light mode, the rating and reminder prompts are suppressed, no notification calls are made, the Developer settings section is hidden, and settings are overridden for that launch only (reminder on at 8:00 AM, 7-day default). The gallery images are drawn in code, so no photos or image files are bundled. Each test attaches one PNG of the whole screen (1320x2868); `gen.mjs` exports them from the `.xcresult` into `raw/`.
+`ThoughtRepsUITests/ScreenshotTests.swift` launches the app with the DEBUG-only `-screenshotMode` argument (`ThoughtReps/App/ScreenshotMode.swift`, compiled out of Release). In that mode the store and search index are in memory and filled by `ScreenshotSeed` through `ThoughtStore` (so the real store is never opened), the app is forced to light mode, the rating and reminder prompts are suppressed, no notification calls are made, the Developer settings section and the export-link refresh are skipped, and settings are overridden for that launch only (reminder on at 8:00 AM, 7-day default). The gallery images are drawn in code, so no photos or image files are bundled. The reminder shot is the one exception to "no side effects": the extra `-screenshotReminder` argument calls `NotificationScheduler.sendTestReminder` at launch, so the simulator is asked for notification permission (the UI test taps Allow), then the device is locked and the notification captured on the Lock Screen. The real store is still never touched; only run `--capture` on the dedicated simulator. The Lock Screen clock reads 9:41 and the date "Sat Jan 1" because of the status bar override, and the notification says "2m ago".
+
+Each test attaches one PNG of the whole screen (1320x2868); `gen.mjs` exports them from the `.xcresult` into `raw/`.
 
 The tests live in their own scheme, `ThoughtRepsScreenshots`, so a normal `xcodebuild test` of `ThoughtReps` does not run them. To change a screen, edit the seed or the test, re-run `--capture`, and commit the new `raw/` files.
 
