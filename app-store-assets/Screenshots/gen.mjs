@@ -41,7 +41,10 @@ const ensureSimulator = () => {
     if (i >= 30) throw new Error(`${SIM_NAME} is stuck shutting down; run \`xcrun simctl shutdown ${sim.udid}\` and retry`);
     run('sleep', ['1']);
   }
-  if (state() === 'Shutdown') run('xcrun', ['simctl', 'boot', sim.udid]);
+  // Restarted every run so it never starts on the Lock Screen. Not erased: on an erased simulator the
+  // notification permission is granted but scheduling still fails until the next restart.
+  if (state() !== 'Shutdown') run('xcrun', ['simctl', 'shutdown', sim.udid]);
+  run('xcrun', ['simctl', 'boot', sim.udid]);
   run('xcrun', ['simctl', 'bootstatus', sim.udid, '-b']);
   run('xcrun', ['simctl', 'status_bar', sim.udid, 'override', '--time', '9:41', '--dataNetwork', 'wifi', '--wifiMode', 'active',
     '--wifiBars', '3', '--cellularMode', 'active', '--cellularBars', '4', '--operatorName', '', '--batteryState', 'charged', '--batteryLevel', '100']);

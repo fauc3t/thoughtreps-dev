@@ -72,7 +72,7 @@ final class ScreenshotTests: XCTestCase {
         snap("05-tags")
     }
 
-    /// The app schedules its test reminder 5 seconds out (asking for permission the first time on a
+    /// The app schedules its test reminder 15 seconds out (asking for permission the first time on a
     /// simulator); the device is locked and the notification captured on the Lock Screen once it arrives.
     func testReminderNotification() {
         launch(["-screenshotReminder"])
@@ -81,7 +81,7 @@ final class ScreenshotTests: XCTestCase {
         if allow.waitForExistence(timeout: 8) { allow.tap() }
         XCUIDevice.shared.perform(NSSelectorFromString("pressLockButton"))
         let banner = springboard.staticTexts["4 thoughts are back today"]
-        XCTAssertTrue(banner.waitForExistence(timeout: 20), springboard.debugDescription)
+        XCTAssertTrue(banner.waitForExistence(timeout: 30), springboard.debugDescription)
         snap("06-reminders", settle: 0.6)
     }
 }

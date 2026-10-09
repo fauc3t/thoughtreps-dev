@@ -1,4 +1,5 @@
 import SwiftUI
+import UserNotifications
 import SwiftData
 
 private struct CaptureRequest: Identifiable {
@@ -122,7 +123,11 @@ struct RootTabView: View {
             #if DEBUG
             if !ScreenshotMode.isActive { SampleData.seedIfNeeded(context: context) }
             if ScreenshotMode.sendsTestReminder {
-                Task { _ = await NotificationScheduler.sendTestReminder(context: context, now: .now) }
+                // Long enough for the UI test to answer the permission alert and lock the device first:
+                // a notification that arrives while the app is open isn't shown.
+                // Last run's notification would stack under this one on the Lock Screen.
+                UNUserNotificationCenter.current().removeAllDeliveredNotifications()
+                Task { _ = await NotificationScheduler.sendTestReminder(context: context, now: .now, delay: 15) }
             }
             IntegrityChecker.logViolations(in: context)
             #endif
