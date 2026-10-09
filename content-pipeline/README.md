@@ -19,3 +19,7 @@ Before a post moves to **ready**:
 - Mention the app lightly, and only for features the shipped app has.
 - Keep it to grade 7 (`pnpm test` enforces this once it's in `blog.ts`).
 - Link to related help articles and earlier posts, and add links back from them where it makes sense.
+
+## Free tools (`free-tools/`)
+
+Printables and other free things people can download, link to and share, such as templates. Same idea as the blog: useful on their own, with the app mentioned lightly. `free-tools/ideas.md` is the backlog. Where they'll live on the site (a `/free` or `/tools` page, PDFs or web pages) isn't decided yet.
