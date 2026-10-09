@@ -37,7 +37,10 @@ const ensureSimulator = () => {
     sim = find();
   }
   const state = () => find().state;
-  while (state() === 'Shutting Down') run('sleep', ['1']);
+  for (let i = 0; state() === 'Shutting Down'; i++) {
+    if (i >= 30) throw new Error(`${SIM_NAME} is stuck shutting down; run \`xcrun simctl shutdown ${sim.udid}\` and retry`);
+    run('sleep', ['1']);
+  }
   if (state() === 'Shutdown') run('xcrun', ['simctl', 'boot', sim.udid]);
   run('xcrun', ['simctl', 'bootstatus', sim.udid, '-b']);
   run('xcrun', ['simctl', 'status_bar', sim.udid, 'override', '--time', '9:41', '--dataNetwork', 'wifi', '--wifiMode', 'active',

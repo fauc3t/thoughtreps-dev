@@ -78,7 +78,7 @@ final class ScreenshotTests: XCTestCase {
         launch(["-screenshotReminder"])
         let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
         let allow = springboard.alerts.buttons["Allow"]
-        if allow.waitForExistence(timeout: 2) { allow.tap() }
+        if allow.waitForExistence(timeout: 8) { allow.tap() }
         XCUIDevice.shared.perform(NSSelectorFromString("pressLockButton"))
         let banner = springboard.staticTexts["4 thoughts are back today"]
         XCTAssertTrue(banner.waitForExistence(timeout: 20), springboard.debugDescription)

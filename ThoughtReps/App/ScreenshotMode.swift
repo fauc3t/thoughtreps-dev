@@ -7,12 +7,12 @@ import UniformTypeIdentifiers
 
 /// Debug-only mode for the App Store screenshots (`app-store-assets/Screenshots`), switched on by the
 /// `-screenshotMode` launch argument. The store is in memory and filled with `ScreenshotSeed`, so the
-/// real store is never opened. Light mode, no prompts, no notification calls.
+/// real store is never opened. Light mode, no prompts, and no notification calls unless `sendsTestReminder`.
 enum ScreenshotMode {
     static let isActive = CommandLine.arguments.contains("-screenshotMode")
     /// Also schedules the "Send test reminder" notification at launch. The one screenshot mode side
     /// effect outside the app: it asks the simulator for notification permission.
-    static let sendsTestReminder = CommandLine.arguments.contains("-screenshotReminder")
+    static let sendsTestReminder = isActive && CommandLine.arguments.contains("-screenshotReminder")
 
     /// Overrides settings for this launch only: the argument domain is volatile, so nothing is persisted.
     static func overrideDefaults() {
