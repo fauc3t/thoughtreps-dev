@@ -16,7 +16,7 @@ All in one `cdk.Stage` named `prod` (`infra/lib/app-stage.ts`).
 | --- | --- | --- |
 | `ThoughtReps-prod-Dns` | Deployed 2026-10-05 | Route53 hosted zone `thoughtreps.com` (RETAIN) |
 | `ThoughtReps-prod-Landing` | Deployed 2026-10-05; security headers + CSP 2026-10-07 | S3 bucket (OAC) + CloudFront for the apex, `www` -> apex 301 and `/x` -> `/x/index.html` rewrite (viewer-request function), `404.html`; ACM cert |
-| `ThoughtReps-prod-Mail` | Deployed 2026-10-05; reply attachments added 2026-10-06; security headers + CSP 2026-10-07 | SES identity, MX, DMARC, mail bucket, receipt rule, ForwardFn, Cognito, HTTP API (ReplyFn/DeleteFn/AttachmentUrlFn), attachment upload bucket (unversioned, 1-day expiry), mail web UI hosting |
+| `ThoughtReps-prod-Mail` | Deployed 2026-10-05; reply attachments added 2026-10-06; security headers + CSP 2026-10-07; social@ and repsbot@ mailboxes 2026-10-09 | SES identity, MX, DMARC, mail bucket, receipt rules (one per mailbox), ForwardFn, Cognito, HTTP API (ReplyFn/DeleteFn/AttachmentUrlFn), attachment upload bucket (unversioned, 1-day expiry), mail web UI hosting |
 | `ThoughtReps-prod-Share` | Deployed 2026-10-05; waitlist added 2026-10-07; custom security headers + CSP 2026-10-07 | Export-link backend: unversioned export bucket, DynamoDB link table, App Attest device/export-link/public/sweep Lambdas, FeedbackFn (`POST /feedback`, SES send), WaitlistFn (`POST /waitlist`, public, CORS for thoughtreps.com only), `WaitlistTable` (RETAIN, PITR), HTTP API, `transfer.thoughtreps.com` site (download page from `transfer-web/`, deployed by `scripts/deploy-transfer-web.sh`) |
 
 ### DNS
@@ -25,11 +25,11 @@ All in one `cdk.Stage` named `prod` (`infra/lib/app-stage.ts`).
 - Nameservers: `ns-502.awsdns-62.com`, `ns-698.awsdns-23.net`, `ns-1437.awsdns-51.org`, `ns-1574.awsdns-04.co.uk`.
 - The domain is registered outside AWS; these nameservers are set at the registrar by hand. Check with `dig NS thoughtreps.com +short`. Delegation must be live before Landing/Mail deploy (ACM and SES verification need it).
 
-### Mail (`hello@thoughtreps.com`)
+### Mail (`hello@`, `social@`, `repsbot@thoughtreps.com`)
 
 - SES domain identity `thoughtreps.com`, MAIL FROM `bounce.thoughtreps.com`, inbound MX, `_dmarc` at `p=none` with reports to `me@nickhorn.com`.
-- **The receipt rule lives in strands' rule set.** SES allows one active receipt rule set per region, and `simple-mail-prod` is the active one. It is owned by the `SimpleMail-prod-Mail` stack in the separate `~/dev/simple-mail` repo (it also carries hello@/developer@/social@strands.io). Our Mail stack adds its rule to that set by name and never creates or activates a rule set. **Tearing down `SimpleMail-prod-Mail` removes our rule too.** This is deliberately documented only here.
-- Mail lands in the versioned, RETAIN mail bucket under `hello@thoughtreps.com/inbox/`; `ForwardFn` also forwards it to `me@nickhorn.com`.
+- **The receipt rule lives in strands' rule set.** SES allows one active receipt rule set per region, and `simple-mail-prod` is the active one. It is owned by the `SimpleMail-prod-Mail` stack in the separate `~/dev/simple-mail` repo (it also carries hello@/developer@/social@strands.io). Our Mail stack adds one rule per mailbox to that set by name and never creates or activates a rule set. **Tearing down `SimpleMail-prod-Mail` removes our rules too.** This is deliberately documented only here.
+- Mail lands in the versioned, RETAIN mail bucket under `<address>/inbox/` (e.g. `hello@thoughtreps.com/inbox/`); `ForwardFn` also forwards every mailbox to `me@nickhorn.com`.
 - SES production access is account-wide and already on; the CDK bootstrap is shared too.
 - Inbox UI: `mail.thoughtreps.com` (Cognito sign-in, no self-signup).
 

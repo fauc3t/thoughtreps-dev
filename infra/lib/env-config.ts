@@ -39,12 +39,20 @@ const ENV_CONFIGS: Record<EnvName, EnvConfig> = {
     account: '041459489812',
     region: 'us-east-1',
     domainName: 'thoughtreps.com',
-    mailboxAddresses: ['hello@thoughtreps.com'],
+    mailboxAddresses: [
+      'hello@thoughtreps.com',
+      'social@thoughtreps.com',
+      'repsbot@thoughtreps.com',
+    ],
     alertEmail: 'me@nickhorn.com',
     // me@nickhorn.com is already a verified recipient identity in this
     // account (SES production access is on account-wide), so forwarding
     // needs no extra identity.
-    forwardTo: { 'hello@thoughtreps.com': 'me@nickhorn.com' },
+    forwardTo: {
+      'hello@thoughtreps.com': 'me@nickhorn.com',
+      'social@thoughtreps.com': 'me@nickhorn.com',
+      'repsbot@thoughtreps.com': 'me@nickhorn.com',
+    },
     sharedReceiptRuleSetName: 'simple-mail-prod',
     exportLinkSubdomain: 'transfer',
     appAttestAppId: '835DH8RD35.com.thoughtreps.app',
