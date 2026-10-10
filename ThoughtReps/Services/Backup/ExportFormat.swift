@@ -105,6 +105,8 @@ enum BackupFormatV1 {
         var name: String
         var displayName: String
         var colorHex: String?
+        /// Absent in archives from before it existed; `updatedClock` then counts as the oldest.
+        var updatedAt: Date? = nil
     }
 
     struct ImageRecord: Codable, Equatable {
@@ -158,6 +160,10 @@ enum BackupFormatV1 {
         var body: String
         var createdAt: Date
         var updatedAt: Date
+        /// Change clocks of the schedule and state groups. Absent in archives from before they existed;
+        /// `scheduleClock` and `stateClock` then fall back to `updatedAt`.
+        var scheduleChangedAt: Date? = nil
+        var stateChangedAt: Date? = nil
         var nextDueAt: Date
         var lastViewedAt: Date?
         var viewCount: Int
@@ -174,7 +180,14 @@ enum BackupFormatV1 {
     }
 }
 
+extension TagRecord {
+    var updatedClock: Date { updatedAt ?? .distantPast }
+}
+
 extension ThoughtRecord {
+    var scheduleClock: Date { scheduleChangedAt ?? updatedAt }
+    var stateClock: Date { stateChangedAt ?? updatedAt }
+
     /// Whether importing this record keeps every `IntegrityChecker` invariant. Records written by the
     /// app always pass; anything else is skipped rather than repaired.
     var isImportable: Bool {

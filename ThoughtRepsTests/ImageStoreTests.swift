@@ -166,7 +166,7 @@ struct ImageStoreTests {
         store.create(body: "# U", blocks: [gallery([newImage()])], now: now)
         #expect(try imageCount() == 4)
 
-        #expect(store.delete(first))
+        #expect(store.delete(first, now: now))
         #expect(try imageCount() == 1)
         #expect(try context.fetchCount(FetchDescriptor<Block>()) == 1)
         try checkClean()
@@ -324,7 +324,7 @@ struct ImageStoreTests {
             body: "# T\n\(ImageToken.token(for: inline.id))", blocks: [gallery([newImage(), newImage()])], images: [inline], now: now
         )
         let failing = makeStore(save: { _ in throw DiskFull() })
-        #expect(!failing.delete(thought))
+        #expect(!failing.delete(thought, now: now))
         #expect(!failing.deleteAll())
         #expect(try imageCount() == 3)
         #expect(thought.orderedImages.count == 3)

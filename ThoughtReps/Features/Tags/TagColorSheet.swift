@@ -60,7 +60,7 @@ struct TagColorSheet: View {
         guard let pick = customPick, let hex = TagColor.hex(for: pick) else { return }
         customPick = nil
         guard hex != customStartHex else { return }
-        if store.setColor(tag, hex: hex) { dismiss() }
+        if store.setColor(tag, hex: hex, now: .now) { dismiss() }
     }
 
     /// Shows the saved custom color when there is one, otherwise a color wheel.
@@ -87,7 +87,7 @@ struct TagColorSheet: View {
 
     private func swatch(name: String, color: Color, hex: String?, isSelected: Bool) -> some View {
         Button {
-            if store.setColor(tag, hex: hex) { dismiss() }
+            if store.setColor(tag, hex: hex, now: .now) { dismiss() }
         } label: {
             swatchLabel(name: name, isSelected: isSelected, checkmark: .white) { Circle().fill(color) }
         }

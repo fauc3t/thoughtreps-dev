@@ -22,7 +22,7 @@ struct RatingPromptTests {
 
     @Test func failedSaveDoesNotSetPending() throws {
         let container = try ModelContainer(
-            for: Thought.self, ThoughtReps.Tag.self, Block.self, ImageAsset.self,
+            for: Thought.self, ThoughtReps.Tag.self, Block.self, ImageAsset.self, Tombstone.self,
             configurations: ModelConfiguration(isStoredInMemoryOnly: true)
         )
         let prompt = makePrompt()
@@ -63,7 +63,7 @@ struct RatingPromptTests {
 
     @Test func learnThoughtsCountOnReviewNotOnOpen() throws {
         let container = try ModelContainer(
-            for: Thought.self, ThoughtReps.Tag.self, Block.self, ImageAsset.self,
+            for: Thought.self, ThoughtReps.Tag.self, Block.self, ImageAsset.self, Tombstone.self,
             configurations: ModelConfiguration(isStoredInMemoryOnly: true)
         )
         let prompt = makePrompt()
@@ -89,7 +89,7 @@ struct RatingPromptTests {
 
     @Test func storeCountsOnlySuccessfulDueOpens() throws {
         let container = try ModelContainer(
-            for: Thought.self, ThoughtReps.Tag.self, Block.self, ImageAsset.self,
+            for: Thought.self, ThoughtReps.Tag.self, Block.self, ImageAsset.self, Tombstone.self,
             configurations: ModelConfiguration(isStoredInMemoryOnly: true)
         )
         let prompt = makePrompt()

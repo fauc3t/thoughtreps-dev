@@ -10,7 +10,13 @@ final class Thought {
     var id: UUID = UUID()
     var body: String = ""
     var createdAt: Date = Date.now
+    /// Change clock of the content group: body, blocks, images and tags. Not bumped by schedule or state writes.
     var updatedAt: Date = Date.now
+    /// Change clock of the schedule group: `nextDueAt`, `intervalDays`, `intervalModeRaw` and
+    /// `learnIntervalDays`. `viewCount` and `lastViewedAt` are outside it and merge by max.
+    var scheduleChangedAt: Date = Date.now
+    /// Change clock of the state group: `isPinned`, `isArchived` and `archivedAt`.
+    var stateChangedAt: Date = Date.now
 
     /// When the thought next appears on the timeline.
     var nextDueAt: Date = Date.now
@@ -42,6 +48,8 @@ final class Thought {
         self.body = body
         self.createdAt = createdAt
         self.updatedAt = createdAt
+        self.scheduleChangedAt = createdAt
+        self.stateChangedAt = createdAt
         self.nextDueAt = nextDueAt
         self.intervalDays = intervalDays
     }

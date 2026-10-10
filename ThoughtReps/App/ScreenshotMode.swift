@@ -195,13 +195,13 @@ enum ScreenshotSeed {
                 )
                 : nil
             store.overrideSchedule(
-                thought, nextDueAt: nextDueAt, lastViewedAt: lastViewedAt, viewCount: item.views, learnIntervalDays: item.learnGap
+                thought, nextDueAt: nextDueAt, lastViewedAt: lastViewedAt, viewCount: item.views, learnIntervalDays: item.learnGap, now: now
             )
-            if item.pinned { store.setPinned(thought, true) }
+            if item.pinned { store.setPinned(thought, true, now: now) }
         }
         let tags = (try? context.fetch(FetchDescriptor<Tag>())) ?? []
         for tag in tags {
-            if let hex = tagColors[tag.name] { store.setColor(tag, hex: hex) }
+            if let hex = tagColors[tag.name] { store.setColor(tag, hex: hex, now: now) }
         }
     }
 

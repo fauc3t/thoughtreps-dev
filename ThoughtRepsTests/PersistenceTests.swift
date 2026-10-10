@@ -36,7 +36,7 @@ struct PersistenceTests {
                 now: now
             )
             store.markViewed(kept, now: viewedAt)
-            store.setPinned(kept, true)
+            store.setPinned(kept, true, now: now)
             let doomed = store.create(
                 body: "# Doomed\n#swift",
                 blocks: [BlockDraft(content: "gone")],
@@ -223,7 +223,7 @@ struct SaveFailureTests {
         #expect(errors.message == nil)
 
         let failing = ThoughtStore(context: context, defaultIntervalDays: 7, saveErrors: errors, save: { _ in throw DiskFull() })
-        failing.setPinned(thought, true)
+        failing.setPinned(thought, true, now: now)
         #expect(!thought.isPinned)
         #expect(errors.message == "The disk is full.")
 
@@ -329,14 +329,14 @@ struct SaveFailureTests {
         let failing = ThoughtStore(context: context, defaultIntervalDays: 7, saveErrors: errors, save: { _ in throw DiskFull() })
         let thought = good.create(body: "# One\n#swift", blocks: [BlockDraft(content: "A")], now: now)
 
-        #expect(!failing.delete(thought))
+        #expect(!failing.delete(thought, now: now))
         #expect(!failing.deleteAll())
         #expect(thought.sortedBlocks.map(\.content) == ["A"])
         #expect(try context.fetchCount(FetchDescriptor<Thought>()) == 1)
         #expect(try context.fetchCount(FetchDescriptor<Block>()) == 1)
         #expect(try IntegrityChecker.check(context).isEmpty)
 
-        #expect(good.delete(thought))
+        #expect(good.delete(thought, now: now))
         #expect(try context.fetchCount(FetchDescriptor<Block>()) == 0)
     }
 

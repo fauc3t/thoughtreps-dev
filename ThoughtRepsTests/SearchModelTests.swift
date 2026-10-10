@@ -189,7 +189,7 @@ struct SearchModelTests {
         await model.search("melon", debounce: .zero)
         #expect(model.rows.count == 3)
         store.archive(archived, now: now)
-        store.delete(deleted)
+        store.delete(deleted, now: now)
         model.pruneRows()
         #expect(model.rows.map(\.id) == [kept.id])
     }

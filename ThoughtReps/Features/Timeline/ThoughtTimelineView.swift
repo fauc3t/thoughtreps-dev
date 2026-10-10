@@ -218,7 +218,7 @@ private struct TimelineList: View {
         .inkRow()
         .swipeActions(edge: .leading) {
             Button {
-                store.setPinned(thought, !thought.isPinned)
+                store.setPinned(thought, !thought.isPinned, now: .now)
             } label: {
                 Label(thought.isPinned ? "Unpin" : "Pin", systemImage: thought.isPinned ? "pin.slash" : "pin")
             }
@@ -233,7 +233,7 @@ private struct TimelineList: View {
             .tint(ThemeManager.shared.current.swipe.archive)
             if thought.isPinned {
                 Button {
-                    store.setPinned(thought, false)
+                    store.setPinned(thought, false, now: .now)
                 } label: {
                     Label("Unpin", systemImage: "pin.slash")
                 }

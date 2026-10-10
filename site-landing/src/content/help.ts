@@ -1260,7 +1260,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
     category: 'your-data',
     title: 'Back up and restore your thoughts',
     description:
-      'Export every thought, tag and image to a .thoughtreps file you keep, and import it later. Importing merges, keeping the newer version of each thought.',
+      'Export every thought, tag and image to a .thoughtreps file you keep, and import it later. Importing merges, keeping the newest change to each thought.',
     related: ['move-to-a-new-phone', 'privacy', 'faq'],
     sections: [
       {
@@ -1307,9 +1307,9 @@ export const HELP_ARTICLES: HelpArticle[] = [
         heading: 'How importing merges',
         list: [
           'Thoughts that are new to this phone are added.',
-          'If a thought is already on this phone, the version that was edited more recently is kept.',
+          'If a thought is already on this phone, Thought Reps keeps the newest change to each part: the text, the schedule, and pinned or archived. It also keeps the higher view count.',
           'An import never deletes anything on your phone. Importing the same file twice changes nothing.',
-          'Imported thoughts keep their schedule, pins and archive state.',
+          'Imported thoughts bring their schedule, pins and archive state.',
         ],
       },
       {

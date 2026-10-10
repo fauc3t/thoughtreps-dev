@@ -99,7 +99,7 @@ struct RandomizedOperationTests {
 
     /// A thought as an export file would hold it: with the id and creation date of `existing` when given, and
     /// an `updatedAt` on either side of its current one.
-    static func randomImported(replacing existing: Thought?, now: Date, _ rng: inout SeededGenerator) -> ImportedThought {
+    static func randomImported(replacing existing: Thought?, id: UUID? = nil, now: Date, _ rng: inout SeededGenerator) -> ImportedThought {
         var images: [UUID: ProcessedImage] = [:]
         func imageRecord(order: Int) -> ImageRecord {
             let id = UUID()
@@ -125,11 +125,19 @@ struct RandomizedOperationTests {
         }
         let createdAt = existing?.createdAt ?? now.addingTimeInterval(-86_400)
         let updatedAt = max(createdAt, (existing?.updatedAt ?? now).addingTimeInterval(Double(Int.random(in: -100...100, using: &rng))))
+        func clock(_ current: Date?) -> Date? {
+            Int.random(in: 0..<4, using: &rng) == 0
+                ? nil
+                : max(createdAt, (current ?? now).addingTimeInterval(Double(Int.random(in: -100...100, using: &rng))))
+        }
+        let scheduleChangedAt = clock(existing?.scheduleChangedAt)
+        let stateChangedAt = clock(existing?.stateChangedAt)
         let archived = Int.random(in: 0..<4, using: &rng) == 0
         let viewed = Bool.random(using: &rng)
         let learning = Int.random(in: 0..<3, using: &rng) == 0
         let imported = ThoughtRecord(
-            id: existing?.id ?? UUID(), body: body, createdAt: createdAt, updatedAt: updatedAt,
+            id: existing?.id ?? id ?? UUID(), body: body, createdAt: createdAt, updatedAt: updatedAt,
+            scheduleChangedAt: scheduleChangedAt, stateChangedAt: stateChangedAt,
             nextDueAt: now.addingTimeInterval(86_400), lastViewedAt: viewed ? now : nil, viewCount: viewed ? 2 : 0,
             intervalDays: randomInterval(&rng), intervalModeRaw: (learning ? IntervalMode.learn : IntervalMode.fixed).rawValue,
             learnIntervalDays: learning && Bool.random(using: &rng) ? Int.random(in: 1...Scheduler.maxIntervalDays, using: &rng) : nil,
@@ -174,11 +182,13 @@ struct RandomizedOperationTests {
         store.searchIndex = index
         var rng = SeededGenerator(seed: seed)
         var now = Date(timeIntervalSince1970: 1_790_000_000)
+        var deletedIDs = Set<UUID>()
 
         for step in 0..<Self.stepsPerSeed {
             let thoughts = try context.fetch(FetchDescriptor<Thought>(sortBy: [SortDescriptor(\.createdAt), SortDescriptor(\.id)]))
-            var op = Int.random(in: 0..<22, using: &rng)
-            if thoughts.isEmpty && op >= 2 && op != 11 && op != 12 && op != 18 { op = 0 }
+            var op = Int.random(in: 0..<24, using: &rng)
+            if op == 22 && Int.random(in: 0..<6, using: &rng) != 0 { op = 12 }
+            if thoughts.isEmpty && op >= 2 && op != 11 && op != 12 && op != 18 && op != 22 && op != 23 { op = 0 }
             let target = thoughts.randomElement(using: &rng)
             // About 5% of writes have one of their saves (1st to 6th) fail.
             let injectedStep: Int? = Int.random(in: 0..<20, using: &rng) == 0 ? Int.random(in: 1...6, using: &rng) : nil
@@ -186,6 +196,9 @@ struct RandomizedOperationTests {
             // A third of failures also fail the next save, which defeats the take-back of early-saved images.
             doubleFailure = injectedStep != nil && Int.random(in: 0..<3, using: &rng) == 0
             let description: String
+            let before = target.map { [$0.updatedAt, $0.scheduleChangedAt, $0.stateChangedAt] }
+            // Content, schedule and state clock indexes the operation may move.
+            var allowedClocks: Set<Int>?
 
             switch op {
             case 0, 1:
@@ -202,35 +215,44 @@ struct RandomizedOperationTests {
                 Self.moveTokensToBlocks(body: &body, images: images, blocks: &blocks, &rng)
                 let interval = Self.randomInterval(&rng)
                 store.update(target!, body: body, blocks: blocks, images: images, intervalDays: interval, now: now)
+                allowedClocks = [0, 1]
                 description = "update(body: \(body.debugDescription), blocks: \(blocks.count), inline: \(images.count), interval: \(String(describing: interval)))"
             case 3, 4:
                 store.markViewed(target!, now: now)
+                allowedClocks = [1]
                 description = "markViewed"
             case 5:
                 let days = Int.random(in: 1...30, using: &rng)
                 store.snooze(target!, days: days, now: now)
+                allowedClocks = [1]
                 description = "snooze(\(days))"
             case 6:
                 let days = Self.randomInterval(&rng)
                 store.setInterval(target!, days: days, now: now)
+                allowedClocks = [1]
                 description = "setInterval(\(String(describing: days)))"
             case 7:
                 let pinned = Bool.random(using: &rng)
-                store.setPinned(target!, pinned)
+                store.setPinned(target!, pinned, now: now)
+                allowedClocks = [2]
                 description = "setPinned(\(pinned))"
             case 8:
                 store.archive(target!, now: now)
+                allowedClocks = [2]
                 description = "archive"
             case 9:
                 if target!.isArchived {
                     store.restore(target!, now: now)
+                    allowedClocks = [1, 2]
                     description = "restore"
                 } else {
                     store.archive(target!, now: now)
+                    allowedClocks = [2]
                     description = "archive (instead of restore)"
                 }
             case 10:
-                store.delete(target!)
+                let doomed = target!.id
+                if store.delete(target!, now: now) { deletedIDs.insert(doomed) }
                 description = "delete"
             case 11:
                 store.pruneOrphanTags()
@@ -278,13 +300,19 @@ struct RandomizedOperationTests {
                     Self.randomImported(replacing: Bool.random(using: &rng) ? target : nil, now: now, &rng)
                 }
                 var tally = ImportTally()
-                store.importThoughts(items, tags: [], tally: &tally)
+                let tagInfo = try context.fetch(FetchDescriptor<ThoughtReps.Tag>(sortBy: [SortDescriptor(\.name)])).map {
+                    TagRecord(
+                        name: $0.name, displayName: $0.displayName, colorHex: Self.colorChoices.randomElement(using: &rng)!,
+                        updatedAt: Bool.random(using: &rng) ? $0.updatedAt.addingTimeInterval(Double(Int.random(in: -100...100, using: &rng))) : nil
+                    )
+                }
+                store.importThoughts(items, tags: tagInfo, tally: &tally)
                 description = "import(\(items.count), replacing: \(items.filter { $0.record.id == target?.id }.count), added: \(tally.added), replaced: \(tally.replaced))"
             case 18:
                 let tags = try context.fetch(FetchDescriptor<ThoughtReps.Tag>(sortBy: [SortDescriptor(\.name)]))
                 let hex = Self.colorChoices.randomElement(using: &rng)!
                 if let tag = tags.randomElement(using: &rng) {
-                    store.setColor(tag, hex: hex)
+                    store.setColor(tag, hex: hex, now: now)
                     description = "setColor(\(tag.name), \(String(describing: hex)))"
                 } else {
                     description = "setColor (no tags)"
@@ -292,16 +320,27 @@ struct RandomizedOperationTests {
             case 19:
                 let enabled = Bool.random(using: &rng)
                 store.setLearnMode(target!, enabled, now: now)
+                allowedClocks = [1]
                 description = "setLearnMode(\(enabled))"
             case 20, 21:
                 if target!.intervalMode == .learn {
                     let gotIt = op == 20
                     store.review(target!, gotIt: gotIt, now: now)
+                    allowedClocks = [1]
                     description = gotIt ? "review(got it)" : "review(again)"
                 } else {
                     store.setLearnMode(target!, true, now: now)
+                    allowedClocks = [1]
                     description = "setLearnMode(true) (instead of review)"
                 }
+            case 22:
+                store.deleteAll()
+                description = "deleteAll"
+            case 23:
+                let items = [Self.randomImported(replacing: nil, id: deletedIDs.sorted { $0.uuidString < $1.uuidString }.randomElement(using: &rng), now: now, &rng)]
+                var tally = ImportTally()
+                store.importThoughts(items, tags: [], tally: &tally)
+                description = "import a possibly deleted id (added: \(tally.added))"
             default:
                 now = now.addingTimeInterval(Double(Int.random(in: 1...20, using: &rng)) * 86_400)
                 description = "advance now to \(now)"
@@ -309,6 +348,11 @@ struct RandomizedOperationTests {
 
             failureCountdown = nil
             failNextSave = false
+            if let allowedClocks, let target, let before {
+                let after = [target.updatedAt, target.scheduleChangedAt, target.stateChangedAt]
+                let moved = Set(after.indices.filter { after[$0] != before[$0] })
+                #expect(moved.isSubset(of: allowedClocks), "seed \(seed) step \(step) op \(description) moved clocks \(moved)")
+            }
             if !store.pendingImageSaves.isEmpty && Bool.random(using: &rng) {
                 store.cleanUpPendingImageSaves()
             }

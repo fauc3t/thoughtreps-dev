@@ -34,6 +34,7 @@ enum IntegrityChecker {
         let tags = try context.fetch(FetchDescriptor<Tag>())
         let blocks = try context.fetch(FetchDescriptor<Block>())
         let images = try context.fetch(FetchDescriptor<ImageAsset>())
+        let tombstones = try context.fetch(FetchDescriptor<Tombstone>())
 
         var seenNames = Set<String>()
         for tag in tags {
@@ -52,6 +53,20 @@ enum IntegrityChecker {
             }
             for thought in tag.thoughts ?? [] where !(thought.tags ?? []).contains(where: { $0 === tag }) {
                 add("Tag '\(tag.name)' lists thought \(thought.id) which does not list it back", tag.name)
+            }
+        }
+
+        let liveThoughtIDs = Set(thoughts.map(\.id))
+        var seenTombstones = Set<UUID>()
+        for tombstone in tombstones {
+            if TombstoneKind(rawValue: tombstone.kind) == nil {
+                add("Tombstone \(tombstone.id) has unknown kind \(tombstone.kind)", tombstone.id.uuidString)
+            }
+            if !seenTombstones.insert(tombstone.id).inserted {
+                add("Duplicate tombstone id \(tombstone.id)", tombstone.id.uuidString)
+            }
+            if tombstone.kind == TombstoneKind.thought.rawValue, liveThoughtIDs.contains(tombstone.id) {
+                add("Tombstone \(tombstone.id) matches a live thought", tombstone.id.uuidString)
             }
         }
 

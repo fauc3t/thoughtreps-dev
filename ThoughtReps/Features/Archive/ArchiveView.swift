@@ -49,7 +49,7 @@ struct ArchiveView: View {
         ) { thought in
             Button("Delete", role: .destructive) {
                 model?.remove(id: thought.id)
-                store.delete(thought)
+                store.delete(thought, now: .now)
             }
         } message: { _ in
             Text("This can't be undone.")

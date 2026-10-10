@@ -13,7 +13,7 @@ struct InboxImporterTests {
 
     init() throws {
         container = try ModelContainer(
-            for: Thought.self, ThoughtReps.Tag.self, Block.self, ImageAsset.self,
+            for: Thought.self, ThoughtReps.Tag.self, Block.self, ImageAsset.self, Tombstone.self,
             configurations: ModelConfiguration(isStoredInMemoryOnly: true)
         )
         dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)

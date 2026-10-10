@@ -108,8 +108,9 @@ struct ThoughtStore {
         let intervalChanged = thought.intervalDays != intervalDays
         thought.body = body
         thought.intervalDays = intervalDays
-        if intervalChanged, thought.intervalMode != .learn {
-            reanchor(thought)
+        if intervalChanged {
+            if thought.intervalMode != .learn { reanchor(thought) }
+            thought.scheduleChangedAt = now
         }
         thought.updatedAt = now
         let editTagsSynced = syncTags(for: thought, texts: plan.textsWhileSurplusRemains)
@@ -456,12 +457,6 @@ struct ThoughtStore {
         if image.order != order { image.order = order }
     }
 
-    /// Rebuilds the thought's tags from its body and markdown blocks, creating `Tag`s as needed.
-    @discardableResult
-    func syncTags(for thought: Thought) -> Bool {
-        syncTags(for: thought, texts: thought.markdownTexts)
-    }
-
     /// False if a tag lookup failed (logged and reported); the caller then rolls back with `persist(requiring: false)`.
     @discardableResult
     private func syncTags(for thought: Thought, texts: [String]) -> Bool {
@@ -524,7 +519,9 @@ struct ThoughtStore {
             nextDueAt: thought.nextDueAt,
             now: now
         )
+        let dueBefore = thought.nextDueAt
         thought.applyView(defaultIntervalDays: defaultIntervalDays, now: now)
+        if thought.nextDueAt != dueBefore { thought.scheduleChangedAt = now }
         guard persist() else { return false }
         if countsAsDueOpen { ratingPrompt.recordDueOpen() }
         return true
@@ -533,6 +530,7 @@ struct ThoughtStore {
     @discardableResult
     func snooze(_ thought: Thought, days: Int, now: Date) -> Bool {
         thought.applySnooze(days: days, now: now)
+        thought.scheduleChangedAt = now
         return persist()
     }
 
@@ -540,13 +538,12 @@ struct ThoughtStore {
     func setInterval(_ thought: Thought, days: Int?, now: Date) -> Bool {
         thought.intervalDays = days
         if thought.intervalMode != .learn { reanchor(thought) }
-        thought.updatedAt = now
-        defer { indexFingerprint(of: thought) }
+        thought.scheduleChangedAt = now
         return persist()
     }
 
     /// Turning on makes the first review tomorrow; turning off goes back to the fixed interval.
-    /// An edit, so it bumps `updatedAt`.
+    /// Schedule only: `updatedAt` stays.
     @discardableResult
     func setLearnMode(_ thought: Thought, _ enabled: Bool, now: Date) -> Bool {
         guard (thought.intervalMode == .learn) != enabled else { return true }
@@ -558,8 +555,7 @@ struct ThoughtStore {
             thought.intervalMode = .fixed
             reanchor(thought)
         }
-        thought.updatedAt = now
-        defer { indexFingerprint(of: thought) }
+        thought.scheduleChangedAt = now
         return persist()
     }
 
@@ -576,6 +572,7 @@ struct ThoughtStore {
         )
         thought.nextDueAt = result.nextDueAt
         thought.learnIntervalDays = result.learnIntervalDays
+        thought.scheduleChangedAt = now
         guard persist() else { return false }
         ratingPrompt.recordDueOpen()
         return true
@@ -591,7 +588,7 @@ struct ThoughtStore {
 
     /// `nil` restores the automatic color. Invalid hex is rejected without writing.
     @discardableResult
-    func setColor(_ tag: Tag, hex: String?) -> Bool {
+    func setColor(_ tag: Tag, hex: String?, now: Date) -> Bool {
         var normalized: String?
         if let hex {
             guard let valid = TagColor.normalizedHex(hex) else { return false }
@@ -599,12 +596,16 @@ struct ThoughtStore {
         }
         guard tag.colorHex != normalized else { return true }
         tag.colorHex = normalized
+        tag.updatedAt = now
         return persist()
     }
 
     @discardableResult
-    func setPinned(_ thought: Thought, _ pinned: Bool) -> Bool {
-        thought.isPinned = pinned && !thought.isArchived
+    func setPinned(_ thought: Thought, _ pinned: Bool, now: Date) -> Bool {
+        let wanted = pinned && !thought.isArchived
+        guard thought.isPinned != wanted else { return true }
+        thought.isPinned = wanted
+        thought.stateChangedAt = now
         return persist()
     }
 
@@ -613,6 +614,7 @@ struct ThoughtStore {
         thought.isArchived = true
         thought.isPinned = false
         thought.archivedAt = now
+        thought.stateChangedAt = now
         defer { indexFingerprint(of: thought) }
         return persist()
     }
@@ -622,14 +624,17 @@ struct ThoughtStore {
         thought.isArchived = false
         thought.archivedAt = nil
         thought.nextDueAt = Scheduler.restoredDue(now: now)
+        thought.stateChangedAt = now
+        thought.scheduleChangedAt = now
         defer { indexFingerprint(of: thought) }
         return persist()
     }
 
     @discardableResult
-    func delete(_ thought: Thought) -> Bool {
+    func delete(_ thought: Thought, now: Date) -> Bool {
         let id = thought.id
         deleteWithChildren(thought)
+        context.insert(Tombstone(id: id, kind: .thought, deletedAt: now))
         defer { reindex(ids: [id]) }
         return persist()
     }
@@ -649,16 +654,18 @@ struct ThoughtStore {
         context.delete(thought)
     }
 
-    /// Deletes every thought and tag, one by one through `deleteWithChildren` so each thought's
+    /// Deletes every thought, tag and tombstone, one by one through `deleteWithChildren` so each thought's
     /// blocks and images are removed explicitly as the `persist()` note requires. A failed fetch
     /// deletes nothing and returns false.
     @discardableResult
     func deleteAll() -> Bool {
         let thoughts: [Thought]
         let tags: [Tag]
+        let tombstones: [Tombstone]
         do {
             thoughts = try context.fetch(FetchDescriptor<Thought>())
             tags = try context.fetch(FetchDescriptor<Tag>())
+            tombstones = try context.fetch(FetchDescriptor<Tombstone>())
         } catch {
             Self.logger.error("Delete all fetch failed: \(error)")
             saveErrors.report(error)
@@ -670,6 +677,10 @@ struct ThoughtStore {
         for tag in tags {
             context.delete(tag)
         }
+        // No tombstones are written: whether an erase should propagate to other devices is a sync-design decision.
+        for tombstone in tombstones {
+            context.delete(tombstone)
+        }
         guard persist() else { return false }
         searchIndex.submit(.removeAll)
         return true
@@ -678,7 +689,10 @@ struct ThoughtStore {
     /// Sets schedule fields directly, bypassing the rules. Only for sample data,
     /// which needs thoughts in every state.
     @discardableResult
-    func overrideSchedule(_ thought: Thought, nextDueAt: Date, lastViewedAt: Date?, viewCount: Int, learnIntervalDays: Int? = nil) -> Bool {
+    func overrideSchedule(
+        _ thought: Thought, nextDueAt: Date, lastViewedAt: Date?, viewCount: Int, learnIntervalDays: Int? = nil, now: Date
+    ) -> Bool {
+        thought.scheduleChangedAt = now
         thought.nextDueAt = nextDueAt
         thought.lastViewedAt = lastViewedAt
         thought.viewCount = viewCount
@@ -719,16 +733,19 @@ struct ThoughtStore {
 
     // MARK: Import
 
-    /// Merges a batch read from an export, by thought id: unknown ids are added, a stored thought
-    /// with an older `updatedAt` is replaced wholesale (blocks and images too), and an equal or
-    /// newer stored one is left alone, so importing the same file twice changes nothing.
+    /// Merges a batch read from an export, by thought id: unknown ids are added, and a stored thought
+    /// is merged group by group. Content (body, blocks, images, tags) comes from the side with the newer
+    /// `updatedAt`, schedule fields from the newer `scheduleChangedAt`, and state fields (pinned,
+    /// archived) from the newer `stateChangedAt`; each clock follows the winning side. A thought where
+    /// the file wins no group is left alone, so importing the same file twice changes nothing. Adding
+    /// a thought removes its tombstone, if any. A tag's color comes from the newer `Tag.updatedAt`.
     ///
-    /// Added thoughts land in one save. A replacement goes through `update` (so it follows the
+    /// Added thoughts land in one save. A content merge goes through `update` (so it follows the
     /// `persist()` note: new tags are saved first, children are saved in steps) and then writes the
-    /// remaining fields and `updatedAt` last; a failure part-way leaves consistent data, the thought
+    /// remaining fields and clocks last; a failure part-way leaves consistent data, the thought
     /// still looks older than the file, and importing again finishes it. Returns false on the first
     /// failure with `tally` counting what was written before it. `tags` give the display name and
-    /// color of tags that don't exist yet.
+    /// color of tags that don't exist yet and the color of ones that do.
     @discardableResult
     func importThoughts(_ batch: [ImportedThought], tags tagInfo: [TagRecord], tally: inout ImportTally) -> Bool {
         defer { reindex(ids: Set(batch.map(\.record.id))) }
@@ -772,7 +789,7 @@ struct ThoughtStore {
         }
 
         var additions: [ImportedThought] = []
-        var replacements: [(thought: Thought, item: ImportedThought)] = []
+        var replacements: [(thought: Thought, item: ImportedThought, wins: GroupWins)] = []
         var claimedImageIDs = Set<UUID>()
         for item in items {
             let record = item.record
@@ -782,9 +799,15 @@ struct ThoughtStore {
             if imageClash {
                 tally.rejected += 1
             } else if let current = stored[record.id] {
-                if record.updatedAt > current.updatedAt {
-                    claimedImageIDs.formUnion(record.imageIDs)
-                    replacements.append((current, item))
+                let wins = GroupWins(
+                    content: record.updatedAt > current.updatedAt,
+                    schedule: record.scheduleClock > current.scheduleChangedAt,
+                    state: record.stateClock > current.stateChangedAt,
+                    counters: record.viewCount > current.viewCount || (record.lastViewedAt ?? .distantPast) > (current.lastViewedAt ?? .distantPast)
+                )
+                if wins.any {
+                    if wins.content { claimedImageIDs.formUnion(record.imageIDs) }
+                    replacements.append((current, item, wins))
                 } else {
                     tally.upToDate += 1
                 }
@@ -794,20 +817,68 @@ struct ThoughtStore {
             }
         }
 
-        guard let tagsByName = saveTags(for: additions + replacements.map(\.item), info: tagInfo) else { return false }
+        guard let tagsByName = saveTags(
+            for: additions + replacements.filter(\.wins.content).map(\.item), info: tagInfo
+        ) else { return false }
+        guard mergeTagColors(info: tagInfo) else { return false }
 
         if !additions.isEmpty {
+            let addedIDs = additions.map(\.record.id)
+            do {
+                let tombstones = try context.fetch(FetchDescriptor<Tombstone>(predicate: #Predicate { addedIDs.contains($0.id) }))
+                for tombstone in tombstones where tombstone.kind == TombstoneKind.thought.rawValue {
+                    context.delete(tombstone)
+                }
+            } catch {
+                Self.logger.error("Import tombstone lookup failed: \(error)")
+                saveErrors.report(error)
+                return false
+            }
             for item in additions {
                 insertImported(item, tags: tagsByName, takenBlockIDs: &takenBlockIDs)
             }
             guard persist() else { return false }
             tally.added += additions.count
         }
-        for (thought, item) in replacements {
-            guard replace(thought, with: item, takenBlockIDs: &takenBlockIDs) else { return false }
+        for (thought, item, wins) in replacements {
+            guard replace(thought, with: item, wins: wins, takenBlockIDs: &takenBlockIDs) else { return false }
             tally.replaced += 1
         }
         return true
+    }
+
+    /// Which groups of a stored thought the imported record wins.
+    private struct GroupWins {
+        let content: Bool
+        let schedule: Bool
+        let state: Bool
+        /// The file has a larger `viewCount` or a later `lastViewedAt`; counters merge by max, on no clock.
+        let counters: Bool
+        var any: Bool { content || schedule || state || counters }
+    }
+
+    /// Takes the color of a stored tag from the file when the file's tag is newer. Called by
+    /// `importThoughts` and once per import by the caller, so a file that differs only in tag colors still merges.
+    func mergeTagColors(info: [TagRecord]) -> Bool {
+        let names = Set(info.map(\.name))
+        guard !names.isEmpty else { return true }
+        let stored: [Tag]
+        do {
+            stored = try context.fetch(FetchDescriptor<Tag>(predicate: #Predicate { names.contains($0.name) }))
+        } catch {
+            Self.logger.error("Import tag color lookup failed: \(error)")
+            saveErrors.report(error)
+            return false
+        }
+        let incoming = Dictionary(info.map { ($0.name, $0) }, uniquingKeysWith: { first, second in
+            second.updatedClock > first.updatedClock ? second : first
+        })
+        for tag in stored {
+            guard let record = incoming[tag.name], record.updatedClock > tag.updatedAt else { continue }
+            tag.colorHex = record.colorHex.flatMap(TagColor.normalizedHex)
+            tag.updatedAt = record.updatedClock
+        }
+        return !context.hasChanges || persist()
     }
 
     /// Saves the tags the bodies need that don't exist yet, before any thought links to them.
@@ -829,7 +900,10 @@ struct ThoughtStore {
         let known = Dictionary(info.map { ($0.name, $0) }, uniquingKeysWith: { first, _ in first })
         var inserted = false
         for tag in parsed where byName[tag.key] == nil {
-            let created = Tag(name: tag.key, displayName: known[tag.key]?.displayName ?? tag.display)
+            let created = Tag(
+                name: tag.key, displayName: known[tag.key]?.displayName ?? tag.display,
+                updatedAt: known[tag.key]?.updatedClock ?? .distantPast
+            )
             created.colorHex = known[tag.key]?.colorHex.flatMap(TagColor.normalizedHex)
             context.insert(created)
             byName[tag.key] = created
@@ -842,7 +916,12 @@ struct ThoughtStore {
         let record = item.record
         let thought = Thought(body: record.body, createdAt: record.createdAt, nextDueAt: record.nextDueAt)
         thought.id = record.id
-        apply(record, to: thought)
+        thought.createdAt = record.createdAt
+        thought.updatedAt = record.updatedAt
+        thought.lastViewedAt = record.lastViewedAt
+        thought.viewCount = record.viewCount
+        applySchedule(of: record, to: thought)
+        applyState(of: record, to: thought)
         context.insert(thought)
         thought.tags = TagParser.parse(all: record.markdownTexts).compactMap { tags[$0.key] }
 
@@ -879,8 +958,12 @@ struct ThoughtStore {
         image.block = block
     }
 
-    private func replace(_ thought: Thought, with item: ImportedThought, takenBlockIDs: inout Set<UUID>) -> Bool {
+    private func replace(_ thought: Thought, with item: ImportedThought, wins: GroupWins, takenBlockIDs: inout Set<UUID>) -> Bool {
         let record = item.record
+        if !wins.content {
+            applyGroups(of: record, wins: wins, to: thought)
+            return persist()
+        }
         let ownBlockIDs = Set((thought.blocks ?? []).map(\.id))
         var claimed = takenBlockIDs
         func blockID(_ id: UUID) -> UUID {
@@ -902,25 +985,42 @@ struct ThoughtStore {
         // The index fingerprint is `updatedAt` plus the archive flag. If the app dies mid-replace, `updatedAt`
         // is unchanged until the last save, so reconciliation can miss the stale text until the thought is next edited.
         // `update` leaves `updatedAt` as it is, so the thought keeps looking older than the file until the last save.
-        guard performUpdate(thought, body: record.body, blocks: blocks, images: record.images.map(draft), intervalDays: record.intervalDays, now: thought.updatedAt)
+        // The stored interval is passed so the content step leaves the schedule group to `applyGroups`.
+        guard performUpdate(thought, body: record.body, blocks: blocks, images: record.images.map(draft), intervalDays: thought.intervalDays, now: thought.updatedAt)
         else { return false }
         takenBlockIDs = claimed
-        apply(record, to: thought)
+        thought.createdAt = record.createdAt
+        thought.updatedAt = record.updatedAt
+        applyGroups(of: record, wins: wins, to: thought)
         return persist()
     }
 
-    private func apply(_ record: ThoughtRecord, to thought: Thought) {
-        thought.createdAt = record.createdAt
+    private func applyGroups(of record: ThoughtRecord, wins: GroupWins, to thought: Thought) {
+        if wins.schedule {
+            applySchedule(of: record, to: thought)
+        }
+        if wins.counters {
+            thought.viewCount = max(thought.viewCount, record.viewCount)
+            thought.lastViewedAt = [thought.lastViewedAt, record.lastViewedAt].compactMap { $0 }.max()
+        }
+        if wins.state {
+            applyState(of: record, to: thought)
+        }
+    }
+
+    private func applySchedule(of record: ThoughtRecord, to thought: Thought) {
         thought.nextDueAt = record.nextDueAt
-        thought.lastViewedAt = record.lastViewedAt
-        thought.viewCount = record.viewCount
         thought.intervalDays = record.intervalDays
         thought.intervalModeRaw = record.intervalModeRaw
         thought.learnIntervalDays = record.learnIntervalDays
+        thought.scheduleChangedAt = record.scheduleClock
+    }
+
+    private func applyState(of record: ThoughtRecord, to thought: Thought) {
         thought.isPinned = record.isPinned
         thought.isArchived = record.isArchived
         thought.archivedAt = record.archivedAt
-        thought.updatedAt = record.updatedAt
+        thought.stateChangedAt = record.stateClock
     }
 
     // MARK: Search index

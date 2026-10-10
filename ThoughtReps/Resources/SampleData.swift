@@ -139,9 +139,9 @@ enum SampleData {
                     calendar: calendar
                 )
                 : nil
-            store.overrideSchedule(thought, nextDueAt: nextDueAt, lastViewedAt: lastViewedAt, viewCount: sample.views)
+            store.overrideSchedule(thought, nextDueAt: nextDueAt, lastViewedAt: lastViewedAt, viewCount: sample.views, now: now)
             if sample.pinned {
-                store.setPinned(thought, true)
+                store.setPinned(thought, true, now: now)
             }
             if sample.archived {
                 store.archive(thought, now: Scheduler.adding(days: -10, to: now, calendar: calendar))
@@ -180,7 +180,7 @@ enum PreviewData {
     static let container: ModelContainer = {
         do {
             let container = try ModelContainer(
-                for: Thought.self, Tag.self, Block.self, ImageAsset.self,
+                for: Thought.self, Tag.self, Block.self, ImageAsset.self, Tombstone.self,
                 configurations: ModelConfiguration(isStoredInMemoryOnly: true)
             )
             SampleData.insert(into: container.mainContext, now: .now)

@@ -82,7 +82,7 @@ struct SearchSyncTests {
 
     @Test func pinnedAndWaitingThoughtsAreActive() async throws {
         let thought = store.create(body: "pinned one", now: now)
-        store.setPinned(thought, true)
+        store.setPinned(thought, true, now: now)
         #expect(try await ids("pinned", .active) == [thought.id])
         try await expectInStep()
     }
@@ -90,7 +90,7 @@ struct SearchSyncTests {
     @Test func deleteRemovesTheRow() async throws {
         let keep = store.create(body: "shared text keep", now: now)
         let gone = store.create(body: "shared text gone", now: now)
-        store.delete(gone)
+        store.delete(gone, now: now)
         #expect(try await ids("shared") == [keep.id])
         try await expectInStep()
     }
@@ -126,7 +126,7 @@ struct SearchSyncTests {
         let thought = store.create(body: "stays active", now: now)
         failure.failSaves = true
         #expect(!store.archive(thought, now: now))
-        #expect(!store.delete(thought))
+        #expect(!store.delete(thought, now: now))
         failure.failSaves = false
         #expect(try await ids("stays", .active) == [thought.id])
         try await expectInStep()

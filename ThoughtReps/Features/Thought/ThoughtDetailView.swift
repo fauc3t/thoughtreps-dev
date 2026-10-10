@@ -87,7 +87,7 @@ struct ThoughtDetailView: View {
             // Delete only once the pop has finished, so this view never renders a deleted model.
             if pendingDelete {
                 pendingDelete = false
-                store.delete(thought)
+                store.delete(thought, now: .now)
             }
         }
     }
@@ -249,7 +249,7 @@ struct ThoughtDetailView: View {
         ToolbarItemGroup(placement: .topBarTrailing) {
             if !thought.isArchived {
                 Button {
-                    store.setPinned(thought, !thought.isPinned)
+                    store.setPinned(thought, !thought.isPinned, now: .now)
                 } label: {
                     Image(systemName: thought.isPinned ? "pin.fill" : "pin")
                 }

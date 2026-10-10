@@ -35,20 +35,53 @@ struct BackupPreflight: Sendable {
     let fileURL: URL
     let manifest: BackupManifest
     let tags: [TagRecord]
-    /// The `updatedAt` of every importable thought, by id (the newest, if an id repeats).
-    let stamps: [UUID: Date]
+    /// The clocks of every importable thought, by id (those of the newest `updatedAt`, if an id repeats).
+    let stamps: [UUID: ThoughtClocks]
     /// Thought lines that decode but break a store invariant, so can't be imported.
     let unimportable: Int
+}
+
+struct ThoughtClocks: Equatable, Sendable {
+    let updatedAt: Date
+    let scheduleChangedAt: Date
+    let stateChangedAt: Date
+    /// Not a clock: counters merge by max, so a larger one makes a file newer too.
+    let viewCount: Int
+    let lastViewedAt: Date?
+
+    init(_ record: ThoughtRecord) {
+        updatedAt = record.updatedAt
+        scheduleChangedAt = record.scheduleClock
+        stateChangedAt = record.stateClock
+        viewCount = record.viewCount
+        lastViewedAt = record.lastViewedAt
+    }
+
+    init(_ thought: Thought) {
+        updatedAt = thought.updatedAt
+        scheduleChangedAt = thought.scheduleChangedAt
+        stateChangedAt = thought.stateChangedAt
+        viewCount = thought.viewCount
+        lastViewedAt = thought.lastViewedAt
+    }
+
+    /// Whether any group of a thought with these clocks would take something from a stored thought with `stored`'s.
+    func isNewer(than stored: ThoughtClocks) -> Bool {
+        updatedAt > stored.updatedAt || scheduleChangedAt > stored.scheduleChangedAt || stateChangedAt > stored.stateChangedAt
+            || viewCount > stored.viewCount || (lastViewedAt ?? .distantPast) > (stored.lastViewedAt ?? .distantPast)
+    }
 }
 
 /// How the file compares with what is stored, which is what the summary sheet shows.
 struct BackupPlan: Sendable {
     let preflight: BackupPreflight
-    /// Thoughts to write: those not stored, and those stored with an older `updatedAt`.
+    /// Thoughts to write: those not stored, and those stored with an older clock in any group.
     let toImport: Set<UUID>
     let new: Int
     let newer: Int
     let upToDate: Int
+    /// Stored tags whose color the file has a newer choice for; merged even when no thought is imported.
+    let newerTags: Int
 
     var thoughtCount: Int { preflight.manifest.counts.thoughts }
     var imageCount: Int { preflight.manifest.counts.images }
@@ -91,7 +124,7 @@ enum BackupImporter {
         guard manifest.counts.images == imageCount else { throw BackupError.damaged("image count") }
 
         var tags: [TagRecord] = []
-        var stamps: [UUID: Date] = [:]
+        var stamps: [UUID: ThoughtClocks] = [:]
         var thoughtLines = 0
         var unimportable = 0
         func readTag(_ line: Data) throws {
@@ -101,7 +134,9 @@ enum BackupImporter {
             thoughtLines += 1
             let record = try decode(ThoughtRecord.self, line, decoder)
             if record.isImportable, record.imageIDs.allSatisfy({ listed.contains(BackupFormat.imagePath(for: $0)) }) {
-                stamps[record.id] = max(stamps[record.id] ?? .distantPast, record.updatedAt)
+                if stamps[record.id].map({ record.updatedAt > $0.updatedAt }) ?? true {
+                    stamps[record.id] = ThoughtClocks(record)
+                }
             } else {
                 unimportable += 1
             }
@@ -207,7 +242,7 @@ enum BackupImporter {
 
     // MARK: Plan
 
-    /// Compares the file with the store, in batches of ids, loading only `id` and `updatedAt`.
+    /// Compares the file with the store, in batches of ids, loading only `id` and the three clocks.
     static func plan(_ preflight: BackupPreflight, container: ModelContainer) throws -> BackupPlan {
         var toImport = Set<UUID>()
         var new = 0
@@ -217,15 +252,15 @@ enum BackupImporter {
             try autoreleasepool {
                 let context = ModelContext(container)
                 var descriptor = FetchDescriptor<Thought>(predicate: #Predicate { ids.contains($0.id) })
-                descriptor.propertiesToFetch = [\.id, \.updatedAt]
+                descriptor.propertiesToFetch = [\.id, \.updatedAt, \.scheduleChangedAt, \.stateChangedAt, \.viewCount, \.lastViewedAt]
                 let stored = Dictionary(
-                    try context.fetch(descriptor).map { ($0.id, $0.updatedAt) },
+                    try context.fetch(descriptor).map { ($0.id, ThoughtClocks($0)) },
                     uniquingKeysWith: { first, _ in first }
                 )
                 for id in ids {
                     guard let incoming = preflight.stamps[id] else { continue }
                     if let current = stored[id] {
-                        if incoming > current {
+                        if incoming.isNewer(than: current) {
                             newer += 1
                             toImport.insert(id)
                         } else {
@@ -238,7 +273,11 @@ enum BackupImporter {
                 }
             }
         }
-        return BackupPlan(preflight: preflight, toImport: toImport, new: new, newer: newer, upToDate: upToDate)
+        let tagNames = preflight.tags.map(\.name)
+        let storedTags = try ModelContext(container).fetch(FetchDescriptor<Tag>(predicate: #Predicate { tagNames.contains($0.name) }))
+        let incoming = Dictionary(preflight.tags.map { ($0.name, $0.updatedClock) }, uniquingKeysWith: { max($0, $1) })
+        let newerTags = storedTags.filter { (incoming[$0.name] ?? .distantPast) > $0.updatedAt }.count
+        return BackupPlan(preflight: preflight, toImport: toImport, new: new, newer: newer, upToDate: upToDate, newerTags: newerTags)
     }
 
     // MARK: Batches
@@ -322,7 +361,7 @@ enum BackupImporter {
 
         func accept(_ line: Data) throws {
             let record = try decode(ThoughtRecord.self, line, decoder)
-            guard plan.toImport.contains(record.id), plan.preflight.stamps[record.id] == record.updatedAt, record.isImportable,
+            guard plan.toImport.contains(record.id), plan.preflight.stamps[record.id] == ThoughtClocks(record), record.isImportable,
                   delivered.insert(record.id).inserted
             else { return }
             do {

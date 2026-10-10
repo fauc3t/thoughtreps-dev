@@ -31,7 +31,7 @@ struct FixtureGenerator {
             intervalDays: 3,
             now: t0
         )
-        store.setPinned(pinned, true)
+        store.setPinned(pinned, true, now: t0)
 
         let photoDraft = try photo(width: 96, height: 64)
         let viewed = store.create(

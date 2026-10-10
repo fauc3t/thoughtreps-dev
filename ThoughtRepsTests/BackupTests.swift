@@ -95,8 +95,8 @@ struct BackupTests {
             ],
             images: [inline], intervalDays: 3, now: now
         )
-        sourceStore.overrideSchedule(one, nextDueAt: now.addingTimeInterval(90_000.5), lastViewedAt: now, viewCount: 2)
-        sourceStore.setPinned(one, true)
+        sourceStore.overrideSchedule(one, nextDueAt: now.addingTimeInterval(90_000.5), lastViewedAt: now, viewCount: 2, now: now)
+        sourceStore.setPinned(one, true, now: now)
         let two = sourceStore.create(body: "# Two\n#swift #café", now: now.addingTimeInterval(60))
         sourceStore.archive(two, now: now.addingTimeInterval(120))
         sourceStore.create(body: "# Three, no tags", now: now.addingTimeInterval(180))

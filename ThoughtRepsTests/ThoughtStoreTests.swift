@@ -15,7 +15,7 @@ struct ThoughtStoreTests {
 
     init() throws {
         container = try ModelContainer(
-            for: Thought.self, ThoughtReps.Tag.self, Block.self, ImageAsset.self,
+            for: Thought.self, ThoughtReps.Tag.self, Block.self, ImageAsset.self, Tombstone.self,
             configurations: ModelConfiguration(isStoredInMemoryOnly: true)
         )
         store = ThoughtStore(context: container.mainContext, defaultIntervalDays: 7, ratingPrompt: .throwaway())
@@ -31,11 +31,11 @@ struct ThoughtStoreTests {
 
     @Test func setColorSavesNormalizedHexAndResetsToAutomatic() throws {
         let tag = try #require(store.create(body: "# A\n#swift", now: now).tags?.first)
-        #expect(store.setColor(tag, hex: "#3352d1"))
+        #expect(store.setColor(tag, hex: "#3352d1", now: now))
         #expect(tag.colorHex == "#3352D1")
-        #expect(store.setColor(tag, hex: "5f6b7a"))
+        #expect(store.setColor(tag, hex: "5f6b7a", now: now))
         #expect(tag.colorHex == "#5F6B7A")
-        #expect(store.setColor(tag, hex: nil))
+        #expect(store.setColor(tag, hex: nil, now: now))
         #expect(tag.colorHex == nil)
         #expect(try IntegrityChecker.check(container.mainContext).isEmpty)
     }
@@ -43,17 +43,17 @@ struct ThoughtStoreTests {
     @Test(arguments: ["", "red", "#12345", "#1234567", "#GGGGGG", "##123456", "+123456", "#12345\u{FF16}"])
     func setColorRejectsInvalidHex(hex: String) throws {
         let tag = try #require(store.create(body: "# A\n#swift", now: now).tags?.first)
-        store.setColor(tag, hex: "#3352D1")
-        #expect(!store.setColor(tag, hex: hex))
+        store.setColor(tag, hex: "#3352D1", now: now)
+        #expect(!store.setColor(tag, hex: hex, now: now))
         #expect(tag.colorHex == "#3352D1")
     }
 
     @Test func failedSetColorRollsBack() throws {
         let errors = SaveErrorCenter()
         let tag = try #require(store.create(body: "# A\n#swift", now: now).tags?.first)
-        store.setColor(tag, hex: "#3352D1")
+        store.setColor(tag, hex: "#3352D1", now: now)
         let failing = ThoughtStore(context: container.mainContext, defaultIntervalDays: 7, saveErrors: errors, save: { _ in throw InjectedSaveFailure() })
-        #expect(!failing.setColor(tag, hex: "#BF4066"))
+        #expect(!failing.setColor(tag, hex: "#BF4066", now: now))
         #expect(tag.colorHex == "#3352D1")
         #expect(errors.message != nil)
     }
@@ -93,11 +93,11 @@ struct ThoughtStoreTests {
 
     @Test func setColorKeepsACustomHex() throws {
         let tag = try #require(store.create(body: "# A\n#swift", now: now).tags?.first)
-        #expect(store.setColor(tag, hex: "#abcdef"))
+        #expect(store.setColor(tag, hex: "#abcdef", now: now))
         #expect(tag.colorHex == "#ABCDEF")
         #expect(TagColor.isCustom(tag.colorHex))
         // A custom pick that matches a swatch shows as that swatch.
-        #expect(store.setColor(tag, hex: "#1f8a70"))
+        #expect(store.setColor(tag, hex: "#1f8a70", now: now))
         #expect(!TagColor.isCustom(tag.colorHex))
     }
 
@@ -167,14 +167,14 @@ struct ThoughtStoreTests {
         #expect(store.setLearnMode(thought, true, now: later))
         #expect(thought.intervalMode == .learn && thought.learnIntervalDays == nil)
         #expect(thought.nextDueAt == days(1, from: later))
-        #expect(thought.updatedAt == later)
+        #expect(thought.updatedAt == now && thought.scheduleChangedAt == later)
         #expect(!thought.isDue(now: later))
 
         let off = days(5, from: now)
         #expect(store.setLearnMode(thought, false, now: off))
         #expect(thought.intervalMode == .fixed && thought.learnIntervalDays == nil)
         #expect(thought.nextDueAt == days(7, from: now))
-        #expect(thought.updatedAt == off)
+        #expect(thought.updatedAt == now && thought.scheduleChangedAt == off)
         #expect(try IntegrityChecker.check(container.mainContext).isEmpty)
     }
 
@@ -223,7 +223,7 @@ struct ThoughtStoreTests {
         #expect(thought.nextDueAt == after && thought.learnIntervalDays == 7)
 
         let pinned = store.create(body: "P", learn: true, now: now)
-        store.setPinned(pinned, true)
+        store.setPinned(pinned, true, now: now)
         #expect(!store.review(pinned, gotIt: true, now: due))
         let archived = store.create(body: "A", learn: true, now: now)
         store.archive(archived, now: now)
@@ -231,11 +231,11 @@ struct ThoughtStoreTests {
         #expect(archived.learnIntervalDays == nil)
     }
 
-    @Test func settingTheIntervalOfALearnThoughtKeepsItsScheduleButCountsAsAnEdit() {
+    @Test func settingTheIntervalOfALearnThoughtKeepsItsScheduleAndIsNotAnEdit() {
         let thought = store.create(body: "Hello", learn: true, now: now)
         let later = days(1, from: now)
         #expect(store.setInterval(thought, days: 3, now: later))
-        #expect(thought.intervalDays == 3 && thought.nextDueAt == days(1, from: now) && thought.updatedAt == later)
+        #expect(thought.intervalDays == 3 && thought.nextDueAt == days(1, from: now) && thought.updatedAt == now && thought.scheduleChangedAt == later)
     }
 
     @Test func editorChainedSaveTurnsLearnOnAfterAnIntervalChange() {
@@ -285,7 +285,7 @@ struct ThoughtStoreTests {
 
     @Test func archiveAndRestore() {
         let thought = store.create(body: "Hello", now: now)
-        store.setPinned(thought, true)
+        store.setPinned(thought, true, now: now)
         store.archive(thought, now: now)
         #expect(thought.isArchived)
         #expect(!thought.isPinned)
@@ -315,7 +315,7 @@ struct ThoughtStoreTests {
     @Test func pruneKeepsTagsStillInUse() throws {
         let a = store.create(body: "#swift #study", now: now)
         store.create(body: "#swift", now: now)
-        store.delete(a)
+        store.delete(a, now: now)
         store.pruneOrphanTags()
         #expect(try tagNames() == ["swift"])
     }

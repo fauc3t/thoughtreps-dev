@@ -22,7 +22,7 @@ struct ThoughtUntaggedTests {
 
     @Test func taggedIsNotUntagged() throws {
         let container = try ModelContainer(
-            for: Thought.self, ThoughtReps.Tag.self, Block.self, ImageAsset.self,
+            for: Thought.self, ThoughtReps.Tag.self, Block.self, ImageAsset.self, Tombstone.self,
             configurations: ModelConfiguration(isStoredInMemoryOnly: true)
         )
         let thought = Thought(body: "Hello #swift", nextDueAt: now)

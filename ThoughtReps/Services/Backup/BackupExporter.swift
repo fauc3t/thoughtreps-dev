@@ -39,7 +39,7 @@ struct BackupExporter: Sendable {
         let tagLines = try JSONLWriter(url: tagsURL, encoder: encoder)
         try forEachBatch(of: Tag.self, sortedBy: [SortDescriptor(\.name)], size: thoughtBatchSize) { tags in
             for tag in tags {
-                try tagLines.append(TagRecord(name: tag.name, displayName: tag.displayName, colorHex: tag.colorHex))
+                try tagLines.append(TagRecord(name: tag.name, displayName: tag.displayName, colorHex: tag.colorHex, updatedAt: tag.updatedAt))
             }
         }
         entries[BackupFormat.tagsPath] = try tagLines.finish()
@@ -204,6 +204,7 @@ extension ThoughtRecord {
         let body = stripped(thought.body)
         self.init(
             id: thought.id, body: body, createdAt: thought.createdAt, updatedAt: thought.updatedAt,
+            scheduleChangedAt: thought.scheduleChangedAt, stateChangedAt: thought.stateChangedAt,
             nextDueAt: thought.nextDueAt, lastViewedAt: thought.lastViewedAt, viewCount: thought.viewCount,
             intervalDays: thought.intervalDays, intervalModeRaw: thought.intervalModeRaw,
             learnIntervalDays: thought.learnIntervalDays,

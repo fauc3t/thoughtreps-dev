@@ -10,7 +10,7 @@ import SwiftData
 enum SchemaV1: VersionedSchema {
     static let versionIdentifier = Schema.Version(1, 0, 0)
     static var models: [any PersistentModel.Type] {
-        [Thought.self, Tag.self, Block.self, ImageAsset.self]
+        [Thought.self, Tag.self, Block.self, ImageAsset.self, Tombstone.self]
     }
 }
 

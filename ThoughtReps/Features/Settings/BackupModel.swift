@@ -115,7 +115,7 @@ final class BackupModel {
                     }
                 }.value
                 self.plan = plan
-                importPhase = .review(summary: Self.summary(of: plan), hasWork: !plan.toImport.isEmpty)
+                importPhase = .review(summary: Self.summary(of: plan), hasWork: !plan.toImport.isEmpty || plan.newerTags > 0)
             } catch {
                 importPhase = .failed(error.localizedDescription)
             }
@@ -145,6 +145,7 @@ final class BackupModel {
                 unreadable += batch.unreadable
                 importPhase = .importing(done: tally.added + tally.replaced + unreadable, total: total)
             }
+            if failure == nil, !store.mergeTagColors(info: plan.preflight.tags) { failure = "" }
         } catch {
             failure = " \(error.localizedDescription)"
         }
