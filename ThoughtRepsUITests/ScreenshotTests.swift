@@ -33,7 +33,7 @@ final class ScreenshotTests: XCTestCase {
 
     func testTimeline() {
         launch()
-        XCTAssertTrue(app.staticTexts["Weekend in the mountains"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["Hope is the thing with feathers"].waitForExistence(timeout: 10))
         snap("01-timeline")
     }
 
@@ -49,13 +49,25 @@ final class ScreenshotTests: XCTestCase {
         snap("02-blurred-after")
     }
 
-    /// One thought in each theme, for the 3x2 grid.
+    /// A due Learn thought with its blurred lines revealed, above Again / Got it.
+    func testLearnMode() {
+        launch()
+        openThought("Hope is the thing with feathers")
+        let hidden = app.buttons["Lines, hidden"]
+        XCTAssertTrue(hidden.waitForExistence(timeout: 10))
+        hidden.tap()
+        XCTAssertTrue(hidden.waitForNonExistence(timeout: 10))
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Got it'")).firstMatch.exists)
+        snap("03-learn")
+    }
+
+    /// One thought in each theme, for the cascade.
     func testThemes() {
         for theme in ["ink", "library", "midnight", "garden", "terminal", "pop"] {
             launch(["-screenshotTheme", theme])
             openThought("The cost of a thing")
             XCTAssertTrue(app.buttons["More intervals"].waitForExistence(timeout: 10))
-            snap("03-themes-\(theme)")
+            snap("04-themes-\(theme)")
             app.terminate()
         }
     }
@@ -64,14 +76,22 @@ final class ScreenshotTests: XCTestCase {
         launch()
         openThought("Thirteen virtues, one a week")
         XCTAssertTrue(app.buttons["More intervals"].waitForExistence(timeout: 10))
-        snap("04-interval")
+        snap("05-interval")
     }
 
     func testMarkdownAndPhotos() {
         launch()
+        // Not due, so it's opened from its tag's "All" list.
+        app.tabBars.buttons["Tags"].tap()
+        let travel = app.staticTexts["#travel"]
+        XCTAssertTrue(travel.waitForExistence(timeout: 10))
+        travel.tap()
+        let all = app.buttons["All"]
+        XCTAssertTrue(all.waitForExistence(timeout: 10))
+        all.tap()
         openThought("Weekend in the mountains")
         XCTAssertTrue(app.buttons["Moodboard image 1 of 4"].waitForExistence(timeout: 10))
-        snap("05-markdown-photos")
+        snap("06-markdown-photos")
     }
 
     func testSearch() {
@@ -85,14 +105,14 @@ final class ScreenshotTests: XCTestCase {
         field.typeText("reflect")
         XCTAssertTrue(app.staticTexts["Why journals work"].waitForExistence(timeout: 10))
         app.keyboards.buttons["Search"].tap()
-        snap("06-search")
+        snap("07-search")
     }
 
     func testTags() {
         launch()
         app.tabBars.buttons["Tags"].tap()
         XCTAssertTrue(app.staticTexts["#journal"].waitForExistence(timeout: 10))
-        snap("07-tags")
+        snap("08-tags")
     }
 
     /// The app schedules its test reminder 15 seconds out (asking for permission the first time on a
@@ -105,6 +125,6 @@ final class ScreenshotTests: XCTestCase {
         XCUIDevice.shared.perform(NSSelectorFromString("pressLockButton"))
         let banner = springboard.staticTexts["4 thoughts are back today"]
         XCTAssertTrue(banner.waitForExistence(timeout: 30), springboard.debugDescription)
-        snap("08-reminders", settle: 0.6)
+        snap("09-reminders", settle: 0.6)
     }
 }

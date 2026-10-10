@@ -678,10 +678,11 @@ struct ThoughtStore {
     /// Sets schedule fields directly, bypassing the rules. Only for sample data,
     /// which needs thoughts in every state.
     @discardableResult
-    func overrideSchedule(_ thought: Thought, nextDueAt: Date, lastViewedAt: Date?, viewCount: Int) -> Bool {
+    func overrideSchedule(_ thought: Thought, nextDueAt: Date, lastViewedAt: Date?, viewCount: Int, learnIntervalDays: Int? = nil) -> Bool {
         thought.nextDueAt = nextDueAt
         thought.lastViewedAt = lastViewedAt
         thought.viewCount = viewCount
+        if thought.intervalMode == .learn { thought.learnIntervalDays = learnIntervalDays }
         return persist()
     }
 

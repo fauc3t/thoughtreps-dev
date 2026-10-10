@@ -54,12 +54,14 @@ enum ScreenshotSeed {
         var dueInDays: Int
         var pinned = false
         var views = 0
+        /// Learn mode, with this last gap (so Got it shows the next, longer one).
+        var learnGap: Int? = nil
         var blurred: (title: String, content: String)? = nil
         var gallery: (title: String, scenes: [Scene])? = nil
     }
 
     /// A commonplace book: quotes with their source, book notes, lessons, sermon and podcast takeaways.
-    /// Quotes are public domain only (Thoreau's *Walden*, Franklin's *Autobiography*, Emerson).
+    /// Quotes and poems are public domain only (Thoreau's *Walden*, Franklin's *Autobiography*, Emerson, Dickinson).
     /// The Timeline shot shows the pinned thought and the four due ones; the reminder says "4 thoughts".
     private static let items: [Item] = [
         Item(
@@ -103,8 +105,13 @@ enum ScreenshotSeed {
 
             #travel
             """,
-            createdDaysAgo: 7, dueInDays: 0,
+            createdDaysAgo: 7, dueInDays: 1,
             gallery: ("Moodboard", [.dusk, .alpine, .meadow, .city])
+        ),
+        Item(
+            body: "# Hope is the thing with feathers\nSay the first two lines of Emily Dickinson’s poem from memory.\n\n#poems",
+            createdDaysAgo: 9, dueInDays: 0, views: 2, learnGap: 7,
+            blurred: ("Lines", "“Hope” is the thing with feathers –  \nThat perches in the soul –")
         ),
         Item(
             body: "# Why journals work\nWriting builds reflection into the day. Notice what keeps coming back.\n\n#journal",
@@ -155,6 +162,7 @@ enum ScreenshotSeed {
         "spanish": "#B56629",
         "sermons": "#5F6B7A",
         "ideas": "#7A4FC4",
+        "poems": "#BF4066",
     ]
 
     static func insert(into context: ModelContext, now: Date) {
@@ -170,7 +178,7 @@ enum ScreenshotSeed {
                 blocks.append(BlockDraft(kind: .gallery, title: gallery.title, images: images))
             }
             let created = Scheduler.adding(days: -item.createdDaysAgo, to: now, calendar: calendar)
-            let thought = store.create(body: item.body, blocks: blocks, now: created)
+            let thought = store.create(body: item.body, blocks: blocks, learn: item.learnGap != nil, now: created)
             guard thought.modelContext != nil else {
                 preconditionFailure("Screenshot seed: saving \"\(item.body.prefix(40))\" failed")
             }
@@ -186,7 +194,9 @@ enum ScreenshotSeed {
                     Scheduler.adding(days: -1, to: now, calendar: calendar)
                 )
                 : nil
-            store.overrideSchedule(thought, nextDueAt: nextDueAt, lastViewedAt: lastViewedAt, viewCount: item.views)
+            store.overrideSchedule(
+                thought, nextDueAt: nextDueAt, lastViewedAt: lastViewedAt, viewCount: item.views, learnIntervalDays: item.learnGap
+            )
             if item.pinned { store.setPinned(thought, true) }
         }
         let tags = (try? context.fetch(FetchDescriptor<Tag>())) ?? []

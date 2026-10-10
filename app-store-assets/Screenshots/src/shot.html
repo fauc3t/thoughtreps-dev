@@ -15,7 +15,6 @@
   .phone { --bw: calc(var(--sw) * 0.0229); position: absolute; width: var(--sw); height: calc(var(--sw) * 2868 / 1320); border: var(--bw) solid var(--ink); border-radius: calc(var(--sw) * 0.125 + var(--bw)); box-shadow: calc(var(--sw) * 0.025) calc(var(--sw) * 0.025) 0 var(--ink); background: var(--paper); overflow: hidden; }
   .phone img { display: block; width: 100%; height: 100%; }
   .island { position: absolute; left: 50%; top: calc(var(--sw) * 0.0229); width: calc(var(--sw) * 0.2833); height: calc(var(--sw) * 0.0833); transform: translateX(-50%); border-radius: 999px; background: var(--ink); }
-  .label { position: absolute; font: 400 40px / 1 var(--mono); color: var(--ink); text-align: center; }
 </style>
 <div id="stage">
   <div class="copy"><h1 id="head"></h1><p class="support" id="support"></p></div>
@@ -44,10 +43,11 @@
     // Before at the left, after lower at the right, so the eye reads the tap left to right. The after phone overlaps
     // the before phone's right edge only below its blurred block.
     pair: () => [[40, 600, 640], [1320 - 40 - outer(640) - 16, 1260, 640]],
-    // 3x2, a label under each phone.
-    grid: () => {
-      const sw = 360, gap = (1320 - 3 * outer(sw)) / 4, row = outer(sw) * 2868 / 1320 + 90;
-      return [0, 1, 2, 3, 4, 5].map((i) => [gap + (i % 3) * (outer(sw) + gap) - 5, 620 + Math.floor(i / 3) * row, sw]);
+    // Phones stepping down to the right, each drawn over the one before, so the last is in front at full size and the
+    // others show their colors and title fonts along the edges.
+    cascade: (n) => {
+      const sw = 600, dx = (1320 - 80 - outer(sw)) / (n - 1);
+      return Array.from({ length: n }, (_, i) => [40 + i * dx, 640 + i * 150, sw]);
     },
   };
   window.render = async (name) => {
@@ -58,7 +58,7 @@
     head.innerHTML = html(shot.headline);
     document.getElementById('support').textContent = shot.support;
     const raws = shot.raws ?? [name];
-    const frames = LAYOUTS[shot.layout ?? 'single']();
+    const frames = LAYOUTS[shot.layout ?? 'single'](raws.length);
     const phones = document.getElementById('phones');
     phones.innerHTML = '';
     const decoded = raws.map((raw, i) => {
@@ -71,11 +71,6 @@
       img.src = `../raw/${raw}.png`;
       phone.append(img, Object.assign(document.createElement('div'), { className: 'island' }));
       phones.append(phone);
-      if (shot.labels) {
-        const label = Object.assign(document.createElement('div'), { className: 'label', textContent: shot.labels[i] });
-        label.style.cssText = `left: ${left}px; width: ${outer(sw)}px; top: ${top + outer(sw) * 2868 / 1320 + 28}px`;
-        phones.append(label);
-      }
       return img.decode();
     });
     await Promise.all(decoded);
