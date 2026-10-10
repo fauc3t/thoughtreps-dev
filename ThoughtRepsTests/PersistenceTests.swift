@@ -436,6 +436,18 @@ struct IntegrityCheckerTests {
         #expect(negative.contains { $0.contains("negative viewCount") })
     }
 
+    @Test func detectsLearnErrors() throws {
+        let outOfRange = try violations { _, thought in
+            thought.intervalMode = .learn
+            thought.learnIntervalDays = 366
+        }
+        #expect(outOfRange.contains { $0.contains("learnIntervalDays 366 is out of range") })
+        let notLearning = try violations { _, thought in thought.learnIntervalDays = 5 }
+        #expect(notLearning.contains { $0.contains("not in learn mode") })
+        let unknown = try violations { _, thought in thought.intervalModeRaw = "mystery" }
+        #expect(unknown.contains { $0.contains("unknown intervalModeRaw") })
+    }
+
     @Test func orphanTagsAreAllowed() throws {
         let found = try violations { context, _ in
             context.insert(ThoughtReps.Tag(name: "lonely", displayName: "lonely"))

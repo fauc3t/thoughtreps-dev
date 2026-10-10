@@ -7,6 +7,7 @@ import Foundation
 enum Scheduler {
     static let defaultIntervalDays = 7
     static let maxIntervalDays = 365
+    static let learnGrowthFactor = 1.7
 
     /// The schedule fields that a view or snooze changes.
     struct State: Equatable {
@@ -59,9 +60,8 @@ enum Scheduler {
         adding(days: clamp(intervalDays), to: createdAt, calendar: calendar)
     }
 
-    /// Applies a view: records it and pushes the due date out by the interval.
-    /// In `.growing` mode the first view keeps the starting interval; each later view
-    /// doubles it (capped) and stores it as the override.
+    /// Applies a view: records it. In `.fixed` mode it also pushes the due date out by the
+    /// interval; in `.learn` mode the due date stays, since only a review moves it.
     static func afterView(
         _ state: State,
         mode: IntervalMode,
@@ -70,20 +70,42 @@ enum Scheduler {
         calendar: Calendar = .current
     ) -> State {
         var next = state
-        let current = clamp(state.intervalDays ?? defaultIntervalDays)
-        let interval: Int
-        switch mode {
-        case .fixed:
-            interval = current
-        case .growing:
-            // The first view keeps the starting interval; later views double it.
-            interval = state.viewCount == 0 ? current : clamp(current * 2)
-            next.intervalDays = interval
-        }
         next.lastViewedAt = now
         next.viewCount = state.viewCount + 1
-        next.nextDueAt = adding(days: interval, to: now, calendar: calendar)
+        if mode == .fixed {
+            let interval = clamp(state.intervalDays ?? defaultIntervalDays)
+            next.nextDueAt = adding(days: interval, to: now, calendar: calendar)
+        }
         return next
+    }
+
+    /// The gap after "Got it": the base interval the first time, then the last gap times
+    /// `learnGrowthFactor` (at least one day longer), capped at `maxIntervalDays`.
+    static func learnGapAfterGotIt(lastGapDays: Int?, baseIntervalDays: Int) -> Int {
+        guard let lastGapDays else { return clamp(baseIntervalDays) }
+        let grown = Int((Double(lastGapDays) * learnGrowthFactor).rounded())
+        return clamp(max(grown, lastGapDays + 1))
+    }
+
+    /// The Learn fields after a rating. "Got it" grows the gap; "Again" comes back tomorrow
+    /// and forgets the gap.
+    static func afterReview(
+        gotIt: Bool,
+        lastGapDays: Int?,
+        baseIntervalDays: Int,
+        now: Date,
+        calendar: Calendar = .current
+    ) -> (nextDueAt: Date, learnIntervalDays: Int?) {
+        if gotIt {
+            let gap = learnGapAfterGotIt(lastGapDays: lastGapDays, baseIntervalDays: baseIntervalDays)
+            return (adding(days: gap, to: now, calendar: calendar), gap)
+        }
+        return (adding(days: 1, to: now, calendar: calendar), nil)
+    }
+
+    /// First review of a thought that just turned Learn mode on.
+    static func learnStartDue(now: Date, calendar: Calendar = .current) -> Date {
+        adding(days: 1, to: now, calendar: calendar)
     }
 
     /// Pushes the due date `days` from now without counting a view.

@@ -74,6 +74,7 @@ export const HELP_EXAMPLE_KINDS = [
   'share-sheet',
   'snooze-menu',
   'interval-menu',
+  'learn-bar',
   'swipe-actions',
   'pinned-archived',
   'notification',
@@ -142,7 +143,7 @@ export const HELP_CATEGORIES: HelpCategory[] = [
     slug: 'reviewing',
     title: 'Reviewing',
     description:
-      'Snooze, intervals, pinning, archiving and the daily reminder.',
+      'Snooze, intervals, Learn mode, pinning, archiving and the daily reminder.',
   },
   {
     slug: 'your-data',
@@ -265,8 +266,8 @@ export const HELP_ARTICLES: HelpArticle[] = [
     related: [
       'the-timeline',
       'snooze-and-intervals',
+      'learn-mode',
       'pin-and-archive',
-      'daily-reminders',
     ],
     sections: [
       {
@@ -292,6 +293,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
         paragraphs: [
           'Opening a thought counts as seeing it. It goes back to waiting. Its next due date is its interval, counted from that moment. The card leaves your timeline when you go back to it, not while you read. So it will not vanish in the middle of a read.',
           'This is true wherever you open the thought from, even a tag page. Opening an archived thought does not requeue it.',
+          'Thoughts in Learn mode are the exception. Opening one does not requeue it. You tell it how it went with "Again" or "Got it". See [Learn mode](/help/learn-mode).',
         ],
       },
       {
@@ -446,7 +448,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
       {
         heading: 'Opening a result',
         paragraphs: [
-          'Tap a result to open the thought. Opening one that is not archived counts as seeing it, like anywhere else. It goes back to waiting for its next interval. Opening an archived thought does not requeue it. See [How resurfacing works](/help/how-resurfacing-works).',
+          'Tap a result to open the thought. Opening one that is not archived counts as seeing it, like anywhere else. It goes back to waiting for its next interval, unless it is in Learn mode. Opening an archived thought does not requeue it. See [How resurfacing works](/help/how-resurfacing-works).',
         ],
       },
       {
@@ -669,6 +671,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
       'write-your-first-thought',
       'markdown-formatting',
       'how-resurfacing-works',
+      'learn-mode',
     ],
     sections: [
       {
@@ -701,7 +704,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
         heading: 'Using it',
         paragraphs: [
           'Blocks show under the main text. A blurred block shows its label and "Tap to reveal". If you gave it no label, it is called "Hidden". Tap it to see the text. Tap again to hide it ("Hide").',
-          'A blurred block is hidden again each time you open the thought. So every visit is a fresh try at remembering.',
+          'A blurred block is hidden again each time you open the thought. So every visit is a fresh try at remembering. To be asked how it went each time, turn on [Learn mode](/help/learn-mode).',
         ],
       },
       {
@@ -906,9 +909,9 @@ export const HELP_ARTICLES: HelpArticle[] = [
       'Push a thought back by a day or a week, or choose how often it returns: one default for everything, or a custom interval for a single thought.',
     related: [
       'how-resurfacing-works',
+      'learn-mode',
       'pin-and-archive',
       'the-timeline',
-      'daily-reminders',
     ],
     sections: [
       {
@@ -957,6 +960,65 @@ export const HELP_ARTICLES: HelpArticle[] = [
         heading: 'What changing an interval does',
         paragraphs: [
           "When you change a thought's interval, the new interval is counted from the last time you opened it. If you never opened it, it is counted from when you wrote it. So a shorter interval can make a thought due right away.",
+        ],
+      },
+    ],
+  },
+  {
+    slug: 'learn-mode',
+    category: 'reviewing',
+    title: 'Learn mode: Again and Got it',
+    description:
+      'Turn on Learn mode for a thought you want to remember. Tell it how it went, and it comes back sooner or later, with longer waits as you get it right.',
+    related: [
+      'how-resurfacing-works',
+      'snooze-and-intervals',
+      'blurred-blocks',
+      'pin-and-archive',
+    ],
+    sections: [
+      {
+        paragraphs: [
+          'Most thoughts come back on a fixed interval, and opening one is enough. Learn mode is for thoughts you want to actually learn, like a word and its meaning. Pair it with a [blurred block](/help/blurred-blocks) to hide the answer. When the thought comes due, you try to recall it, then say how it went.',
+          'Learn mode is off by default, and you turn it on one thought at a time. Thoughts that are not in Learn mode work as before.',
+        ],
+        example: {
+          kind: 'learn-bar',
+          caption:
+            'The bar at the bottom of a due Learn thought. Each button shows when the thought will come back.',
+        },
+      },
+      {
+        heading: 'Turn it on',
+        list: [
+          'On an open thought, switch on "Learn" in the bar at the bottom.',
+          'Or in the editor, under "Schedule", turn on "Learn mode".',
+        ],
+      },
+      {
+        paragraphs: [
+          'The thought comes back tomorrow for its first review. To turn it off, flip the same switch. The thought goes back to its fixed interval, counted from the last time you opened it.',
+        ],
+      },
+      {
+        heading: 'Again and Got it',
+        paragraphs: [
+          'When a Learn thought is due, the bar at the bottom shows two buttons instead of the interval choices. Each one shows when the thought will return.',
+        ],
+        list: [
+          '"Got it" means you remembered. The first time, the wait is the thought\'s interval, 7 days by default. After that, each "Got it" makes the wait about 1.7 times longer, up to 365 days. It goes 7, 12, 20, 34, 58, 99, 168, 286 and then 365 days.',
+          '"Again" means you did not. The thought comes back tomorrow, and the waits start over from the interval.',
+        ],
+      },
+      {
+        heading: 'Good to know',
+        list: [
+          'Opening a Learn thought does not requeue it. Only the buttons do. If you close it without choosing, it stays due.',
+          'When a Learn thought is waiting, the bar shows when it is back, like "Back tomorrow" or "Back Oct 23".',
+          'A pinned Learn thought shows "Pinned · not reviewed" and has no buttons. Unpin it to review it.',
+          'In the editor, the interval is called "First wait". Changing it does not move the due date.',
+          'Learn thoughts have a small "LEARN" mark on their card on the Timeline.',
+          'Your backups keep Learn mode and each thought\'s current wait.',
         ],
       },
     ],
@@ -1452,7 +1514,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
       {
         heading: 'Does opening a thought always count?',
         paragraphs: [
-          'Yes, for any thought that is not archived. Opening it sends it back to wait for its next interval. That is true wherever you opened it from, even search results. Opening an archived thought does not requeue it. Editing the text does not, and neither does snoozing.',
+          'Yes, for any thought that is not archived and not in Learn mode. Opening it sends it back to wait for its next interval. A Learn thought moves only when you tap "Again" or "Got it". See [Learn mode](/help/learn-mode). The rest is true wherever you opened it from, even search results. Opening an archived thought does not requeue it. Editing the text does not, and neither does snoozing.',
         ],
       },
       {

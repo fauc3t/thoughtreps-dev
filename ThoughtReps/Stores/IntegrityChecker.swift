@@ -158,6 +158,17 @@ enum IntegrityChecker {
             if let days = thought.intervalDays, !(1...Scheduler.maxIntervalDays).contains(days) {
                 add("Thought \(id) intervalDays \(days) is out of range", id)
             }
+            if IntervalMode(rawValue: thought.intervalModeRaw) == nil {
+                add("Thought \(id) has unknown intervalModeRaw \(thought.intervalModeRaw)", id)
+            }
+            if let days = thought.learnIntervalDays {
+                if !(1...Scheduler.maxIntervalDays).contains(days) {
+                    add("Thought \(id) learnIntervalDays \(days) is out of range", id)
+                }
+                if thought.intervalModeRaw != IntervalMode.learn.rawValue {
+                    add("Thought \(id) has learnIntervalDays but is not in learn mode", id)
+                }
+            }
         }
         return found
     }

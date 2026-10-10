@@ -206,6 +206,7 @@ extension ThoughtRecord {
             id: thought.id, body: body, createdAt: thought.createdAt, updatedAt: thought.updatedAt,
             nextDueAt: thought.nextDueAt, lastViewedAt: thought.lastViewedAt, viewCount: thought.viewCount,
             intervalDays: thought.intervalDays, intervalModeRaw: thought.intervalModeRaw,
+            learnIntervalDays: thought.learnIntervalDays,
             isPinned: thought.isPinned, isArchived: thought.isArchived, archivedAt: thought.archivedAt,
             tags: thought.sortedTags.map(\.name),
             blocks: thought.sortedBlocks.compactMap { block in

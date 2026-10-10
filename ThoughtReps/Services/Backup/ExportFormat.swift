@@ -163,6 +163,7 @@ enum BackupFormatV1 {
         var viewCount: Int
         var intervalDays: Int?
         var intervalModeRaw: String
+        var learnIntervalDays: Int? = nil
         var isPinned: Bool
         var isArchived: Bool
         var archivedAt: Date?
@@ -202,6 +203,9 @@ extension ThoughtRecord {
             return false
         }
         if let days = intervalDays, !(1...Scheduler.maxIntervalDays).contains(days) { return false }
+        if let days = learnIntervalDays {
+            guard intervalModeRaw == IntervalMode.learn.rawValue, (1...Scheduler.maxIntervalDays).contains(days) else { return false }
+        }
         return viewCount >= 0 && (viewCount == 0 || lastViewedAt != nil) && updatedAt >= createdAt
     }
 

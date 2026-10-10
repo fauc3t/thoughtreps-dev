@@ -651,6 +651,34 @@ function IntervalMenu() {
   );
 }
 
+function LearnBar() {
+  const button =
+    'grid h-12 place-content-center justify-items-center gap-0.5 rounded-[10px] font-mono';
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center justify-between gap-3 font-mono text-[12px] text-muted">
+        <span>How did it go?</span>
+        <span className="flex items-center gap-1.5">
+          Learn
+          <span className="flex h-4 w-7 items-center justify-end rounded-full bg-ink p-0.5">
+            <span className="size-3 rounded-full bg-paper" />
+          </span>
+        </span>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <span className={`${button} border border-hl bg-paper`}>
+          <span className="text-[13px] font-semibold">Again</span>
+          <span className="text-[11px] opacity-70">Tomorrow</span>
+        </span>
+        <span className={`${button} bg-ink text-paper`}>
+          <span className="text-[13px] font-semibold">Got it</span>
+          <span className="text-[11px] opacity-70">In 12 days</span>
+        </span>
+      </div>
+    </div>
+  );
+}
+
 function SwipeActions() {
   const action =
     'grid w-[68px] shrink-0 place-content-center justify-items-center gap-1 text-[11.5px] font-semibold';
@@ -935,6 +963,7 @@ const EXAMPLES: Record<
   'share-sheet': { Mock: ShareSheet },
   'snooze-menu': { Mock: SnoozeMenu },
   'interval-menu': { Mock: IntervalMenu },
+  'learn-bar': { Mock: LearnBar },
   'swipe-actions': { Mock: SwipeActions },
   'pinned-archived': { Mock: PinnedArchived },
   notification: { Mock: Notification },

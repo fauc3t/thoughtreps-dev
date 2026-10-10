@@ -71,18 +71,46 @@ struct SchedulerTests {
         #expect(after.intervalDays == 1)
     }
 
-    @Test func growingModeDoublesAfterFirstViewAndCaps() {
+    @Test func learnViewRecordsViewButNeverMovesDueDate() {
         let now = date(2026, 10, 4)
-        var state = Scheduler.State(nextDueAt: now, lastViewedAt: nil, viewCount: 0, intervalDays: 3)
-        state = Scheduler.afterView(state, mode: .growing, defaultIntervalDays: 7, now: now, calendar: calendar)
-        #expect(state.intervalDays == 3)
-        state = Scheduler.afterView(state, mode: .growing, defaultIntervalDays: 7, now: now, calendar: calendar)
-        #expect(state.intervalDays == 6)
-        #expect(state.nextDueAt == date(2026, 10, 10))
+        let due = date(2026, 10, 2)
+        let before = Scheduler.State(nextDueAt: due, lastViewedAt: nil, viewCount: 2, intervalDays: 3)
+        let after = Scheduler.afterView(before, mode: .learn, defaultIntervalDays: 7, now: now, calendar: calendar)
+        #expect(after.nextDueAt == due)
+        #expect(after.lastViewedAt == now)
+        #expect(after.viewCount == 3)
+        #expect(after.intervalDays == 3)
+    }
 
-        let big = Scheduler.State(nextDueAt: now, lastViewedAt: nil, viewCount: 5, intervalDays: 300)
-        let capped = Scheduler.afterView(big, mode: .growing, defaultIntervalDays: 7, now: now, calendar: calendar)
-        #expect(capped.intervalDays == Scheduler.maxIntervalDays)
+    @Test func gotItGapsGrowFromBaseAndCap() {
+        var gap: Int?
+        var gaps: [Int] = []
+        for _ in 0..<9 {
+            gap = Scheduler.learnGapAfterGotIt(lastGapDays: gap, baseIntervalDays: 7)
+            gaps.append(gap!)
+        }
+        #expect(gaps == [7, 12, 20, 34, 58, 99, 168, 286, 365])
+        #expect(Scheduler.learnGapAfterGotIt(lastGapDays: 365, baseIntervalDays: 7) == 365)
+    }
+
+    @Test func gotItGrowsByAtLeastOneDay() {
+        #expect(Scheduler.learnGapAfterGotIt(lastGapDays: 1, baseIntervalDays: 1) == 2)
+        #expect(Scheduler.learnGapAfterGotIt(lastGapDays: nil, baseIntervalDays: 0) == 1)
+        #expect(Scheduler.learnGapAfterGotIt(lastGapDays: nil, baseIntervalDays: 900) == 365)
+    }
+
+    @Test func reviewSchedulesFromNow() {
+        let now = date(2026, 10, 4, 15)
+        let got = Scheduler.afterReview(gotIt: true, lastGapDays: 12, baseIntervalDays: 7, now: now, calendar: calendar)
+        #expect(got.learnIntervalDays == 20)
+        #expect(got.nextDueAt == date(2026, 10, 24, 15))
+        let again = Scheduler.afterReview(gotIt: false, lastGapDays: 12, baseIntervalDays: 7, now: now, calendar: calendar)
+        #expect(again.learnIntervalDays == nil)
+        #expect(again.nextDueAt == date(2026, 10, 5, 15))
+    }
+
+    @Test func learnStartsTomorrow() {
+        #expect(Scheduler.learnStartDue(now: date(2026, 10, 4, 15), calendar: calendar) == date(2026, 10, 5, 15))
     }
 
     @Test func intervalIsClampedToAtLeastOneDay() {

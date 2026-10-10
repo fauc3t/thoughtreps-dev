@@ -61,6 +61,32 @@ struct RatingPromptTests {
         #expect(!prompt.isPending)
     }
 
+    @Test func learnThoughtsCountOnReviewNotOnOpen() throws {
+        let container = try ModelContainer(
+            for: Thought.self, ThoughtReps.Tag.self, Block.self, ImageAsset.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+        )
+        let prompt = makePrompt()
+        var store = ThoughtStore(context: container.mainContext, defaultIntervalDays: 7)
+        store.ratingPrompt = prompt
+        let thought = store.create(body: "learn", learn: true, now: now)
+        let due = now.addingTimeInterval(2 * 86_400)
+
+        store.markViewed(thought, now: due)
+        store.markViewed(thought, now: due)
+        #expect(prompt.dueOpenCount == 0)
+
+        #expect(store.review(thought, gotIt: true, now: due))
+        #expect(prompt.dueOpenCount == 1)
+        #expect(!store.review(thought, gotIt: true, now: due))
+        #expect(prompt.dueOpenCount == 1)
+
+        let fixed = Thought(body: "fixed", createdAt: now, nextDueAt: now)
+        container.mainContext.insert(fixed)
+        store.markViewed(fixed, now: now)
+        #expect(prompt.dueOpenCount == 2)
+    }
+
     @Test func storeCountsOnlySuccessfulDueOpens() throws {
         let container = try ModelContainer(
             for: Thought.self, ThoughtReps.Tag.self, Block.self, ImageAsset.self,

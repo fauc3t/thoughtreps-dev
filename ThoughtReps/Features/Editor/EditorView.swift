@@ -21,6 +21,7 @@ struct EditorView: View {
     @State private var selection: TextSelection?
     @State private var drafts: [BlockDraft] = []
     @State private var intervalDays: Int? = nil
+    @State private var learn = false
     @State private var isPickingInterval = false
     @State private var hasLoaded = false
     @State private var tagUseCounts: [String: Int] = [:]
@@ -40,6 +41,7 @@ struct EditorView: View {
     @State private var openedText = ""
     @State private var openedDrafts: [BlockDraft] = []
     @State private var openedIntervalDays: Int?
+    @State private var openedLearn = false
 
     private var isNew: Bool {
         if case .new = mode { return true }
@@ -52,7 +54,7 @@ struct EditorView: View {
 
     /// Differs from what the editor opened with. Compares against the loaded state, so a prefilled tag alone isn't a change.
     private var isDirty: Bool {
-        text != openedText || drafts != openedDrafts || intervalDays != openedIntervalDays || !inlineDrafts.isEmpty
+        text != openedText || drafts != openedDrafts || intervalDays != openedIntervalDays || learn != openedLearn || !inlineDrafts.isEmpty
     }
 
     /// Images are still being processed here or in a gallery block that is still in the editor.
@@ -261,8 +263,8 @@ struct EditorView: View {
                     Text("Add more text or a gallery. Turn on blur to hide an answer until you tap it.")
                 }
 
-                Section("Schedule") {
-                    LabeledContent("Comes back every") {
+                Section {
+                    LabeledContent(learn ? "First wait" : "Comes back every") {
                         Menu {
                             Picker("Interval", selection: $intervalDays) {
                                 Text("Default (\(defaultIntervalDays) days)").tag(Int?.none)
@@ -276,6 +278,11 @@ struct EditorView: View {
                             Text(intervalSummary)
                         }
                     }
+                    Toggle("Learn mode", isOn: $learn)
+                } header: {
+                    Text("Schedule")
+                } footer: {
+                    Text(learn ? "In Learn mode, this is the first wait. Each Got it makes the next one longer." : "Learn mode asks you to rate the thought when it comes back instead of counting an open as a view.")
                 }
             }
             .saveErrorAlert(saveErrors)
@@ -381,11 +388,13 @@ struct EditorView: View {
             bodyLoadToken += 1
             bodyHeight = estimatedBodyHeight()
             intervalDays = thought.intervalDays
+            learn = thought.intervalMode == .learn
             drafts = BlockDraft.drafts(for: thought)
         }
         openedText = text
         openedDrafts = drafts
         openedIntervalDays = intervalDays
+        openedLearn = learn
     }
 
     /// Dismisses only if the save succeeded, so a failed save keeps the draft on screen.
@@ -395,12 +404,13 @@ struct EditorView: View {
         let saved: Bool
         switch mode {
         case .new:
-            let thought = store.create(body: trimmedText, blocks: drafts, images: inlineDrafts, intervalDays: intervalDays, now: .now)
+            let thought = store.create(body: trimmedText, blocks: drafts, images: inlineDrafts, intervalDays: intervalDays, learn: learn, now: .now)
             saved = thought.modelContext != nil
             if saved { onCreated?() }
         case let .edit(thought):
             saveErrors.note = "Some changes may have been saved. Tap Save to finish."
             saved = store.update(thought, body: trimmedText, blocks: drafts, images: inlineDrafts, intervalDays: intervalDays, now: .now)
+                && (learn == (thought.intervalMode == .learn) || store.setLearnMode(thought, learn, now: .now))
         }
         if saved {
             dismiss()

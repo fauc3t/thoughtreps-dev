@@ -161,6 +161,128 @@ struct ThoughtStoreTests {
         #expect(viaMenu.nextDueAt == viaEditor.nextDueAt)
     }
 
+    @Test func turningLearnOnSchedulesTomorrowAndOffReanchors() throws {
+        let thought = store.create(body: "Hello", now: now)
+        let later = days(2, from: now)
+        #expect(store.setLearnMode(thought, true, now: later))
+        #expect(thought.intervalMode == .learn && thought.learnIntervalDays == nil)
+        #expect(thought.nextDueAt == days(1, from: later))
+        #expect(thought.updatedAt == later)
+        #expect(!thought.isDue(now: later))
+
+        let off = days(5, from: now)
+        #expect(store.setLearnMode(thought, false, now: off))
+        #expect(thought.intervalMode == .fixed && thought.learnIntervalDays == nil)
+        #expect(thought.nextDueAt == days(7, from: now))
+        #expect(thought.updatedAt == off)
+        #expect(try IntegrityChecker.check(container.mainContext).isEmpty)
+    }
+
+    @Test func settingLearnToItsCurrentValueWritesNothing() {
+        let thought = store.create(body: "Hello", now: now)
+        #expect(store.setLearnMode(thought, false, now: days(1, from: now)))
+        #expect(thought.updatedAt == now)
+    }
+
+    @Test func reviewsGrowAndResetWithoutTouchingViews() throws {
+        let thought = store.create(body: "Hello", learn: true, now: now)
+        #expect(thought.nextDueAt == days(1, from: now))
+        let t1 = days(1, from: now)
+        #expect(store.review(thought, gotIt: true, now: t1))
+        #expect(thought.learnIntervalDays == 7 && thought.nextDueAt == days(7, from: t1))
+        let t2 = days(7, from: t1)
+        #expect(store.review(thought, gotIt: true, now: t2))
+        #expect(thought.learnIntervalDays == 12 && thought.nextDueAt == days(12, from: t2))
+        let t3 = days(12, from: t2)
+        #expect(store.review(thought, gotIt: false, now: t3))
+        #expect(thought.learnIntervalDays == nil && thought.nextDueAt == days(1, from: t3))
+        #expect(thought.viewCount == 0 && thought.lastViewedAt == nil && thought.updatedAt == now)
+        #expect(thought.intervalDays == nil)
+        #expect(try IntegrityChecker.check(container.mainContext).isEmpty)
+    }
+
+    @Test func reviewUsesThoughtsFixedIntervalAsBase() {
+        let thought = store.create(body: "Hello", intervalDays: 3, learn: true, now: now)
+        store.review(thought, gotIt: true, now: days(1, from: now))
+        #expect(thought.learnIntervalDays == 3)
+    }
+
+    @Test func reviewIgnoresNonLearnThoughts() {
+        let thought = store.create(body: "Hello", now: now)
+        #expect(!store.review(thought, gotIt: true, now: now))
+        #expect(thought.nextDueAt == days(7, from: now) && thought.learnIntervalDays == nil)
+    }
+
+    @Test func reviewOnlyAppliesToDueUnpinnedLearnThoughts() {
+        let thought = store.create(body: "Hello", learn: true, now: now)
+        #expect(!store.review(thought, gotIt: true, now: now))
+        let due = days(1, from: now)
+        #expect(store.review(thought, gotIt: true, now: due))
+        let after = thought.nextDueAt
+        #expect(!store.review(thought, gotIt: true, now: due))
+        #expect(thought.nextDueAt == after && thought.learnIntervalDays == 7)
+
+        let pinned = store.create(body: "P", learn: true, now: now)
+        store.setPinned(pinned, true)
+        #expect(!store.review(pinned, gotIt: true, now: due))
+        let archived = store.create(body: "A", learn: true, now: now)
+        store.archive(archived, now: now)
+        #expect(!store.review(archived, gotIt: true, now: due))
+        #expect(archived.learnIntervalDays == nil)
+    }
+
+    @Test func settingTheIntervalOfALearnThoughtKeepsItsScheduleButCountsAsAnEdit() {
+        let thought = store.create(body: "Hello", learn: true, now: now)
+        let later = days(1, from: now)
+        #expect(store.setInterval(thought, days: 3, now: later))
+        #expect(thought.intervalDays == 3 && thought.nextDueAt == days(1, from: now) && thought.updatedAt == later)
+    }
+
+    @Test func editorChainedSaveTurnsLearnOnAfterAnIntervalChange() {
+        let thought = store.create(body: "Hello", now: now)
+        let later = days(2, from: now)
+        #expect(store.update(thought, body: "Hello", blocks: [], intervalDays: 3, now: later))
+        #expect(store.setLearnMode(thought, true, now: later))
+        #expect(thought.intervalMode == .learn && thought.learnIntervalDays == nil)
+        #expect(thought.intervalDays == 3 && thought.nextDueAt == days(1, from: later))
+    }
+
+    @Test func editorChainedSaveTurnsLearnOffAfterAnIntervalChange() {
+        let thought = store.create(body: "Hello", learn: true, now: now)
+        store.review(thought, gotIt: true, now: days(1, from: now))
+        let later = days(5, from: now)
+        #expect(store.update(thought, body: "Hello", blocks: [], intervalDays: 3, now: later))
+        #expect(store.setLearnMode(thought, false, now: later))
+        #expect(thought.intervalMode == .fixed && thought.learnIntervalDays == nil)
+        #expect(thought.nextDueAt == days(3, from: thought.createdAt))
+    }
+
+    @Test func openingALearnThoughtCountsAViewButStaysDue() {
+        let thought = store.create(body: "Hello", learn: true, now: now)
+        let opened = days(3, from: now)
+        store.markViewed(thought, now: opened)
+        #expect(thought.viewCount == 1 && thought.lastViewedAt == opened)
+        #expect(thought.nextDueAt == days(1, from: now))
+        #expect(thought.isDue(now: opened))
+    }
+
+    @Test func editingTheIntervalOfALearnThoughtKeepsItsSchedule() {
+        let thought = store.create(body: "Hello", learn: true, now: now)
+        store.update(thought, body: "Hello", blocks: [], intervalDays: 3, now: now)
+        #expect(thought.nextDueAt == days(1, from: now))
+    }
+
+    @Test func failedLearnWritesRollBack() throws {
+        let thought = store.create(body: "Hello", now: now)
+        let failing = ThoughtStore(
+            context: container.mainContext, defaultIntervalDays: 7, saveErrors: SaveErrorCenter(),
+            save: { _ in throw CocoaError(.fileWriteUnknown) }, ratingPrompt: .throwaway()
+        )
+        #expect(!failing.setLearnMode(thought, true, now: now))
+        #expect(thought.intervalMode == .fixed)
+        #expect(thought.nextDueAt == days(7, from: now))
+    }
+
     @Test func archiveAndRestore() {
         let thought = store.create(body: "Hello", now: now)
         store.setPinned(thought, true)

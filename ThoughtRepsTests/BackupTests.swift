@@ -291,6 +291,41 @@ struct BackupTests {
         }
     }
 
+    @Test func learnModeRoundTripsAndOldRecordsDecodeWithoutIt() async throws {
+        let learner = sourceStore.create(body: "# Learner", learn: true, now: now)
+        let day1 = Scheduler.adding(days: 1, to: now, calendar: .current)
+        sourceStore.review(learner, gotIt: true, now: day1)
+        sourceStore.review(learner, gotIt: true, now: Scheduler.adding(days: 7, to: day1, calendar: .current))
+        #expect(learner.learnIntervalDays == 12)
+        let file = try export(from: source)
+        defer { try? FileManager.default.removeItem(at: file.deletingLastPathComponent()) }
+        try await importFile(file)
+        let copy = try #require(try thought(learner.id, in: destination))
+        #expect(copy.intervalMode == .learn && copy.learnIntervalDays == 12)
+        #expect(copy.nextDueAt == learner.nextDueAt)
+        #expect(try IntegrityChecker.check(destination.mainContext).isEmpty)
+
+        var json = try JSONSerialization.jsonObject(with: BackupFormat.encoder().encode(record())) as! [String: Any]
+        json["learnIntervalDays"] = nil
+        let decoded = try BackupFormat.decoder().decode(ThoughtRecord.self, from: JSONSerialization.data(withJSONObject: json))
+        #expect(decoded.learnIntervalDays == nil)
+    }
+
+    @Test func learnIntervalMustMatchModeAndRange() {
+        var learn = record()
+        learn.intervalModeRaw = IntervalMode.learn.rawValue
+        #expect(learn.isImportable)
+        learn.learnIntervalDays = 12
+        #expect(learn.isImportable)
+        learn.learnIntervalDays = 0
+        #expect(!learn.isImportable)
+        learn.learnIntervalDays = 366
+        #expect(!learn.isImportable)
+        var fixed = record()
+        fixed.learnIntervalDays = 5
+        #expect(!fixed.isImportable)
+    }
+
     @Test func importNormalizesTagColors() throws {
         let record = ThoughtRecord(
             id: UUID(), body: "# T\n#a #b #c #d", createdAt: now, updatedAt: now, nextDueAt: now,

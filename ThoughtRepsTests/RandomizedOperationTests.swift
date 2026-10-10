@@ -127,10 +127,12 @@ struct RandomizedOperationTests {
         let updatedAt = max(createdAt, (existing?.updatedAt ?? now).addingTimeInterval(Double(Int.random(in: -100...100, using: &rng))))
         let archived = Int.random(in: 0..<4, using: &rng) == 0
         let viewed = Bool.random(using: &rng)
+        let learning = Int.random(in: 0..<3, using: &rng) == 0
         let imported = ThoughtRecord(
             id: existing?.id ?? UUID(), body: body, createdAt: createdAt, updatedAt: updatedAt,
             nextDueAt: now.addingTimeInterval(86_400), lastViewedAt: viewed ? now : nil, viewCount: viewed ? 2 : 0,
-            intervalDays: randomInterval(&rng), intervalModeRaw: IntervalMode.fixed.rawValue,
+            intervalDays: randomInterval(&rng), intervalModeRaw: (learning ? IntervalMode.learn : IntervalMode.fixed).rawValue,
+            learnIntervalDays: learning && Bool.random(using: &rng) ? Int.random(in: 1...Scheduler.maxIntervalDays, using: &rng) : nil,
             isPinned: !archived && Bool.random(using: &rng), isArchived: archived, archivedAt: archived ? updatedAt : nil,
             tags: [], blocks: blocks, images: inline
         )
@@ -175,7 +177,7 @@ struct RandomizedOperationTests {
 
         for step in 0..<Self.stepsPerSeed {
             let thoughts = try context.fetch(FetchDescriptor<Thought>(sortBy: [SortDescriptor(\.createdAt), SortDescriptor(\.id)]))
-            var op = Int.random(in: 0..<19, using: &rng)
+            var op = Int.random(in: 0..<22, using: &rng)
             if thoughts.isEmpty && op >= 2 && op != 11 && op != 12 && op != 18 { op = 0 }
             let target = thoughts.randomElement(using: &rng)
             // About 5% of writes have one of their saves (1st to 6th) fail.
@@ -188,11 +190,12 @@ struct RandomizedOperationTests {
             switch op {
             case 0, 1:
                 let interval = Self.randomInterval(&rng)
+                let learn = Int.random(in: 0..<4, using: &rng) == 0
                 var blocks = Self.randomBlocks(&rng)
                 var (body, images) = Self.withInlineImages(Self.randomBody(&rng), &rng)
                 Self.moveTokensToBlocks(body: &body, images: images, blocks: &blocks, &rng)
-                store.create(body: body, blocks: blocks, images: images, intervalDays: interval, now: now)
-                description = "create(interval: \(String(describing: interval)), blocks: \(blocks.count), inline: \(images.count))"
+                store.create(body: body, blocks: blocks, images: images, intervalDays: interval, learn: learn, now: now)
+                description = "create(interval: \(String(describing: interval)), learn: \(learn), blocks: \(blocks.count), inline: \(images.count))"
             case 2:
                 var (body, images) = Self.withInlineImages(Self.randomBody(&rng), &rng)
                 var blocks = Self.randomBlocks(&rng)
@@ -285,6 +288,19 @@ struct RandomizedOperationTests {
                     description = "setColor(\(tag.name), \(String(describing: hex)))"
                 } else {
                     description = "setColor (no tags)"
+                }
+            case 19:
+                let enabled = Bool.random(using: &rng)
+                store.setLearnMode(target!, enabled, now: now)
+                description = "setLearnMode(\(enabled))"
+            case 20, 21:
+                if target!.intervalMode == .learn {
+                    let gotIt = op == 20
+                    store.review(target!, gotIt: gotIt, now: now)
+                    description = gotIt ? "review(got it)" : "review(again)"
+                } else {
+                    store.setLearnMode(target!, true, now: now)
+                    description = "setLearnMode(true) (instead of review)"
                 }
             default:
                 now = now.addingTimeInterval(Double(Int.random(in: 1...20, using: &rng)) * 86_400)

@@ -48,6 +48,12 @@ struct ThoughtCard: View {
                     .foregroundStyle(Color.ink)
                     .lineLimit(2)
                 Spacer(minLength: 0)
+                if thought.intervalMode == .learn {
+                    Text("LEARN")
+                        .font(.mono(10, relativeTo: .caption2))
+                        .tracking(0.8)
+                        .foregroundStyle(Color.muted)
+                }
                 DueLabel(date: thought.nextDueAt, now: now)
             }
             if !thought.preview.isEmpty {

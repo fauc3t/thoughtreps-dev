@@ -21,6 +21,8 @@ final class Thought {
     var intervalDays: Int? = nil
     /// Raw value of `IntervalMode`. Stored as a string so new modes need no migration.
     var intervalModeRaw: String = IntervalMode.fixed.rawValue
+    /// The last gap Learn mode used, in days; `nil` = no gap yet. Only set in `.learn` mode.
+    var learnIntervalDays: Int? = nil
 
     var isPinned: Bool = false
     var isArchived: Bool = false

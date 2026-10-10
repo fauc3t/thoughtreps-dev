@@ -56,15 +56,16 @@ struct ThoughtStore {
     /// (`modelContext == nil`). That is how callers tell a save failed; the other writers return a Bool.
     @discardableResult
     func create(
-        body: String, blocks: [BlockDraft] = [], images: [ImageDraft] = [], intervalDays: Int? = nil, now: Date
+        body: String, blocks: [BlockDraft] = [], images: [ImageDraft] = [], intervalDays: Int? = nil, learn: Bool = false, now: Date
     ) -> Thought {
         let interval = intervalDays ?? defaultIntervalDays
         let thought = Thought(
             body: body,
             createdAt: now,
-            nextDueAt: Scheduler.firstDue(createdAt: now, intervalDays: interval),
+            nextDueAt: learn ? Scheduler.learnStartDue(now: now) : Scheduler.firstDue(createdAt: now, intervalDays: interval),
             intervalDays: intervalDays
         )
+        if learn { thought.intervalMode = .learn }
         context.insert(thought)
         let plan = plan(for: thought, body: body, blocks: blocks, images: images)
         let tagsSynced = syncTags(for: thought, texts: plan.texts)
@@ -107,7 +108,7 @@ struct ThoughtStore {
         let intervalChanged = thought.intervalDays != intervalDays
         thought.body = body
         thought.intervalDays = intervalDays
-        if intervalChanged {
+        if intervalChanged, thought.intervalMode != .learn {
             reanchor(thought)
         }
         thought.updatedAt = now
@@ -517,7 +518,7 @@ struct ThoughtStore {
 
     @discardableResult
     func markViewed(_ thought: Thought, now: Date) -> Bool {
-        let countsAsDueOpen = Scheduler.countsAsDueOpen(
+        let countsAsDueOpen = thought.intervalMode != .learn && Scheduler.countsAsDueOpen(
             isPinned: thought.isPinned,
             isArchived: thought.isArchived,
             nextDueAt: thought.nextDueAt,
@@ -538,10 +539,46 @@ struct ThoughtStore {
     @discardableResult
     func setInterval(_ thought: Thought, days: Int?, now: Date) -> Bool {
         thought.intervalDays = days
-        reanchor(thought)
+        if thought.intervalMode != .learn { reanchor(thought) }
         thought.updatedAt = now
         defer { indexFingerprint(of: thought) }
         return persist()
+    }
+
+    /// Turning on makes the first review tomorrow; turning off goes back to the fixed interval.
+    /// An edit, so it bumps `updatedAt`.
+    @discardableResult
+    func setLearnMode(_ thought: Thought, _ enabled: Bool, now: Date) -> Bool {
+        guard (thought.intervalMode == .learn) != enabled else { return true }
+        thought.learnIntervalDays = nil
+        if enabled {
+            thought.intervalMode = .learn
+            thought.nextDueAt = Scheduler.learnStartDue(now: now)
+        } else {
+            thought.intervalMode = .fixed
+            reanchor(thought)
+        }
+        thought.updatedAt = now
+        defer { indexFingerprint(of: thought) }
+        return persist()
+    }
+
+    /// Rates a Learn thought that is due, unpinned and not archived; otherwise writes nothing and returns
+    /// false. Not a view or an edit: `updatedAt`, `lastViewedAt` and `viewCount` stay.
+    @discardableResult
+    func review(_ thought: Thought, gotIt: Bool, now: Date) -> Bool {
+        guard thought.intervalMode == .learn, !thought.isPinned, !thought.isArchived, thought.isDue(now: now) else { return false }
+        let result = Scheduler.afterReview(
+            gotIt: gotIt,
+            lastGapDays: thought.learnIntervalDays,
+            baseIntervalDays: thought.effectiveIntervalDays(defaultDays: defaultIntervalDays),
+            now: now
+        )
+        thought.nextDueAt = result.nextDueAt
+        thought.learnIntervalDays = result.learnIntervalDays
+        guard persist() else { return false }
+        ratingPrompt.recordDueOpen()
+        return true
     }
 
     private func reanchor(_ thought: Thought) {
@@ -878,6 +915,7 @@ struct ThoughtStore {
         thought.viewCount = record.viewCount
         thought.intervalDays = record.intervalDays
         thought.intervalModeRaw = record.intervalModeRaw
+        thought.learnIntervalDays = record.learnIntervalDays
         thought.isPinned = record.isPinned
         thought.isArchived = record.isArchived
         thought.archivedAt = record.archivedAt

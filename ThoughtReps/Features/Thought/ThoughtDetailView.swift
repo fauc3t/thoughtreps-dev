@@ -112,30 +112,48 @@ struct ThoughtDetailView: View {
 
     private static let quickIntervals = [1, 3, 7, 30]
 
+    private var isLearning: Bool { thought.intervalMode == .learn }
+
     private var intervalBar: some View {
         let current = thought.effectiveIntervalDays(defaultDays: defaultIntervalDays)
+        let now = Date.now
+        let showsReview = isLearning && !thought.isPinned && thought.isDue(now: now)
         return VStack(spacing: 8) {
-            HStack {
-                Text("Back in")
-                Spacer()
-                if !thought.isPinned {
+            HStack(spacing: 12) {
+                Text(headerText(now: now))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                Spacer(minLength: 0)
+                if !isLearning, !thought.isPinned {
                     Text("next: \(thought.nextDueAt.formatted(.dateTime.month(.abbreviated).day()))")
                 }
+                Toggle("Learn", isOn: learnBinding)
+                    .controlSize(.small)
+                    .tint(Color.ink)
+                    .fixedSize()
+                    .accessibilityLabel("Learn mode")
             }
             .font(.mono(12, relativeTo: .footnote))
             .foregroundStyle(Color.muted)
-            HStack(spacing: 8) {
-                ForEach(Self.quickIntervals, id: \.self) { days in
-                    Button {
-                        store.setInterval(thought, days: days, now: .now)
-                    } label: {
-                        intervalChip("\(days)d", selected: current == days)
-                    }
-                    .buttonStyle(InkPressStyle(cornerRadius: 10, pressedScale: 0.94))
-                    .accessibilityLabel(IntervalDuration(days: days).label)
-                    .accessibilityAddTraits(current == days ? .isSelected : [])
+            if showsReview {
+                HStack(spacing: 8) {
+                    reviewButton("Again", gotIt: false, now: now)
+                    reviewButton("Got it", gotIt: true, now: now)
                 }
-                intervalMenu(selected: !Self.quickIntervals.contains(current))
+            } else if !isLearning {
+                HStack(spacing: 8) {
+                    ForEach(Self.quickIntervals, id: \.self) { days in
+                        Button {
+                            store.setInterval(thought, days: days, now: .now)
+                        } label: {
+                            intervalChip("\(days)d", selected: current == days)
+                        }
+                        .buttonStyle(InkPressStyle(cornerRadius: 10, pressedScale: 0.94))
+                        .accessibilityLabel(IntervalDuration(days: days).label)
+                        .accessibilityAddTraits(current == days ? .isSelected : [])
+                    }
+                    intervalMenu(selected: !Self.quickIntervals.contains(current))
+                }
             }
         }
         .sensoryFeedback(.selection, trigger: current)
@@ -146,6 +164,51 @@ struct ThoughtDetailView: View {
         .overlay(alignment: .top) {
             Rectangle().fill(Color.hl).frame(height: 1)
         }
+    }
+
+    private var learnBinding: Binding<Bool> {
+        Binding(
+            get: { isLearning },
+            set: { store.setLearnMode(thought, $0, now: .now) }
+        )
+    }
+
+    private func headerText(now: Date) -> String {
+        guard isLearning else { return "Back in" }
+        if thought.isPinned { return "Pinned · not reviewed" }
+        if thought.isDue(now: now) { return "How did it go?" }
+        return "Back \(RelativeDay.phrase(for: thought.nextDueAt, now: now))"
+    }
+
+    private func reviewButton(_ title: String, gotIt: Bool, now: Date) -> some View {
+        let gap = Scheduler.afterReview(
+            gotIt: gotIt,
+            lastGapDays: thought.learnIntervalDays,
+            baseIntervalDays: thought.effectiveIntervalDays(defaultDays: defaultIntervalDays),
+            now: now
+        ).learnIntervalDays ?? 1
+        let preview = gap == 1 ? "Tomorrow" : "In \(gap) days"
+        return Button {
+            store.review(thought, gotIt: gotIt, now: .now)
+        } label: {
+            VStack(spacing: 2) {
+                Text(title)
+                    .font(.mono(13, semibold: true, relativeTo: .footnote))
+                Text(preview)
+                    .font(.mono(11, relativeTo: .caption))
+                    .opacity(0.7)
+            }
+            .foregroundStyle(gotIt ? Color.paper : Color.ink)
+            .frame(maxWidth: .infinity, minHeight: 48)
+            .background(RoundedRectangle(cornerRadius: 10).fill(gotIt ? Color.ink : Color.paper))
+            .overlay {
+                if !gotIt {
+                    RoundedRectangle(cornerRadius: 10).strokeBorder(Color.hl, lineWidth: 1)
+                }
+            }
+        }
+        .buttonStyle(InkPressStyle(cornerRadius: 10, pressedScale: 0.96))
+        .accessibilityLabel("\(title), back \(preview.lowercased())")
     }
 
     private func intervalChip(_ text: String, selected: Bool) -> some View {
