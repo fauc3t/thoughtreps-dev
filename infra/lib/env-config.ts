@@ -43,6 +43,7 @@ const ENV_CONFIGS: Record<EnvName, EnvConfig> = {
       'hello@thoughtreps.com',
       'social@thoughtreps.com',
       'repsbot@thoughtreps.com',
+      'nickhorn@thoughtreps.com',
     ],
     alertEmail: 'me@nickhorn.com',
     // me@nickhorn.com is already a verified recipient identity in this
@@ -52,6 +53,7 @@ const ENV_CONFIGS: Record<EnvName, EnvConfig> = {
       'hello@thoughtreps.com': 'me@nickhorn.com',
       'social@thoughtreps.com': 'me@nickhorn.com',
       'repsbot@thoughtreps.com': 'me@nickhorn.com',
+      'nickhorn@thoughtreps.com': 'me@nickhorn.com',
     },
     sharedReceiptRuleSetName: 'simple-mail-prod',
     exportLinkSubdomain: 'transfer',
