@@ -4,20 +4,22 @@
 <link rel="stylesheet" href="../../Header/src/shared.css" />
 <link rel="stylesheet" href="../../SearchResults/src/frame.css" />
 <style>
-  /* One 1320x2868 canvas. The phone is the raw 1320x2868 simulator capture scaled to --sw px wide inside an ink frame. */
-  :root { --sw: 960px; --bw: 22px; --margin: 90px; }
+  /* One 1320x2868 canvas. Each phone is a raw 1320x2868 simulator capture scaled to --sw px wide inside an ink frame;
+     the border, shadow and island scale with it. */
+  :root { --margin: 90px; }
   #stage { left: 0; top: 0; width: 1320px; height: 2868px; transform: none !important; }
   .copy { position: absolute; left: var(--margin); right: var(--margin); top: 110px; }
   h1 { font-size: var(--fs, 130px); text-align: left; }
   h1 mark { background: linear-gradient(transparent 60%, var(--hl) 60% 92%, transparent 92%); color: inherit; padding: 0 0.04em; }
   p.support { margin: 40px 0 0; font: 400 50px / 1.3 var(--mono); color: var(--muted); max-width: 1100px; }
-  .phone { position: absolute; left: 50%; top: 570px; margin-left: calc((var(--sw) + var(--bw) * 2) / -2); width: var(--sw); height: calc(var(--sw) * 2868 / 1320); border: var(--bw) solid var(--ink); border-radius: calc(var(--sw) * 0.125 + var(--bw)); box-shadow: 24px 24px 0 var(--ink); background: var(--paper); overflow: hidden; }
+  .phone { --bw: calc(var(--sw) * 0.0229); position: absolute; width: var(--sw); height: calc(var(--sw) * 2868 / 1320); border: var(--bw) solid var(--ink); border-radius: calc(var(--sw) * 0.125 + var(--bw)); box-shadow: calc(var(--sw) * 0.025) calc(var(--sw) * 0.025) 0 var(--ink); background: var(--paper); overflow: hidden; }
   .phone img { display: block; width: 100%; height: 100%; }
-  .island { position: absolute; left: 50%; top: 22px; width: 272px; height: 80px; margin-left: -136px; border-radius: 40px; background: var(--ink); }
+  .island { position: absolute; left: 50%; top: calc(var(--sw) * 0.0229); width: calc(var(--sw) * 0.2833); height: calc(var(--sw) * 0.0833); transform: translateX(-50%); border-radius: 999px; background: var(--ink); }
+  .label { position: absolute; font: 400 40px / 1 var(--mono); color: var(--ink); text-align: center; }
 </style>
 <div id="stage">
   <div class="copy"><h1 id="head"></h1><p class="support" id="support"></p></div>
-  <div class="phone"><img id="img" alt="" /><div class="island"></div></div>
+  <div id="phones"></div>
 </div>
 <script src="../../Header/src/shared.js"></script>
 <script src="copy.js"></script>
@@ -35,6 +37,19 @@
     }
     return fs;
   };
+  // Phone frames (outer size: --sw plus two borders), as [left, top, --sw] in canvas px.
+  const outer = (sw) => sw * 1.0458;
+  const LAYOUTS = {
+    single: () => [[(1320 - outer(960)) / 2, 570, 960]],
+    // Before at the left, after lower at the right, so the eye reads the tap left to right. The after phone overlaps
+    // the before phone's right edge only below its blurred block.
+    pair: () => [[40, 600, 640], [1320 - 40 - outer(640) - 16, 1260, 640]],
+    // 3x2, a label under each phone.
+    grid: () => {
+      const sw = 360, gap = (1320 - 3 * outer(sw)) / 4, row = outer(sw) * 2868 / 1320 + 90;
+      return [0, 1, 2, 3, 4, 5].map((i) => [gap + (i % 3) * (outer(sw) + gap) - 5, 620 + Math.floor(i / 3) * row, sw]);
+    },
+  };
   window.render = async (name) => {
     await Promise.all([document.fonts.load("900 100px 'Archivo Variable'"), document.fonts.load("400 50px 'Paper Mono'")]);
     const shot = SHOTS.find((s) => s.name === name);
@@ -42,8 +57,27 @@
     head.style.setProperty('--fs', fitSize() + 'px');
     head.innerHTML = html(shot.headline);
     document.getElementById('support').textContent = shot.support;
-    const img = document.getElementById('img');
-    img.src = `../raw/${name}.png`;
-    await img.decode();
+    const raws = shot.raws ?? [name];
+    const frames = LAYOUTS[shot.layout ?? 'single']();
+    const phones = document.getElementById('phones');
+    phones.innerHTML = '';
+    const decoded = raws.map((raw, i) => {
+      const [left, top, sw] = frames[i];
+      const phone = document.createElement('div');
+      phone.className = 'phone';
+      phone.style.cssText = `left: ${left}px; top: ${top}px; --sw: ${sw}px`;
+      const img = document.createElement('img');
+      img.alt = '';
+      img.src = `../raw/${raw}.png`;
+      phone.append(img, Object.assign(document.createElement('div'), { className: 'island' }));
+      phones.append(phone);
+      if (shot.labels) {
+        const label = Object.assign(document.createElement('div'), { className: 'label', textContent: shot.labels[i] });
+        label.style.cssText = `left: ${left}px; width: ${outer(sw)}px; top: ${top + outer(sw) * 2868 / 1320 + 28}px`;
+        phones.append(label);
+      }
+      return img.decode();
+    });
+    await Promise.all(decoded);
   };
 </script>

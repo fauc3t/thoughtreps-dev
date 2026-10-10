@@ -7,12 +7,19 @@ import UniformTypeIdentifiers
 
 /// Debug-only mode for the App Store screenshots (`app-store-assets/Screenshots`), switched on by the
 /// `-screenshotMode` launch argument. The store is in memory and filled with `ScreenshotSeed`, so the
-/// real store is never opened. Light mode, no prompts, and no notification calls unless `sendsTestReminder`.
+/// real store is never opened. Ink and light mode unless `-screenshotTheme` picks another theme, no prompts,
+/// and no notification calls unless `sendsTestReminder`.
 enum ScreenshotMode {
     static let isActive = CommandLine.arguments.contains("-screenshotMode")
     /// Also schedules the "Send test reminder" notification at launch. The one screenshot mode side
     /// effect outside the app: it asks the simulator for notification permission.
     static let sendsTestReminder = isActive && CommandLine.arguments.contains("-screenshotReminder")
+    /// The theme to capture, from `-screenshotTheme <raw value>`; Ink otherwise, whatever the simulator has saved.
+    static let theme: AppTheme = {
+        let arguments = CommandLine.arguments
+        guard let index = arguments.firstIndex(of: "-screenshotTheme"), index + 1 < arguments.count else { return .ink }
+        return AppTheme(rawValue: arguments[index + 1]) ?? .ink
+    }()
 
     /// Overrides settings for this launch only: the argument domain is volatile, so nothing is persisted.
     static func overrideDefaults() {
@@ -47,44 +54,41 @@ enum ScreenshotSeed {
         var dueInDays: Int
         var pinned = false
         var views = 0
+        var blurred: (title: String, content: String)? = nil
         var gallery: (title: String, scenes: [Scene])? = nil
     }
 
+    /// A commonplace book: quotes with their source, book notes, lessons, sermon and podcast takeaways.
+    /// Quotes are public domain only (Thoreau's *Walden*, Franklin's *Autobiography*, Emerson).
+    /// The Timeline shot shows the pinned thought and the four due ones; the reminder says "4 thoughts".
     private static let items: [Item] = [
         Item(
-            body: "# Weekly review questions\nWhat moved forward? What stalled? What do I want to stop doing?\n\nA short habit of reflection beats a long one.\n\n#habits",
+            body: "# Weekly review questions\nWhat moved forward? What stalled? What do I want to stop doing?\n\nA short habit of reflection beats a long one.\n\n#journal",
             createdDaysAgo: 40, dueInDays: 3, pinned: true, views: 5
         ),
         Item(
-            body: "# One wild and precious life\n“Tell me, what is it you plan to do with your one wild and precious life?” — Mary Oliver\n\n#quotes",
+            body: "# The cost of a thing\n“The cost of a thing is the amount of what I will call life which is required to be exchanged for it, immediately or in the long run.”\n— Henry David Thoreau, *Walden*\n\n#quotes",
             createdDaysAgo: 24, dueInDays: -3, views: 2
         ),
         Item(
-            body: "# Read later: the case for slow email\nSaved Tuesday, 12 min read. You said you'd get to it.\n\n#toread",
-            createdDaysAgo: 10, dueInDays: 1, views: 1
-        ),
-        Item(
-            body: "# Why journals work\nWriting builds reflection into the day. Notice what keeps coming back.\n\n#journal",
-            createdDaysAgo: 17, dueInDays: -2, views: 1
+            body: "# Ser vs estar\nWhen do you use *estar* instead of *ser*?\n\n#spanish",
+            createdDaysAgo: 17, dueInDays: -2, views: 1,
+            blurred: ("Answer", "For how something is **right now**: feelings, places and conditions.\n\n- *Estoy cansado.* I’m tired.\n- *Soy alto.* I’m tall.")
         ),
         Item(
             body: """
-            # Margin of safety
-            Buy only when the price leaves room for being **wrong**.
+            # Thirteen virtues, one a week
+            From Franklin’s *Autobiography*. He gave each virtue **a week** of strict attention.
 
-            1. Estimate value conservatively
-            2. Demand a discount to it
-            3. Be patient: the *price* will come to you
+            1. Keep a little book, one page per virtue
+            2. Mark every slip with a black spot
+            3. Go *round* again: four courses a year
 
-            > The three most important words in investing.
+            > I was surpris’d to find myself so much fuller of faults than I had imagined.
 
-            #investing
+            #books
             """,
             createdDaysAgo: 15, dueInDays: -1, views: 1
-        ),
-        Item(
-            body: "# Rubber-duck before asking\nExplain the bug out loud in full sentences first. Half the time the answer shows up.\n\n#work",
-            createdDaysAgo: 7, dueInDays: 2
         ),
         Item(
             body: """
@@ -103,6 +107,14 @@ enum ScreenshotSeed {
             gallery: ("Moodboard", [.dusk, .alpine, .meadow, .city])
         ),
         Item(
+            body: "# Why journals work\nWriting builds reflection into the day. Notice what keeps coming back.\n\n#journal",
+            createdDaysAgo: 10, dueInDays: 1, views: 1
+        ),
+        Item(
+            body: "# Sermon notes: rest\nRest isn’t a reward for finishing the work. It’s a reminder that the work was never ours to finish.\n\n#sermons",
+            createdDaysAgo: 7, dueInDays: 2
+        ),
+        Item(
             body: "# Notes on reflection\nA few minutes each evening: what went well, what I would change.\n\n#journal",
             createdDaysAgo: 12, dueInDays: 4, views: 1
         ),
@@ -115,19 +127,19 @@ enum ScreenshotSeed {
             createdDaysAgo: 80, dueInDays: 12, views: 4
         ),
         Item(
-            body: "# Two-minute rule\nIf it takes less than two minutes, do it now instead of writing it down.\n\n#habits",
+            body: "# Trust thyself\n“Trust thyself: every heart vibrates to that iron string.”\n— Ralph Waldo Emerson, *Self-Reliance*\n\n#quotes",
             createdDaysAgo: 21, dueInDays: 1, views: 2
         ),
         Item(
-            body: "# Spanish: ser vs estar\nSer for what something is, estar for how it is.\n\n#spanish #study",
+            body: "# Podcast: sleep on it\nBig decisions shrink overnight. Write the question down at night and answer it at breakfast.\n\n#podcasts",
             createdDaysAgo: 5, dueInDays: 2
         ),
         Item(
-            body: "# Big-O of Swift collections\nArray append is amortized O(1). Insert at the front is O(n).\n\n#swift #study",
+            body: "# Grandma’s rule\nLeave every room a little better than you found it.\n\n#lessons",
             createdDaysAgo: 16, dueInDays: 5, views: 1
         ),
         Item(
-            body: "# Questions to ask in 1:1s\nWhat's blocking you right now? What should I stop doing?\n\n#work",
+            body: "# Idea: a tool library\nBorrow the drill you use twice a year. Start with the neighbors on our street.\n\n#ideas",
             createdDaysAgo: 30, dueInDays: 9, views: 3
         ),
     ]
@@ -135,14 +147,14 @@ enum ScreenshotSeed {
     private static let tagColors: [String: String] = [
         "habits": "#3352D1",
         "quotes": "#7A4FC4",
-        "toread": "#B56629",
+        "books": "#B56629",
         "journal": "#1F8A70",
-        "investing": "#3F8F3A",
-        "work": "#2E80AD",
+        "lessons": "#3F8F3A",
+        "podcasts": "#2E80AD",
         "travel": "#BF4066",
         "spanish": "#B56629",
-        "study": "#5F6B7A",
-        "swift": "#7A4FC4",
+        "sermons": "#5F6B7A",
+        "ideas": "#7A4FC4",
     ]
 
     static func insert(into context: ModelContext, now: Date) {
@@ -150,6 +162,9 @@ enum ScreenshotSeed {
         let calendar = Calendar.current
         for item in items {
             var blocks: [BlockDraft] = []
+            if let blurred = item.blurred {
+                blocks.append(BlockDraft(kind: .markdown, title: blurred.title, content: blurred.content, isBlurred: true))
+            }
             if let gallery = item.gallery {
                 let images = gallery.scenes.compactMap { $0.draft() }
                 blocks.append(BlockDraft(kind: .gallery, title: gallery.title, images: images))

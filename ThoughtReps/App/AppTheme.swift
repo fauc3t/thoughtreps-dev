@@ -289,7 +289,7 @@ final class ThemeManager {
     private init() {
         #if DEBUG
         if ScreenshotMode.isActive {
-            current = .ink
+            current = ScreenshotMode.theme
         } else {
             current = Self.storedTheme
         }
@@ -302,12 +302,12 @@ final class ThemeManager {
     }
 
     /// Always-dark themes pin the windows dark; the rest return to the system appearance. Screenshot
-    /// mode (DEBUG) pins Ink and light.
+    /// mode (DEBUG) pins its theme, and light unless that theme is always dark.
     /// `preferredColorScheme(nil)` doesn't reliably undo an earlier forced scheme.
     func applyInterfaceStyle() {
         var style: UIUserInterfaceStyle = current.colorScheme == .dark ? .dark : .unspecified
         #if DEBUG
-        if ScreenshotMode.isActive { style = .light }
+        if ScreenshotMode.isActive, style == .unspecified { style = .light }
         #endif
         for scene in UIApplication.shared.connectedScenes {
             for window in (scene as? UIWindowScene)?.windows ?? [] {

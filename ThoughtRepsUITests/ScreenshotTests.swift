@@ -37,18 +37,41 @@ final class ScreenshotTests: XCTestCase {
         snap("01-timeline")
     }
 
+    /// The same thought before and after tapping its blurred block.
+    func testBlurredBlock() {
+        launch()
+        openThought("Ser vs estar")
+        let hidden = app.buttons["Answer, hidden"]
+        XCTAssertTrue(hidden.waitForExistence(timeout: 10))
+        snap("02-blurred-before")
+        hidden.tap()
+        XCTAssertTrue(app.buttons["Answer, hidden"].waitForNonExistence(timeout: 10))
+        snap("02-blurred-after")
+    }
+
+    /// One thought in each theme, for the 3x2 grid.
+    func testThemes() {
+        for theme in ["ink", "library", "midnight", "garden", "terminal", "pop"] {
+            launch(["-screenshotTheme", theme])
+            openThought("The cost of a thing")
+            XCTAssertTrue(app.buttons["More intervals"].waitForExistence(timeout: 10))
+            snap("03-themes-\(theme)")
+            app.terminate()
+        }
+    }
+
     func testIntervalPicker() {
         launch()
-        openThought("Margin of safety")
+        openThought("Thirteen virtues, one a week")
         XCTAssertTrue(app.buttons["More intervals"].waitForExistence(timeout: 10))
-        snap("02-interval")
+        snap("04-interval")
     }
 
     func testMarkdownAndPhotos() {
         launch()
         openThought("Weekend in the mountains")
         XCTAssertTrue(app.buttons["Moodboard image 1 of 4"].waitForExistence(timeout: 10))
-        snap("03-markdown-photos")
+        snap("05-markdown-photos")
     }
 
     func testSearch() {
@@ -62,14 +85,14 @@ final class ScreenshotTests: XCTestCase {
         field.typeText("reflect")
         XCTAssertTrue(app.staticTexts["Why journals work"].waitForExistence(timeout: 10))
         app.keyboards.buttons["Search"].tap()
-        snap("04-search")
+        snap("06-search")
     }
 
     func testTags() {
         launch()
         app.tabBars.buttons["Tags"].tap()
         XCTAssertTrue(app.staticTexts["#journal"].waitForExistence(timeout: 10))
-        snap("05-tags")
+        snap("07-tags")
     }
 
     /// The app schedules its test reminder 15 seconds out (asking for permission the first time on a
@@ -82,6 +105,6 @@ final class ScreenshotTests: XCTestCase {
         XCUIDevice.shared.perform(NSSelectorFromString("pressLockButton"))
         let banner = springboard.staticTexts["4 thoughts are back today"]
         XCTAssertTrue(banner.waitForExistence(timeout: 30), springboard.debugDescription)
-        snap("06-reminders", settle: 0.6)
+        snap("08-reminders", settle: 0.6)
     }
 }

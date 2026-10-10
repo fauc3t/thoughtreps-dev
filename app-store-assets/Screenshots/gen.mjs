@@ -14,7 +14,11 @@ const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, '..', '..');
 const capture = process.argv.includes('--capture');
 const only = process.argv.slice(2).find((a) => !a.startsWith('--')) ?? '';
-const NAMES = ['01-timeline', '02-interval', '03-markdown-photos', '04-search', '05-tags', '06-reminders'];
+// The set and the captures each output shows come from src/copy.js (a browser script defining SHOTS).
+const SHOTS = new Function(`${readFileSync(join(here, 'src', 'copy.js'), 'utf8')}; return SHOTS;`)();
+const NAMES = SHOTS.map((s) => s.name);
+const rawsOf = (shot) => shot.raws ?? [shot.name];
+const RAWS = SHOTS.flatMap(rawsOf);
 const W = 1320, H = 2868;
 
 const SIM_NAME = 'ThoughtReps Screenshots';
@@ -72,9 +76,9 @@ const captureRaw = () => {
         seen.add(name);
       }
     }
-    const missing = NAMES.filter((n) => !seen.has(n));
+    const missing = RAWS.filter((n) => !seen.has(n));
     if (missing.length) throw new Error(`Missing captures: ${missing.join(', ')}`);
-    for (const n of NAMES) console.log(join(here, 'raw', `${n}.png`));
+    for (const n of RAWS) console.log(join(here, 'raw', `${n}.png`));
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }
@@ -101,8 +105,11 @@ const composite = async () => {
     }
     tmp = mkdtempSync(join(tmpdir(), 'screenshots-'));
     mkdirSync(join(here, 'static'), { recursive: true });
-    for (const name of NAMES.filter((n) => n.includes(only))) {
-      if (!existsSync(join(here, 'raw', `${name}.png`))) throw new Error(`raw/${name}.png is missing; run with --capture`);
+    for (const shot of SHOTS.filter((s) => s.name.includes(only))) {
+      const name = shot.name;
+      for (const raw of rawsOf(shot)) {
+        if (!existsSync(join(here, 'raw', `${raw}.png`))) throw new Error(`raw/${raw}.png is missing; run with --capture`);
+      }
       const page = await browser.newPage({ viewport: { width: W, height: H } });
       await page.goto(pathToFileURL(join(here, 'src', 'shot.html')).href);
       await page.evaluate((n) => render(n), name);

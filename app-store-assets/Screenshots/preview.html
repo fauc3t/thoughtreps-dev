@@ -26,11 +26,12 @@
 <h1>App Store screenshots: preview</h1>
 <p>Every file in static/ (1320x2868). The search card shows the first three at about the size they appear in search results.</p>
 <div id="out"></div>
+<script src="src/copy.js"></script>
 <script>
-  const NAMES = ['01-timeline', '02-interval', '03-markdown-photos', '04-search', '05-tags', '06-reminders'];
+  const NAMES = SHOTS.map((s) => s.name);
   const src = (n) => `static/${n}-1320x2868.png`;
   document.getElementById('out').innerHTML =
-    '<h2>All six</h2><div class="row big">' + NAMES.map((n) => `<figure><img src="${src(n)}" alt="" /><figcaption>${n}</figcaption></figure>`).join('') + '</div>' +
+    '<h2>All ' + NAMES.length + '</h2><div class="row big">' + NAMES.map((n) => `<figure><img src="${src(n)}" alt="" /><figcaption>${n}</figcaption></figure>`).join('') + '</div>' +
     '<h2>In search results (first three)</h2><figure><div class="card"><div class="top"><img src="../../design-assets/app-icon/light.svg" alt="" /><div class="txt"><b>Thought Reps</b><span>Write it down. It comes back.</span></div><div class="get">Get</div></div><div class="shots">' +
     NAMES.slice(0, 3).map((n) => `<img src="${src(n)}" alt="" />`).join('') + '</div></div><figcaption>~150 px per screenshot</figcaption></figure>';
 </script>
