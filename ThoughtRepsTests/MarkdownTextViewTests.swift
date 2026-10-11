@@ -437,6 +437,34 @@ struct MarkdownTextViewTests {
         #expect(!h.view.isFirstResponder)
     }
 
+    /// Becoming first responder can run an update before the owner's flag is set; that update must not
+    /// queue a resign that outlives the flag catching up.
+    @Test func keepsFocusWhenAnUpdateRunsBeforeTheFlagCatchesUp() async throws {
+        let h = makeHarness("x")
+        h.view.resignFirstResponder()
+        h.model.isFocused = false
+        h.refresh()
+        h.view.becomeFirstResponder()
+        h.model.isFocused = false
+        h.refresh()
+        h.model.isFocused = true
+        h.refresh()
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(h.view.isFirstResponder)
+    }
+
+    @Test func resignsWhenTheFlagIsClearedBeforeAnUpdateSawItSet() async throws {
+        let h = makeHarness("x")
+        h.view.resignFirstResponder()
+        h.model.isFocused = false
+        h.refresh()
+        h.view.becomeFirstResponder()
+        h.model.isFocused = false
+        h.refresh()
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(!h.view.isFirstResponder)
+    }
+
     @Test func unannouncedChangeInALargeBodyRestylesEverythingWithinBounds() {
         let paragraph = "Some *emphasis*, **bold**, `code`, [link](https://x.com) and #tag in a line of prose.\n"
         let h = makeHarness(String(repeating: paragraph, count: 600))

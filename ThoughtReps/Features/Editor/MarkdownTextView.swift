@@ -279,7 +279,7 @@ extension MarkdownTextView {
         private var hasSynced = false
         /// The text last published to or applied from the owner, so an update can tell nothing changed without copying the view's string.
         private var knownText = ""
-        /// Whether the owner wanted focus at the previous update; nil before the first, which never takes focus.
+        /// Whether the owner wanted focus at the previous update, or the view has since begun editing; nil before the first, which never takes focus.
         private var wasFocused: Bool?
         private var focusRequested = false
         #if DEBUG
@@ -365,7 +365,11 @@ extension MarkdownTextView {
 
         /// A view only takes first responder when focus is asked for while it exists: a stale focus value
         /// that happens to match, as when a scrolled-away row is rebuilt, must not bring the keyboard back.
+        /// It resigns only when the owner stops wanting focus: becoming first responder can run an update
+        /// before `textViewDidBeginEditing`, while the owner's flag still lags. The queued changes re-check
+        /// the flag when they run, so a decision made on a stale value never fires.
         private func updateFocus(wants: Bool, view: StyledTextView) {
+            let lostFocus = wasFocused == true && !wants
             if let wasFocused, wants, !wasFocused { focusRequested = true }
             if !wants { focusRequested = false }
             wasFocused = wants
@@ -373,10 +377,16 @@ extension MarkdownTextView {
                 if view.isFirstResponder {
                     focusRequested = false
                 } else {
-                    DispatchQueue.main.async { view.becomeFirstResponder() }
+                    DispatchQueue.main.async { [weak self, weak view] in
+                        guard let self, let view, parent.isFocused, !view.isFirstResponder else { return }
+                        view.becomeFirstResponder()
+                    }
                 }
-            } else if !wants, view.isFirstResponder {
-                DispatchQueue.main.async { view.resignFirstResponder() }
+            } else if lostFocus, view.isFirstResponder {
+                DispatchQueue.main.async { [weak self, weak view] in
+                    guard let self, let view, !parent.isFocused, view.isFirstResponder else { return }
+                    view.resignFirstResponder()
+                }
             }
         }
 
@@ -392,11 +402,13 @@ extension MarkdownTextView {
 
         func textViewDidBeginEditing(_ textView: UITextView) {
             if !parent.isFocused { parent.isFocused = true }
+            wasFocused = true
             requestCaretScroll()
         }
 
         func textViewDidEndEditing(_ textView: UITextView) {
             if parent.isFocused { parent.isFocused = false }
+            wasFocused = false
             needsCaretScroll = false
         }
 

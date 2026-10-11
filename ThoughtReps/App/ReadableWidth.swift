@@ -19,7 +19,7 @@ private struct ReadableContentMargins: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .contentMargins(.horizontal, ReadableWidth.sideMargin(for: width, cap: cap), for: .scrollContent)
+            .safeAreaPadding(.horizontal, ReadableWidth.sideMargin(for: width, cap: cap))
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
     }
 }
