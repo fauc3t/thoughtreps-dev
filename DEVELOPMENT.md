@@ -66,7 +66,7 @@ Before uploading a build to App Store Connect (TestFlight or release), check eve
 
 ### Installing on your own devices
 
-`scripts/install-devices.sh` builds Debug once and installs it on every paired iPhone and iPad this Mac can reach, over USB or Wi-Fi, in about a minute with no Apple processing. Pass a name to target one device (`scripts/install-devices.sh iPad`). Pair each device over Wi-Fi once: plug it in, then Xcode > Window > Devices and Simulators > "Connect via network". Devices must be awake and on the Mac's network; a locked device gets the install but the app isn't launched. Use TestFlight for other testers or when away from the Mac.
+`scripts/install-devices.sh` builds Debug once and installs it on every paired iPhone and iPad this Mac can reach, over USB or Wi-Fi, in about a minute with no Apple processing. To target specific devices, pass their UDIDs (`scripts/install-devices.sh <UDID> ...`); `scripts/install-devices.sh --list` shows each paired device's UDID. Pair each device over Wi-Fi once: plug it in, then Xcode > Window > Devices and Simulators > "Connect via network". Devices must be awake and on the Mac's network; a locked device gets the install but the app isn't launched. Use TestFlight for other testers or when away from the Mac.
 
 ### Uploading to TestFlight
 
