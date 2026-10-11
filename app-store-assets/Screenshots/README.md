@@ -40,9 +40,15 @@ node app-store-assets/Screenshots/gen.mjs 07-search       # only outputs whose n
 node app-store-assets/Screenshots/gen.mjs --capture       # re-capture raw/ in the simulator first (about three minutes), then composite
 ```
 
-`--capture` creates a dedicated simulator named "ThoughtReps Screenshots" from the iPhone 18 Pro Max device type if it is missing (so the shared simulators another session may be using are left alone), boots it, overrides the status bar (9:41, full battery, Wi-Fi, 4 bars), runs `xcodegen` and `xcodebuild test -scheme ThoughtRepsScreenshots -only-testing:ThoughtRepsUITests`, and exports the attachments. If that device type is not installed it stops with an error; update Xcode or point `DEVICE_TYPE` in `gen.mjs` at another 6.9" iPhone. It needs Xcode, xcodegen and `Config/Local.xcconfig`. If the Mac updates to a runtime with a different screen size, the raw captures are no longer 1320x2868; check the device type.
+`--capture` creates a dedicated simulator named "ThoughtReps Screenshots" from the iPhone 18 Pro Max device type if it is missing (so the shared simulators another session may be using are left alone), boots it, overrides the status bar (9:41, full battery, Wi-Fi, 4 bars), runs `xcodegen` and `xcodebuild test -scheme ThoughtRepsScreenshots -only-testing:ThoughtRepsUITests/ScreenshotTests`, and exports the attachments. If that device type is not installed it stops with an error; update Xcode or point `DEVICE_TYPE` in `gen.mjs` at another 6.9" iPhone. It needs Xcode, xcodegen and `Config/Local.xcconfig`. If the Mac updates to a runtime with a different screen size, the raw captures are no longer 1320x2868; check the device type.
 
 Compositing needs ffmpeg and Playwright's Chromium (`chromium-1243`); first run: `npx playwright@1.63 install chromium`. Playwright is not a repo dependency. Brand CSS/JS and the Archivo font come from `../Header/src` and `../SearchResults/src` by relative path; nothing is copied. Open `preview.html` to see the whole set side by side and the first three at about the size they show in search results.
+
+## iPad captures
+
+`node app-store-assets/Screenshots/gen.mjs --capture-ipad` re-captures raw iPad screenshots into `raw-ipad/` (about three minutes). It makes its own simulator, "ThoughtReps Screenshots iPad", from the iPad Pro 13-inch (M5) device type (the iPhone simulator and any shared ones are left alone), then runs the same `ScreenshotTests` with the same names as the iPhone set, except `09-reminders` (the Lock Screen shot is iPhone only). Apple's 13" iPad size is 2064x2752 portrait or 2752x2064 landscape; the iPad run rotates to landscape, so each raw is 2752x2064. In landscape the app shows its three-column split view, so the timeline shot has a thought open beside the list, and the other shots show the thought or list in that layout.
+
+Only raw captures are made. Compositing iPad creative (`static/`, `src/copy.js`) isn't set up, and `gen.mjs` doesn't composite on `--capture-ipad`. `ScreenshotTests` runs on the iPad simulator on its own too: `xcodebuild test -scheme ThoughtRepsScreenshots -destination 'platform=iOS Simulator,name=iPad Pro 13-inch (M5)' -only-testing:ThoughtRepsUITests/ScreenshotTests`.
 
 ## Upload
 

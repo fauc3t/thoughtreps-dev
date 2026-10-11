@@ -82,7 +82,7 @@ struct SearchResultLink: View {
     let now: Date
 
     var body: some View {
-        NavigationLink(value: row.thought) {
+        ThoughtLink(thought: row.thought) {
             SearchResultRow(row: row, now: now)
         }
         .inkRow()

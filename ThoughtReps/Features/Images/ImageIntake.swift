@@ -71,6 +71,42 @@ final class ImageIntake {
     }
 }
 
+extension ImageIntake {
+    /// Takes the image data of dropped items (Files, Photos, Safari). An item with no image
+    /// representation, such as a bare web link, isn't accepted: nothing is downloaded.
+    @discardableResult
+    func ingestDropped(_ providers: [NSItemProvider]) -> Bool {
+        let sources = providers.compactMap { provider in
+            provider.registeredTypeIdentifiers
+                .first { UTType($0)?.conforms(to: .image) == true }
+                .map { (provider: provider, type: $0) }
+        }
+        guard !sources.isEmpty else { return false }
+        beginLoading(sources.count)
+        Task {
+            var inputs: [RawImage] = []
+            for source in sources {
+                if let data = await Self.data(of: source.provider, type: source.type) {
+                    inputs.append(.data(data))
+                } else {
+                    failed = true
+                }
+            }
+            finishLoading(sources.count)
+            ingest(inputs)
+        }
+        return true
+    }
+
+    private static func data(of provider: NSItemProvider, type: String) async -> Data? {
+        await withCheckedContinuation { continuation in
+            provider.loadDataRepresentation(forTypeIdentifier: type) { data, _ in
+                continuation.resume(returning: data)
+            }
+        }
+    }
+}
+
 /// The three image sources as menu items.
 struct ImageSourceButtons: View {
     let intake: ImageIntake
@@ -124,6 +160,9 @@ private struct ImageIntakeModifier: ViewModifier {
             }
             .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
                 intake.refreshPasteAvailability()
+            }
+            .onDrop(of: [.image], isTargeted: nil) { providers in
+                intake.ingestDropped(providers)
             }
             .photosPicker(isPresented: $intake.isPickingLibrary, selection: $pickerItems, matching: .images)
             .fullScreenCover(isPresented: $intake.isTakingPhoto) {

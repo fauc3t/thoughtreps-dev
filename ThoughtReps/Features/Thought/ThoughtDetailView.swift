@@ -8,10 +8,10 @@ struct ThoughtDetailView: View {
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
     @Environment(CaptureContext.self) private var captureContext: CaptureContext?
+    @Environment(ThoughtSelection.self) private var selection: ThoughtSelection?
     @AppStorage(AppSettings.Key.defaultIntervalDays) private var defaultIntervalDays = Scheduler.defaultIntervalDays
 
     @State private var hasRecordedView = false
-    @State private var isEditing = false
     @State private var isPickingInterval = false
     @State private var confirmDelete = false
     @State private var pendingDelete = false
@@ -50,7 +50,8 @@ struct ThoughtDetailView: View {
                 footer
             }
             .padding(20)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: ReadableWidth.column, alignment: .leading)
+            .frame(maxWidth: .infinity)
         }
         .background(Color.paper)
         .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -70,9 +71,6 @@ struct ThoughtDetailView: View {
         .toolbar { toolbarContent }
         .imageViewer(item: $viewingImage, images: { thought.orderedImages })
         .navigationDestination(item: $tappedTag) { TagTimelineView(tag: $0) }
-        .sheet(isPresented: $isEditing) {
-            EditorView(mode: .edit(thought))
-        }
         .confirmationDialog("Delete this thought?", isPresented: $confirmDelete, titleVisibility: .visible) {
             Button("Delete", role: .destructive, action: deleteThought)
         } message: {
@@ -80,7 +78,8 @@ struct ThoughtDetailView: View {
         }
         .onAppear {
             recordView()
-            captureContext?.hideButton(token: captureToken) // the interval bar takes the bottom edge
+            // The interval bar takes the bottom edge. In the split view the + sits in the list column, clear of it.
+            if selection == nil { captureContext?.hideButton(token: captureToken) }
         }
         .onDisappear {
             captureContext?.showButton(token: captureToken)
@@ -159,6 +158,7 @@ struct ThoughtDetailView: View {
         .sensoryFeedback(.selection, trigger: current)
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
+        .frame(maxWidth: ReadableWidth.controls)
         .frame(maxWidth: .infinity)
         .background(Color.paper)
         .overlay(alignment: .top) {
@@ -255,7 +255,7 @@ struct ThoughtDetailView: View {
                 }
                 .accessibilityLabel(thought.isPinned ? "Unpin" : "Pin")
             }
-            Button("Edit") { isEditing = true }
+            Button("Edit") { AppNavigation.shared.requestEdit(thoughtID: thought.id) }
             Menu {
                 if thought.isArchived {
                     Button {
@@ -266,19 +266,19 @@ struct ThoughtDetailView: View {
                 } else {
                     Button {
                         store.snooze(thought, days: 1, now: .now)
-                        dismiss()
+                        leave()
                     } label: {
                         Label("Snooze until tomorrow", systemImage: "moon.zzz")
                     }
                     Button {
                         store.snooze(thought, days: 7, now: .now)
-                        dismiss()
+                        leave()
                     } label: {
                         Label("Snooze a week", systemImage: "calendar")
                     }
                     Button {
                         store.archive(thought, now: .now)
-                        dismiss()
+                        leave()
                     } label: {
                         Label("Archive", systemImage: "archivebox")
                     }
@@ -308,12 +308,21 @@ struct ThoughtDetailView: View {
         guard url.scheme == TagLinker.scheme else { return .systemAction }
         guard let key = TagLinker.key(from: url),
               let tag = thought.sortedTags.first(where: { $0.name == key }) else { return .discarded }
-        tappedTag = tag
+        if let selection {
+            selection.pendingTag = tag
+        } else {
+            tappedTag = tag
+        }
         return .handled
+    }
+
+    /// Pops this thought off the stack, or clears the split view's detail column.
+    private func leave() {
+        if let selection { selection.clear() } else { dismiss() }
     }
 
     private func deleteThought() {
         pendingDelete = true
-        dismiss()
+        leave()
     }
 }

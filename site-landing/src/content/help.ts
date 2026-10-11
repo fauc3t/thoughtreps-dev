@@ -84,6 +84,7 @@ export const HELP_EXAMPLE_KINDS = [
   'import-menu',
   'stats',
   'themes',
+  'ipad-layout',
 ] as const;
 
 export type HelpExampleKind = (typeof HELP_EXAMPLE_KINDS)[number];
@@ -159,12 +160,12 @@ export const HELP_ARTICLES: HelpArticle[] = [
     category: 'getting-started',
     title: 'What Thought Reps is',
     description:
-      'Thought Reps is a notebook for iPhone that brings your ideas back. Write a thought, and it returns to your timeline after a week.',
-    related: ['write-your-first-thought', 'how-resurfacing-works', 'privacy'],
+      'Thought Reps is a notebook for iPhone and iPad that brings your ideas back. Write a thought, and it returns to your timeline after a week.',
+    related: ['write-your-first-thought', 'how-resurfacing-works', 'ipad', 'privacy'],
     sections: [
       {
         paragraphs: [
-          'Thought Reps is a notebook for iPhone. You write something down. Later, it comes back to you, so you see it again. Most notes just sit in a long list and get forgotten.',
+          'Thought Reps is a notebook for iPhone and iPad. You write something down. Later, it comes back to you, so you see it again. Most notes just sit in a long list and get forgotten.',
           'It works well for things you want to remember but tend to forget. A quote you liked. An article you meant to read. A word of the day you want to learn. A question to think about.',
         ],
       },
@@ -196,8 +197,67 @@ export const HELP_ARTICLES: HelpArticle[] = [
       {
         heading: 'Private by design',
         paragraphs: [
-          'There is no account. Your thoughts are stored on your iPhone, and the app works without internet. Read [Privacy: what stays on your phone](/help/privacy) to learn more.',
-          'Thought Reps is made for iPhone. It needs iOS 18 or later.',
+          'There is no account. Your thoughts are stored on your device, and the app works without internet. Read [Privacy: what stays on your phone](/help/privacy) to learn more.',
+          'Thought Reps is made for iPhone and iPad. It needs iOS 18 or iPadOS 18 or later. See [Use Thought Reps on iPad](/help/ipad).',
+        ],
+      },
+    ],
+  },
+  {
+    slug: 'ipad',
+    category: 'getting-started',
+    title: 'Use Thought Reps on iPad',
+    description:
+      'Thought Reps runs on iPad with a three-column layout, keyboard shortcuts and drag and drop for images. Each device keeps its own thoughts.',
+    related: ['the-timeline', 'images-and-galleries', 'backup-and-restore', 'move-to-a-new-phone'],
+    sections: [
+      {
+        paragraphs: [
+          'Thought Reps works on iPad as well as iPhone. It turns the wide screen into a three-column layout, adds keyboard shortcuts, and lets you drag images in.',
+        ],
+      },
+      {
+        heading: 'The layout',
+        paragraphs: [
+          'When the window is wide, you see three columns. The left one lists Timeline, Tags, Archive and Stats. The middle one shows the thoughts for what you picked. The right one shows the thought you opened. Tags and Search open in the middle column too.',
+        ],
+        example: {
+          kind: 'ipad-layout',
+          caption:
+            'On a wide iPad window: the sidebar, the Timeline list, and an empty thought column.',
+        },
+      },
+      {
+        paragraphs: [
+          'The right column says "Select a thought" until you pick one. The app never opens one for you, because opening a thought sends it back to wait for its next interval.',
+          'Snooze, archive or delete the open thought, and the right column clears. Tap a tag inside a thought to see that tag\'s timeline in the middle column.',
+          'When the window is narrow, like in Split View or Slide Over, you get the same tabs as on iPhone. It switches back as you resize. It works in Split View, Slide Over and Stage Manager, but you can only open one window. The iPad turns to any side. The iPhone stays upright.',
+        ],
+      },
+      {
+        heading: 'Keyboard shortcuts',
+        paragraphs: [
+          'These work with a hardware keyboard, on iPad and iPhone. Hold the ⌘ key to see them. They pause while a sheet or dialog is open.',
+        ],
+        list: [
+          '⌘N: new thought. On a tag timeline, the new thought starts with that tag.',
+          '⌘F: search your thoughts.',
+          '⌘,: open Settings.',
+          '⌘1, ⌘2, ⌘3, ⌘4: Timeline, Tags, Archive, Stats.',
+          'In the editor, ⌘ and Return saves, and Esc cancels. If you changed something, it still asks before it throws the changes away.',
+        ],
+      },
+      {
+        heading: 'Drag in images',
+        paragraphs: [
+          'Drag a picture from Files, Photos or Safari into the editor. Drop it on the text to add it at the cursor. Drop it on a gallery to add it to that gallery. It is resized and stripped of location data, the same as a picture from your photo library.',
+          'A web link that is not a picture is ignored. The app never downloads it. See [Add images and galleries](/help/images-and-galleries).',
+        ],
+      },
+      {
+        heading: 'Each device has its own thoughts',
+        paragraphs: [
+          'There is no sync. Your iPhone and your iPad each keep their own thoughts. To move them across, use [a backup file](/help/backup-and-restore) or [an export link](/help/move-to-a-new-phone).',
         ],
       },
     ],
@@ -504,13 +564,13 @@ export const HELP_ARTICLES: HelpArticle[] = [
       {
         heading: 'Light and dark',
         paragraphs: [
-          '"Midnight" and "Terminal" are always dark, whatever your iPhone is set to. The other four follow your iPhone, so they switch between light and dark with it.',
+          '"Midnight" and "Terminal" are always dark, whatever your device is set to. The other four follow your device, so they switch between light and dark with it.',
         ],
       },
       {
         heading: 'What a theme does not change',
         paragraphs: [
-          'Your thought text font is its own setting. Under "Appearance", "Thought text" stays "Paper Mono" or "System" whichever theme you pick. Settings and the editor keep the standard iPhone look.',
+          'Your thought text font is its own setting. Under "Appearance", "Thought text" stays "Paper Mono" or "System" whichever theme you pick. Settings and the editor keep the standard iOS look.',
           'Your theme is saved on your phone only. It is not part of a backup, so choose it again on a new phone.',
         ],
       },
@@ -597,7 +657,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
     title: 'Add images and galleries',
     description:
       'Put photos in the middle of a thought, or collect several in a gallery. Learn how to add, view and remove them, and what happens to the file.',
-    related: ['markdown-formatting', 'blurred-blocks', 'backup-and-restore'],
+    related: ['markdown-formatting', 'blurred-blocks', 'backup-and-restore', 'ipad'],
     sections: [
       {
         paragraphs: [
@@ -649,7 +709,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
         list: [
           'Big photos are resized so the longest side is at most 2048 pixels. This keeps the app light.',
           'All metadata is removed from the copy Thought Reps keeps. That includes where and when the photo was taken.',
-          'Images stay on your iPhone and are in your backup files.',
+          'Images stay on your device and are in your backup files.',
           'Only photos you add are shown. A picture linked from a website will not load.',
         ],
       },
@@ -1194,7 +1254,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
       {
         heading: 'Local only',
         paragraphs: [
-          'Reminders are made on your iPhone. They are not sent from a server. The app never puts a number badge on its icon.',
+          'Reminders are made on your device. They are not sent from a server. The app never puts a number badge on its icon.',
         ],
       },
     ],
@@ -1204,13 +1264,13 @@ export const HELP_ARTICLES: HelpArticle[] = [
     category: 'your-data',
     title: 'Privacy: what stays on your phone',
     description:
-      'Thought Reps has no account and keeps your thoughts on your iPhone. See when the app uses the internet, and what is and is not ever sent.',
+      'Thought Reps has no account and keeps your thoughts on your device. See when the app uses the internet, and what is and is not ever sent.',
     related: ['move-to-a-new-phone', 'send-feedback', 'backup-and-restore'],
     sections: [
       {
         heading: 'Your thoughts stay on your phone',
         paragraphs: [
-          'There is no account and nothing to sign in to. Your thoughts, images, tags and settings are stored on your iPhone. The app works without internet.',
+          'There is no account and nothing to sign in to. Your thoughts, images, tags and settings are stored on your device. The app works without internet.',
         ],
       },
       {
@@ -1237,7 +1297,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
       {
         heading: 'Export links',
         paragraphs: [
-          'If you share an export as a link, your backup file is encrypted on your iPhone before it is uploaded. The lock is AES-256-GCM. The key is in the part of the link after the `#`. Web browsers never send that part to a server. So the file we hold is unreadable to us. The file is deleted after one download, or after 24 hours. You can revoke the link in Settings. See [Move to a new phone with an export link](/help/move-to-a-new-phone).',
+          'If you share an export as a link, your backup file is encrypted on your device before it is uploaded. The lock is AES-256-GCM. The key is in the part of the link after the `#`. Web browsers never send that part to a server. So the file we hold is unreadable to us. The file is deleted after one download, or after 24 hours. You can revoke the link in Settings. See [Move to a new phone with an export link](/help/move-to-a-new-phone).',
         ],
       },
       {
@@ -1261,7 +1321,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
     title: 'Back up and restore your thoughts',
     description:
       'Export every thought, tag and image to a .thoughtreps file you keep, and import it later. Importing merges, keeping the newest change to each thought.',
-    related: ['move-to-a-new-phone', 'privacy', 'faq'],
+    related: ['move-to-a-new-phone', 'ipad', 'privacy', 'faq'],
     sections: [
       {
         paragraphs: [
@@ -1327,12 +1387,12 @@ export const HELP_ARTICLES: HelpArticle[] = [
     category: 'your-data',
     title: 'Move to a new phone with an export link',
     description:
-      'Share your backup as a one-time link that works for 24 hours. It is encrypted on your iPhone first, so only the link can open it.',
-    related: ['backup-and-restore', 'privacy', 'faq'],
+      'Share your backup as a one-time link that works for 24 hours. It is encrypted on your device first, so only the link can open it.',
+    related: ['backup-and-restore', 'ipad', 'privacy', 'faq'],
     sections: [
       {
         paragraphs: [
-          'An export link gets your thoughts onto another device when AirDrop or iCloud Drive is not handy. Maybe you are moving to a new phone. Maybe you want the file on a computer first. On an iPhone, Thought Reps can import the link directly, with no file to save. If you can AirDrop the file, [a regular backup](/help/backup-and-restore) is simpler.',
+          'An export link gets your thoughts onto another device when AirDrop or iCloud Drive is not handy. Maybe you are moving to a new phone. Maybe you want the file on a computer first. On an iPhone or iPad, Thought Reps can import the link directly, with no file to save. If you can AirDrop the file, [a regular backup](/help/backup-and-restore) is simpler.',
         ],
       },
       {
@@ -1365,7 +1425,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
       },
       {
         paragraphs: [
-          'On an iPhone with Thought Reps installed, you can also just tap the link. It opens the app straight to "Import from Link". You still tap "Import" yourself. Nothing is imported until you do.',
+          'On an iPhone or iPad with Thought Reps installed, you can also just tap the link. It opens the app straight to "Import from Link". You still tap "Import" yourself. Nothing is imported until you do.',
         ],
       },
       {
@@ -1405,7 +1465,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
       {
         heading: 'Keeping it private',
         paragraphs: [
-          'Your file is encrypted on your iPhone before it is uploaded. The key is only in the link after the `#`, and browsers do not send that part to us. We cannot read what you upload. That also means anyone with the whole link can download the file once, so only send it to yourself. A copied link also leaves your clipboard when it expires.',
+          'Your file is encrypted on your device before it is uploaded. The key is only in the link after the `#`, and browsers do not send that part to us. We cannot read what you upload. That also means anyone with the whole link can download the file once, so only send it to yourself. A copied link also leaves your clipboard when it expires.',
         ],
       },
     ],
@@ -1472,7 +1532,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
       {
         heading: 'Where are my thoughts stored?',
         paragraphs: [
-          'On your iPhone only. See [Privacy: what stays on your phone](/help/privacy).',
+          'On your device only. An iPhone and an iPad each keep their own thoughts. See [Privacy: what stays on your phone](/help/privacy).',
         ],
       },
       {
@@ -1496,7 +1556,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
       {
         heading: 'Can I change the look of the app?',
         paragraphs: [
-          'Yes. Open Settings, tap "Theme" and pick one of six free themes. "Midnight" and "Terminal" are always dark. The others follow your iPhone. See [Change the look with themes](/help/themes).',
+          'Yes. Open Settings, tap "Theme" and pick one of six free themes. "Midnight" and "Terminal" are always dark. The others follow your device. See [Change the look with themes](/help/themes).',
         ],
       },
       {

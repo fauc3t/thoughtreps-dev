@@ -4,6 +4,7 @@ import SwiftData
 /// Retired thoughts. They never resurface until restored.
 struct ArchiveView: View {
     @Environment(\.modelContext) private var context
+    @Environment(ThoughtSelection.self) private var selection: ThoughtSelection?
 
     @Query(
         filter: #Predicate<Thought> { $0.isArchived == true },
@@ -33,6 +34,7 @@ struct ArchiveView: View {
             }
         }
         .contentMargins(.bottom, 88, for: .scrollContent)
+        .readableContentMargins()
         .searchable(text: $search, prompt: "Search archive")
         .navigationTitle("Archive")
         .onAppear {
@@ -49,6 +51,7 @@ struct ArchiveView: View {
         ) { thought in
             Button("Delete", role: .destructive) {
                 model?.remove(id: thought.id)
+                selection?.clear(ifSelected: thought)
                 store.delete(thought, now: .now)
             }
         } message: { _ in
@@ -86,7 +89,7 @@ struct ArchiveView: View {
 
     private var archiveList: some View {
         List(archived) { thought in
-            NavigationLink(value: thought) {
+            ThoughtLink(thought: thought) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(thought.title)
                         .font(.archivo(17))

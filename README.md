@@ -1,6 +1,6 @@
 # Thought Reps
 
-A local-first iPhone app for capturing thoughts and having them come back on a schedule. You write a thought in Markdown, and it reappears on your timeline after its interval (7 days by default). Opening a thought queues it up again. Share text, a link, or a Markdown file from any app to add a thought without opening Thought Reps. You can pin thoughts to keep them visible, archive them to retire them, and file them with `#hashtags`. Settings can share your whole export as a one-time encrypted link (24 hours, revocable) that downloads in a browser.
+A local-first iPhone and iPad app for capturing thoughts and having them come back on a schedule. You write a thought in Markdown, and it reappears on your timeline after its interval (7 days by default). Opening a thought queues it up again. Share text, a link, or a Markdown file from any app to add a thought without opening Thought Reps. You can pin thoughts to keep them visible, archive them to retire them, and file them with `#hashtags`. Settings can share your whole export as a one-time encrypted link (24 hours, revocable) that downloads in a browser.
 
 Design: [`designs/`](designs/) holds the spec and the screen mockups.
 
@@ -31,7 +31,7 @@ If Xcode says the bundle ID is unavailable, set `TR_BUNDLE_ID` in `Config/Local.
 - The first build resolves Swift packages (MarkdownUI, ZIPFoundation). If that fails, run `xcodebuild -resolvePackageDependencies -scheme ThoughtReps`. `ThoughtReps.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved` is tracked; commit it when dependency versions change.
 - Run tests with **⌘U** in Xcode, or from the command line:
   `xcodebuild test -scheme ThoughtReps -destination 'platform=iOS Simulator,name=<simulator>'`
-  (pick a name from `xcrun simctl list devices available`)
+  (pick a name from `xcrun simctl list devices available`). The unit tests pass on an iPhone or an iPad simulator (e.g. iPad Pro 13-inch (M5)). `KeyboardAndSplitViewTests` (shortcuts and the iPad split view) are UI tests in the `ThoughtRepsScreenshots` scheme: add `-only-testing:ThoughtRepsUITests/KeyboardAndSplitViewTests`.
 - Images are stored in the SwiftData store (`default.store` in Application Support); larger image bytes go to `.default_SUPPORT/_EXTERNAL_DATA` beside it. The camera needs a real device (the simulator has no camera).
 - Debug builds seed sample thoughts on first launch. **Settings > Developer** can add more or wipe everything.
 

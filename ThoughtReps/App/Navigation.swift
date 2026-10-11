@@ -13,5 +13,8 @@ extension View {
             .navigationDestination(for: UntaggedRoute.self) { _ in
                 ThoughtTimelineView(scope: .untagged)
             }
+            .navigationDestination(for: SearchRoute.self) { _ in
+                SearchView()
+            }
     }
 }

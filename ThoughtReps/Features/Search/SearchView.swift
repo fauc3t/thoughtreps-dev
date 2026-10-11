@@ -51,6 +51,7 @@ private struct SearchContent: View {
             }
         }
         .inkList()
+        .readableContentMargins()
         .overlay { emptyState }
         .searchable(text: $text, prompt: "Search thoughts")
         .searchFocused($searchFocused)
@@ -82,3 +83,6 @@ private struct SearchContent: View {
         }
     }
 }
+
+/// Route value for the search screen.
+struct SearchRoute: Hashable {}

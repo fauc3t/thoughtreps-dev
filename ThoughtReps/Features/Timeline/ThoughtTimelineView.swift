@@ -24,13 +24,14 @@ struct ThoughtTimelineView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.requestReview) private var requestReview
     @Environment(CaptureContext.self) private var captureContext: CaptureContext?
+    @Environment(ThoughtSelection.self) private var selection: ThoughtSelection?
     @State private var captureToken = UUID()
 
     /// "Now" as of the last time this screen appeared. Thoughts viewed after it stay listed
-    /// until you come back, so a card doesn't vanish while you're reading it.
+    /// until you come back, so a card doesn't vanish while you're reading it. In the split view this
+    /// screen never leaves, so it also refreshes when the open thought is closed, not when another is opened.
     @State private var snapshot = Date.now
     @State private var showAll = false
-    @State private var showSettings = false
     @State private var showColorSheet = false
     @State private var navigation = AppNavigation.shared
 
@@ -53,7 +54,7 @@ struct ThoughtTimelineView: View {
     }
 
     var body: some View {
-        TimelineList(scope: scope, showAll: showAll, snapshot: snapshot) { snapshot = .now }
+        TimelineList(scope: scope, showAll: showAll, snapshot: snapshot, keeping: selection?.current?.id) { snapshot = .now }
             .navigationTitle(title)
             .toolbar { toolbarContent }
             .onAppear {
@@ -70,9 +71,8 @@ struct ThoughtTimelineView: View {
             .onChange(of: showAll) {
                 snapshot = .now
             }
-            .onChange(of: navigation.reminderOpenCount) { showSettings = false }
-            .sheet(isPresented: $showSettings) {
-                SettingsView()
+            .onChange(of: selection?.current) { _, current in
+                if current == nil { snapshot = .now }
             }
             .sheet(isPresented: $showColorSheet) {
                 if let tag { TagColorSheet(tag: tag) }
@@ -95,16 +95,14 @@ struct ThoughtTimelineView: View {
     private var toolbarContent: some ToolbarContent {
         if !isScoped {
             ToolbarItem(placement: .topBarTrailing) {
-                NavigationLink {
-                    SearchView()
-                } label: {
+                NavigationLink(value: SearchRoute()) {
                     Image(systemName: "magnifyingglass")
                 }
                 .accessibilityLabel("Search")
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
-                    showSettings = true
+                    navigation.showSettings = true
                 } label: {
                     Image(systemName: "gearshape")
                 }
@@ -147,6 +145,7 @@ private struct TimelineList: View {
     let scope: TimelineScope
     let showAll: Bool
     let snapshot: Date
+    let keeping: UUID?
     let onRefresh: () -> Void
 
     @Environment(\.modelContext) private var context
@@ -156,13 +155,14 @@ private struct TimelineList: View {
     /// `shown` alone doesn't invalidate (a first thought that isn't due yet, a snooze).
     @State private var saveToken = 0
 
-    init(scope: TimelineScope, showAll: Bool, snapshot: Date, onRefresh: @escaping () -> Void) {
+    init(scope: TimelineScope, showAll: Bool, snapshot: Date, keeping: UUID?, onRefresh: @escaping () -> Void) {
         self.scope = scope
         self.showAll = showAll
         self.snapshot = snapshot
+        self.keeping = keeping
         self.onRefresh = onRefresh
         _shown = Query(
-            filter: ThoughtCounts.timeline(scope.queryScope, showAll: showAll, snapshot: snapshot),
+            filter: ThoughtCounts.timeline(scope.queryScope, showAll: showAll, snapshot: snapshot, keeping: keeping),
             sort: \Thought.nextDueAt
         )
     }
@@ -202,6 +202,7 @@ private struct TimelineList: View {
         }
         .inkList()
         .contentMargins(.bottom, 88, for: .scrollContent) // room for the + button
+        .readableContentMargins()
         .overlay {
             if shown.isEmpty {
                 emptyState
@@ -212,7 +213,7 @@ private struct TimelineList: View {
     }
 
     private func row(_ thought: Thought) -> some View {
-        NavigationLink(value: thought) {
+        ThoughtLink(thought: thought) {
             ThoughtCard(thought: thought, now: snapshot)
         }
         .inkRow()

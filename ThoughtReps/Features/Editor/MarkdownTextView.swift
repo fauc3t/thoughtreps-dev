@@ -123,6 +123,35 @@ final class StyledTextView: UITextView {
         onLayout?()
     }
 
+    // ⌘↩ saves and Esc cancels the editor from the keyboard, whichever of its text views has focus.
+    // Priority over the system so the text view doesn't take them first.
+    override var keyCommands: [UIKeyCommand]? {
+        let save = UIKeyCommand(
+            title: "Save Thought", action: #selector(saveFromKeyboard), input: "\r", modifierFlags: .command
+        )
+        let cancel = UIKeyCommand(
+            title: "Cancel", action: #selector(cancelFromKeyboard), input: UIKeyCommand.inputEscape
+        )
+        for command in [save, cancel] { command.wantsPriorityOverSystemBehavior = true }
+        return (super.keyCommands ?? []) + [save, cancel]
+    }
+
+    @objc private func saveFromKeyboard() {
+        guard !ModalPresence.isPresentingOverFirstSheet else { return }
+        EditorShortcuts.shared.save()
+    }
+
+    @objc private func cancelFromKeyboard() {
+        guard !ModalPresence.isPresentingOverFirstSheet else { return }
+        EditorShortcuts.shared.cancel()
+    }
+
+    // Declining Esc during IME composition lets it through to the input method instead of cancelling the editor.
+    override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
+        if action == #selector(cancelFromKeyboard), markedTextRange != nil { return false }
+        return super.canPerformAction(action, withSender: sender)
+    }
+
     // The storage carries hidden-text attributes for image tokens, so copy plain Markdown only.
     override func copy(_ sender: Any?) {
         guard selectedRange.length > 0 else { return }

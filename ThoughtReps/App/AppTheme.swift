@@ -296,8 +296,11 @@ final class ThemeManager {
         #else
         current = Self.storedTheme
         #endif
-        NotificationCenter.default.addObserver(forName: UIWindow.didBecomeKeyNotification, object: nil, queue: .main) { _ in
-            MainActor.assumeIsolated { ThemeManager.shared.applyInterfaceStyle() }
+        // A window made key, or a scene activated (a new iPad window, Stage Manager, Slide Over), gets the pinned style.
+        for name in [UIWindow.didBecomeKeyNotification, UIScene.didActivateNotification] {
+            NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { _ in
+                MainActor.assumeIsolated { ThemeManager.shared.applyInterfaceStyle() }
+            }
         }
     }
 

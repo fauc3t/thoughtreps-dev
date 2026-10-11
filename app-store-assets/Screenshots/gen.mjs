@@ -1,6 +1,7 @@
 // Renders the App Store screenshots into static/ (PNG, 1320x2868, RGB) from the simulator captures in raw/.
 // Run: node gen.mjs [name-substring]            composite from raw/ only (Playwright, no Xcode)
 //      node gen.mjs --capture [name-substring]  first re-capture raw/ in a dedicated simulator, then composite
+//      node gen.mjs --capture-ipad              only re-capture raw-ipad/ (13" iPad, landscape) in its own simulator; no compositing
 // Needs Playwright's Chromium and ffmpeg. Playwright is not a repo dependency: it is resolved via npx.
 // First run: `npx playwright@1.63 install chromium` (downloads the browser to ~/Library/Caches/ms-playwright).
 // Brand CSS/JS and fonts are reused from ../Header/src and ../SearchResults/src.
@@ -13,6 +14,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, '..', '..');
 const capture = process.argv.includes('--capture');
+const captureIpad = process.argv.includes('--capture-ipad');
 const only = process.argv.slice(2).find((a) => !a.startsWith('--')) ?? '';
 // The set and the captures each output shows come from src/copy.js (a browser script defining SHOTS).
 const SHOTS = new Function(`${readFileSync(join(here, 'src', 'copy.js'), 'utf8')}; return SHOTS;`)();
@@ -21,19 +23,35 @@ const rawsOf = (shot) => shot.raws ?? [shot.name];
 const RAWS = SHOTS.flatMap(rawsOf);
 const W = 1320, H = 2868;
 
-const SIM_NAME = 'ThoughtReps Screenshots';
-const DEVICE_TYPE = 'com.apple.CoreSimulator.SimDeviceType.iPhone-18-Pro-Max';
+const IPHONE = {
+  simName: 'ThoughtReps Screenshots',
+  deviceType: 'com.apple.CoreSimulator.SimDeviceType.iPhone-18-Pro-Max',
+  label: 'iPhone 18 Pro Max',
+  rawDir: 'raw',
+  skipTests: [],
+  raws: RAWS,
+};
+// Apple's 13" iPad screenshot size is 2064x2752 portrait or 2752x2064 landscape; the tests capture landscape.
+// The Lock Screen reminder shot is iPhone only.
+const IPAD = {
+  simName: 'ThoughtReps Screenshots iPad',
+  deviceType: 'com.apple.CoreSimulator.SimDeviceType.iPad-Pro-13-inch-M5-16GB',
+  label: 'iPad Pro 13-inch (M5)',
+  rawDir: 'raw-ipad',
+  skipTests: ['ThoughtRepsUITests/ScreenshotTests/testReminderNotification'],
+  raws: RAWS.filter((n) => n !== '09-reminders'),
+};
 
 const run = (cmd, args, opts = {}) => execFileSync(cmd, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'], ...opts });
 const simctlJson = (...args) => JSON.parse(run('xcrun', ['simctl', ...args, '-j']));
 
 // A dedicated simulator, so a session using the shared ones is never disturbed.
-const ensureSimulator = () => {
+const ensureSimulator = ({ simName: SIM_NAME, deviceType: DEVICE_TYPE, label }) => {
   const find = () => Object.values(simctlJson('list', 'devices').devices).flat().find((d) => d.name === SIM_NAME && d.isAvailable);
   let sim = find();
   if (!sim) {
     if (!simctlJson('list', 'devicetypes').devicetypes.some((t) => t.identifier === DEVICE_TYPE)) {
-      throw new Error(`Device type ${DEVICE_TYPE} (iPhone 18 Pro Max) is not installed. Update Xcode to a version that includes it, or change DEVICE_TYPE in gen.mjs to another 6.9" iPhone with a 1320x2868 screen (see \`xcrun simctl list devicetypes\`).`);
+      throw new Error(`Device type ${DEVICE_TYPE} (${label}) is not installed. Update Xcode to a version that includes it, or change its device type in gen.mjs to another with the same screen size (see \`xcrun simctl list devicetypes\`).`);
     }
     const runtimes = simctlJson('list', 'runtimes').runtimes.filter((r) => r.isAvailable && r.identifier.includes('.iOS-'));
     if (!runtimes.length) throw new Error('No iOS simulator runtime is installed');
@@ -55,8 +73,8 @@ const ensureSimulator = () => {
   return sim.udid;
 };
 
-const captureRaw = () => {
-  const udid = ensureSimulator();
+const captureRaw = (device) => {
+  const udid = ensureSimulator(device);
   const tmp = mkdtempSync(join(tmpdir(), 'screenshots-'));
   try {
     console.log('xcodegen');
@@ -64,21 +82,23 @@ const captureRaw = () => {
     const bundle = join(tmp, 'result.xcresult');
     console.log('xcodebuild test (about two minutes)');
     run('xcodebuild', ['test', '-scheme', 'ThoughtRepsScreenshots', '-destination', `platform=iOS Simulator,id=${udid}`,
-      '-only-testing:ThoughtRepsUITests', '-resultBundlePath', bundle], { cwd: root, stdio: ['ignore', 'ignore', 'inherit'], maxBuffer: 1 << 30 });
+      '-only-testing:ThoughtRepsUITests/ScreenshotTests', ...device.skipTests.map((t) => `-skip-testing:${t}`),
+      '-resultBundlePath', bundle], { cwd: root, stdio: ['ignore', 'ignore', 'inherit'], maxBuffer: 1 << 30 });
     const out = join(tmp, 'attachments');
     run('xcrun', ['xcresulttool', 'export', 'attachments', '--path', bundle, '--output-path', out]);
-    mkdirSync(join(here, 'raw'), { recursive: true });
+    const rawDir = join(here, device.rawDir);
+    mkdirSync(rawDir, { recursive: true });
     const seen = new Set();
     for (const test of JSON.parse(readFileSync(join(out, 'manifest.json'), 'utf8'))) {
       for (const a of test.attachments) {
         const name = a.suggestedHumanReadableName.replace(/_\d+_[0-9A-F-]{36}\.png$/, '');
-        copyFileSync(join(out, a.exportedFileName), join(here, 'raw', `${name}.png`));
+        copyFileSync(join(out, a.exportedFileName), join(rawDir, `${name}.png`));
         seen.add(name);
       }
     }
-    const missing = RAWS.filter((n) => !seen.has(n));
+    const missing = device.raws.filter((n) => !seen.has(n));
     if (missing.length) throw new Error(`Missing captures: ${missing.join(', ')}`);
-    for (const n of RAWS) console.log(join(here, 'raw', `${n}.png`));
+    for (const n of device.raws) console.log(join(rawDir, `${n}.png`));
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }
@@ -127,5 +147,9 @@ const composite = async () => {
   }
 };
 
-if (capture) captureRaw();
-await composite();
+if (captureIpad) {
+  captureRaw(IPAD);
+} else {
+  if (capture) captureRaw(IPHONE);
+  await composite();
+}

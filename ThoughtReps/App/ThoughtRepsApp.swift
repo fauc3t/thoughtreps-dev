@@ -31,6 +31,7 @@ struct ThoughtRepsApp: App {
                 StoreUnavailableView(error: error)
             }
         }
+        .commands { AppCommands() }
     }
 }
 

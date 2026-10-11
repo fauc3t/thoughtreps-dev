@@ -37,6 +37,7 @@ struct EditorView: View {
     @State private var bodyHeight = MarkdownTextView.minHeight
     @State private var formWidth: CGFloat = 0
     @State private var isConfirmingDiscard = false
+    @State private var saveGate = SaveGate()
     @State private var processingBlockIDs: Set<UUID> = []
     @State private var openedText = ""
     @State private var openedDrafts: [BlockDraft] = []
@@ -285,20 +286,21 @@ struct EditorView: View {
                     Text(learn ? "In Learn mode, this is the first wait. Each Got it makes the next one longer." : "Learn mode asks you to rate the thought when it comes back instead of counting an open as a view.")
                 }
             }
+            .readableContentMargins()
             .saveErrorAlert(saveErrors)
             .imageIntake(intake, onAdd: addInlineImages)
             .navigationTitle(isNew ? "New thought" : "Edit thought")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
-                        if isDirty { isConfirmingDiscard = true } else { dismiss() }
-                    }
+                    Button("Cancel", action: requestCancel)
+                        .keyboardShortcut(.cancelAction)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save", action: save)
+                        .keyboardShortcut(.return, modifiers: .command)
                         .fontWeight(.semibold)
-                        .disabled(trimmedText.isEmpty || isProcessingImages)
+                        .disabled(!canSave)
                 }
             }
             .confirmationDialog("Discard changes?", isPresented: $isConfirmingDiscard, titleVisibility: .visible) {
@@ -338,6 +340,17 @@ struct EditorView: View {
             }
         }
         .interactiveDismissDisabled(isDirty)
+        .presentationSizing(.page)
+        .onAppear {
+            EditorShortcuts.shared.open(save: { if canSave { save() } }, cancel: requestCancel)
+        }
+        .onDisappear { EditorShortcuts.shared.close() }
+    }
+
+    private var canSave: Bool { !trimmedText.isEmpty && !isProcessingImages }
+
+    private func requestCancel() {
+        if isDirty { isConfirmingDiscard = true } else { dismiss() }
     }
 
     private func continueList(in field: EditorField, from old: String, to new: String) {
@@ -356,13 +369,13 @@ struct EditorView: View {
         return "\n\n#\(prefillTag)"
     }
 
-    /// The body's width is the form's less the 16 pt side margins; before the form has been measured,
-    /// the width of the foreground window scene.
+    /// The body's width is the form's (at most the readable column) less the 16 pt side margins; before
+    /// the form has been measured, the width of the foreground window scene.
     private func estimatedBodyHeight() -> CGFloat {
         let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive } ?? UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
         let width = formWidth > 0 ? formWidth : (scene?.screen.bounds.width ?? 390)
-        return MarkdownTextView.estimatedHeight(for: text, width: width - 32)
+        return MarkdownTextView.estimatedHeight(for: text, width: min(width, ReadableWidth.column) - 32)
     }
 
     private func load() {
@@ -400,6 +413,7 @@ struct EditorView: View {
     /// Dismisses only if the save succeeded, so a failed save keeps the draft on screen.
     /// Uses its own error center because an alert on the root view doesn't show over this sheet.
     private func save() {
+        guard saveGate.begin() else { return }
         let store = ThoughtStore(context: context, defaultIntervalDays: defaultIntervalDays, saveErrors: saveErrors)
         let saved: Bool
         switch mode {
@@ -414,6 +428,8 @@ struct EditorView: View {
         }
         if saved {
             dismiss()
+        } else {
+            saveGate.fail()
         }
     }
 }

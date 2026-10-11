@@ -46,6 +46,10 @@ targets:
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         TRAppGroupIdentifier: group.$(TR_BUNDLE_ID)
         LSSupportsOpeningDocumentsInPlace: false
+        # AppNavigation, EditorShortcuts and BackupModel are singletons, not per scene, so two windows would fight over them.
+        # Set here because the generated manifest (INFOPLIST_KEY_UIApplicationSceneManifest_Generation) always writes true.
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
         UIAppFonts:
           - Archivo-SemiBold.ttf
           - Archivo-Bold.ttf
@@ -83,13 +87,13 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: $(TR_BUNDLE_ID)
         PRODUCT_NAME: ThoughtReps
-        TARGETED_DEVICE_FAMILY: "1"
+        TARGETED_DEVICE_FAMILY: "1,2"
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_CFBundleDisplayName: Thought Reps
         INFOPLIST_KEY_NSCameraUsageDescription: Take photos to add to your thoughts.
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
-        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: UIInterfaceOrientationPortrait
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         ENABLE_PREVIEWS: YES
@@ -125,7 +129,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: $(TR_BUNDLE_ID).share
         PRODUCT_NAME: ThoughtRepsShare
-        TARGETED_DEVICE_FAMILY: "1"
+        TARGETED_DEVICE_FAMILY: "1,2"
         GENERATE_INFOPLIST_FILE: YES
         SKIP_INSTALL: YES
 

@@ -69,6 +69,7 @@ struct TagListView: View {
             }
         }
         .contentMargins(.bottom, 88, for: .scrollContent)
+        .readableContentMargins()
         .searchable(text: $filter, prompt: "Filter tags")
         .navigationTitle("Tags")
         .sheet(item: $colorTag) { TagColorSheet(tag: $0) }

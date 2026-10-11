@@ -15,9 +15,15 @@ struct RootTabView: View {
     @State private var showReminderPrompt = false
     @State private var saveErrors = SaveErrorCenter.shared
     @State private var navigation = AppNavigation.shared
+    @State private var thoughtSelection = ThoughtSelection()
+    @State private var compactTimelinePath = NavigationPath()
     @State private var inboxImporter = InboxImporter()
     @State private var backup = BackupModel.shared
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+
+    /// Regular width (iPad full screen, large windows) gets the split view; everything else the tabs.
+    private var usesSplitView: Bool { horizontalSizeClass == .regular }
 
     private func importInbox() {
         guard let inbox = try? Inbox.directoryURL() else { return }
@@ -43,53 +49,77 @@ struct RootTabView: View {
         }
     }
 
-    var body: some View {
+    private func startCapture(prefillTag: String?) {
+        guard capture == nil, navigation.editRequest == nil else { return }
+        capture = CaptureRequest(prefillTag: prefillTag)
+    }
+
+    private var compactTabs: some View {
         TabView(selection: $navigation.selectedTab) {
-            NavigationStack {
+            NavigationStack(path: $compactTimelinePath) {
                 ThoughtTimelineView()
                     .thoughtDestinations()
             }
-            .tabItem { Label("Timeline", systemImage: "text.alignleft") }
+            .tabItem { Label(AppTab.timeline.title, systemImage: AppTab.timeline.systemImage) }
             .tag(AppTab.timeline)
 
             NavigationStack {
                 TagListView()
                     .thoughtDestinations()
             }
-            .tabItem { Label("Tags", systemImage: "number") }
+            .tabItem { Label(AppTab.tags.title, systemImage: AppTab.tags.systemImage) }
             .tag(AppTab.tags)
 
             NavigationStack {
                 ArchiveView()
                     .thoughtDestinations()
             }
-            .tabItem { Label("Archive", systemImage: "archivebox") }
+            .tabItem { Label(AppTab.archive.title, systemImage: AppTab.archive.systemImage) }
             .tag(AppTab.archive)
 
             NavigationStack {
                 StatsView()
                     .thoughtDestinations()
             }
-            .tabItem { Label("Stats", systemImage: "chart.bar") }
+            .tabItem { Label(AppTab.stats.title, systemImage: AppTab.stats.systemImage) }
             .tag(AppTab.stats)
         }
-        .environment(captureContext)
+        // A narrow iPad window gets the bottom tab bar, like the iPhone.
         .overlay(alignment: .bottomTrailing) {
-            CaptureButton(hasTag: captureContext.tag != nil) {
-                capture = CaptureRequest(prefillTag: captureContext.tag?.displayName)
+            CaptureOverlay(bottomInset: 66, onCapture: startCapture) // clears the tab bar
+        }
+        .onChange(of: navigation.searchRequestCount) {
+            compactTimelinePath = NavigationPath([SearchRoute()])
+        }
+    }
+
+    var body: some View {
+        Group {
+            if usesSplitView {
+                SplitRootView(onCapture: startCapture)
+                    .environment(thoughtSelection)
+            } else {
+                compactTabs
             }
-                .padding(.trailing, 20)
-                .padding(.bottom, 66) // clears the tab bar
-                .opacity(captureContext.hidesButton ? 0 : 1)
-                .allowsHitTesting(!captureContext.hidesButton)
-                .accessibilityHidden(captureContext.hidesButton)
-                .animation(.easeOut(duration: 0.2), value: captureContext.hidesButton)
+        }
+        .environment(captureContext)
+        .onChange(of: usesSplitView) { _, usesSplit in
+            if !usesSplit { thoughtSelection.clear() }
+        }
+        .onChange(of: navigation.newThoughtRequestCount) {
+            startCapture(prefillTag: captureContext.tag?.displayName)
         }
         .sheet(item: $capture, onDismiss: offerReminders) { request in
             EditorView(mode: .new(prefillTag: request.prefillTag), onCreated: { createdThought = true })
         }
+        .sheet(item: $navigation.editRequest) { request in
+            EditThoughtSheet(thoughtID: request.id)
+        }
         .sheet(isPresented: $showReminderPrompt) {
             ReminderPromptSheet()
+        }
+        .sheet(isPresented: $navigation.showSettings) {
+            SettingsView()
         }
         .saveErrorAlert(saveErrors)
         .backupImportSheet(backup, host: .root)
@@ -154,6 +184,28 @@ private final class BackgroundAssertion {
         guard id != .invalid else { return }
         UIApplication.shared.endBackgroundTask(id)
         id = .invalid
+    }
+}
+
+/// The floating "+" that opens the editor, hidden while a screen with its own bottom controls is up.
+/// `bottomInset` clears whatever sits at the bottom edge (the tab bar).
+struct CaptureOverlay: View {
+    let bottomInset: CGFloat
+    let onCapture: (_ prefillTag: String?) -> Void
+
+    @Environment(CaptureContext.self) private var captureContext: CaptureContext?
+
+    var body: some View {
+        let hidden = captureContext?.hidesButton ?? false
+        CaptureButton(hasTag: captureContext?.tag != nil) {
+            onCapture(captureContext?.tag?.displayName)
+        }
+        .padding(.trailing, 20)
+        .padding(.bottom, bottomInset)
+        .opacity(hidden ? 0 : 1)
+        .allowsHitTesting(!hidden)
+        .accessibilityHidden(hidden)
+        .animation(.easeOut(duration: 0.2), value: hidden)
     }
 }
 

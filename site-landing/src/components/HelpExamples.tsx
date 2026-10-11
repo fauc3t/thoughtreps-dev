@@ -908,6 +908,36 @@ function Stats() {
   );
 }
 
+function IpadLayout() {
+  const side = ['Timeline', 'Tags', 'Archive', 'Stats'];
+  return (
+    <div className="grid grid-cols-[auto_1fr_1fr] gap-2">
+      <div className={`${panel} flex flex-col gap-1 p-2 text-[13px]`}>
+        {side.map((name, i) => (
+          <span
+            key={name}
+            className={`rounded-md px-2 py-1.5 ${i === 0 ? 'bg-hl font-bold' : ''}`}
+          >
+            {name}
+          </span>
+        ))}
+      </div>
+      <div className={`${panel} ${rows}`}>
+        <ThoughtRow {...QUOTE_ROW} />
+        <ThoughtRow {...REVIEW_ROW} />
+      </div>
+      <div
+        className={`${panel} flex flex-col items-center justify-center gap-1 p-3 text-center`}
+      >
+        <b className="text-[15px]">Select a thought</b>
+        <span className="text-[12.5px] text-muted">
+          Pick one from the list to read it.
+        </span>
+      </div>
+    </div>
+  );
+}
+
 const THEMES = [
   { name: 'Ink', tagline: 'Clean outlines, Archivo and Paper Mono.' },
   { name: 'Library', tagline: 'Warm paper, old-style serifs, oxblood ink.' },
@@ -973,6 +1003,7 @@ const EXAMPLES: Record<
   'import-menu': { Mock: ImportMenu },
   stats: { Mock: Stats },
   themes: { Mock: Themes },
+  'ipad-layout': { Mock: IpadLayout },
 };
 
 /** The mockup is hidden from screen readers; the caption stands in for it. Only the blurred block is real, focusable UI. */

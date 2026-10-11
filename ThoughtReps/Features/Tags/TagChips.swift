@@ -1,15 +1,20 @@
 import SwiftUI
 
-/// A row of `#tag` chips. `linked` chips push the tag's timeline; use `false` inside
-/// rows that are already a NavigationLink.
+/// A row of `#tag` chips. `linked` chips push the tag's timeline (or, in the split view, show it in the
+/// content column); use `false` inside rows that are already a link.
 struct TagChips: View {
     let tags: [Tag]
     var linked: Bool
 
+    @Environment(ThoughtSelection.self) private var selection: ThoughtSelection?
+
     var body: some View {
         HStack(spacing: 6) {
             ForEach(tags) { tag in
-                if linked {
+                if linked, let selection {
+                    Button { selection.pendingTag = tag } label: { chip(tag) }
+                        .buttonStyle(.plain)
+                } else if linked {
                     NavigationLink(value: tag) { chip(tag) }
                         .buttonStyle(.plain)
                 } else {

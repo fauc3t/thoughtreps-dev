@@ -22,6 +22,7 @@ struct StatsView: View {
         }
         .inkList()
         .contentMargins(.bottom, 88, for: .scrollContent)
+        .readableContentMargins()
         .navigationTitle("Stats")
         .overlay {
             if model.snapshot == nil { ProgressView() }
@@ -68,7 +69,7 @@ struct StatsView: View {
 
     private func mostRevisitedSection(_ thought: Thought) -> some View {
         Section {
-            NavigationLink(value: thought) {
+            ThoughtLink(thought: thought) {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(thought.title)
                         .font(.archivo(17))

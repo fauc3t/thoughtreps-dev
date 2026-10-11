@@ -25,7 +25,8 @@ xcodegen && open ThoughtReps.xcodeproj
 | Regenerate the Xcode project (after pulling, or adding or removing files) | `xcodegen` |
 | Run the app | ⌘R in Xcode |
 | Run the tests in Xcode | ⌘U |
-| Run the tests from the terminal | `xcodebuild test -scheme ThoughtReps -destination 'platform=iOS Simulator,name=<simulator>'` (names from `xcrun simctl list devices available`) |
+| Run the tests from the terminal | `xcodebuild test -scheme ThoughtReps -destination 'platform=iOS Simulator,name=<simulator>'` (names from `xcrun simctl list devices available`); also run it on an iPad simulator, e.g. `iPad Pro 13-inch (M5)` |
+| Run the keyboard and iPad split view UI tests | `xcodebuild test -scheme ThoughtRepsScreenshots -destination 'platform=iOS Simulator,name=iPad Pro 13-inch (M5)' -only-testing:ThoughtRepsUITests/KeyboardAndSplitViewTests` (the editor's ⌘↩ and Esc need a device check) |
 
 `ThoughtReps.xcodeproj` is generated from `project.yml` and gitignored, so edit `project.yml` rather than the project's build settings.
 
@@ -43,7 +44,7 @@ Search uses an FTS5 index at `Application Support/Search/search-index.sqlite` (d
 
 Before launch, a schema change means regenerating `ThoughtRepsTests/Fixtures/default.store`; the steps are in `ThoughtRepsTests/Fixtures/README.md` (`FixtureGenerator` runs only when `TEST_RUNNER_GENERATE_FIXTURE_TO` is set).
 
-Debug builds also have a screenshot mode for the App Store screenshots: launch with `-screenshotMode` (`ScreenshotMode.swift`) for an in-memory store with a fixed marketing seed, light mode and no prompts. It is driven by the `ThoughtRepsScreenshots` scheme and `app-store-assets/Screenshots/gen.mjs --capture`; see that folder's README.
+Debug builds also have a screenshot mode for the App Store screenshots: launch with `-screenshotMode` (`ScreenshotMode.swift`) for an in-memory store with a fixed marketing seed, light mode and no prompts. It is driven by the `ThoughtRepsScreenshots` scheme and `app-store-assets/Screenshots/gen.mjs --capture` (`--capture-ipad` for iPad raws); see that folder's README.
 
 ## Running on an iPhone
 

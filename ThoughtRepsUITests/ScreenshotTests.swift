@@ -3,12 +3,27 @@ import XCTest
 /// Captures the App Store screenshots. Run through `app-store-assets/Screenshots/gen.mjs --capture`,
 /// which prepares the simulator (status bar) and exports the attachments. Each test launches the app
 /// in its debug-only screenshot mode (in-memory store, fixed seed) and attaches one PNG of the screen.
+/// On an iPad it runs in landscape, where the regular-width split view shows the section list and the
+/// open thought side by side.
 final class ScreenshotTests: XCTestCase {
     private var app: XCUIApplication!
 
+    private var isPad: Bool { UIDevice.current.userInterfaceIdiom == .pad }
+
     override func setUp() {
         continueAfterFailure = false
-        XCUIDevice.shared.orientation = .portrait
+        XCUIDevice.shared.orientation = isPad ? .landscapeLeft : .portrait
+    }
+
+    /// The tab bar on an iPhone, the sidebar on an iPad.
+    private func openSection(_ name: String) {
+        if isPad {
+            let row = app.staticTexts[name].firstMatch
+            XCTAssertTrue(row.waitForExistence(timeout: 10), "No sidebar row \(name)")
+            row.tap()
+        } else {
+            app.tabBars.buttons[name].tap()
+        }
     }
 
     private func launch(_ extraArguments: [String] = []) {
@@ -17,9 +32,19 @@ final class ScreenshotTests: XCTestCase {
         app.launch()
     }
 
+    /// A landscape iPad screenshot comes back as the portrait framebuffer with the content turned on its
+    /// side; turn it upright so the capture is 2752x2064 as shown.
+    private func uprightPNG(_ screenshot: XCUIScreenshot) -> Data {
+        guard isPad, let image = screenshot.image.cgImage else { return screenshot.pngRepresentation }
+        let turned = UIImage(cgImage: image, scale: 1, orientation: .left)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        return UIGraphicsImageRenderer(size: turned.size, format: format).pngData { _ in turned.draw(at: .zero) }
+    }
+
     private func snap(_ name: String, settle: TimeInterval = 1.0) {
         Thread.sleep(forTimeInterval: settle)
-        let attachment = XCTAttachment(data: XCUIScreen.main.screenshot().pngRepresentation, uniformTypeIdentifier: "public.png")
+        let attachment = XCTAttachment(data: uprightPNG(XCUIScreen.main.screenshot()), uniformTypeIdentifier: "public.png")
         attachment.name = name
         attachment.lifetime = .keepAlways
         add(attachment)
@@ -34,6 +59,7 @@ final class ScreenshotTests: XCTestCase {
     func testTimeline() {
         launch()
         XCTAssertTrue(app.staticTexts["Hope is the thing with feathers"].waitForExistence(timeout: 10))
+        if isPad { openThought("The cost of a thing") }
         snap("01-timeline")
     }
 
@@ -82,7 +108,7 @@ final class ScreenshotTests: XCTestCase {
     func testMarkdownAndPhotos() {
         launch()
         // Not due, so it's opened from its tag's "All" list.
-        app.tabBars.buttons["Tags"].tap()
+        openSection("Tags")
         let travel = app.staticTexts["#travel"]
         XCTAssertTrue(travel.waitForExistence(timeout: 10))
         travel.tap()
@@ -104,13 +130,14 @@ final class ScreenshotTests: XCTestCase {
         if slideToType.waitForExistence(timeout: 2) { slideToType.tap() }
         field.typeText("reflect")
         XCTAssertTrue(app.staticTexts["Why journals work"].waitForExistence(timeout: 10))
-        app.keyboards.buttons["Search"].tap()
+        let searchKey = app.keyboards.buttons["Search"]
+        if searchKey.exists { searchKey.tap() } else { field.typeText("\n") }
         snap("07-search")
     }
 
     func testTags() {
         launch()
-        app.tabBars.buttons["Tags"].tap()
+        openSection("Tags")
         XCTAssertTrue(app.staticTexts["#journal"].waitForExistence(timeout: 10))
         snap("08-tags")
     }

@@ -35,6 +35,29 @@ struct TimelineQueriesTests {
         Set(try context.fetch(FetchDescriptor<Thought>(predicate: predicate)).map(\.body))
     }
 
+    @Test func keptThoughtStaysListedWhateverItsSchedule() throws {
+        let later = thought("later", due: 100)
+        thought("other later", due: 100)
+        let archived = thought("archived", due: -100, archived: true)
+        let kept = ThoughtCounts.timeline(.all, showAll: false, snapshot: snapshot, keeping: later.id)
+        #expect(try bodies(kept) == ["later"])
+        let keptArchived = ThoughtCounts.timeline(.all, showAll: false, snapshot: snapshot, keeping: archived.id)
+        #expect(try bodies(keptArchived).isEmpty)
+        #expect(try bodies(ThoughtCounts.timeline(.all, showAll: false, snapshot: snapshot)).isEmpty)
+    }
+
+    @Test func selectedThoughtResolvesByPrimaryKey() throws {
+        let one = thought("one", due: 0)
+        thought("two", due: 0)
+        try context.save()
+        let modelID = one.persistentModelID
+        let found = try context.fetch(FetchDescriptor<Thought>(predicate: #Predicate { $0.persistentModelID == modelID }))
+        #expect(found.map(\.body) == ["one"])
+        context.delete(one)
+        try context.save()
+        #expect(try context.fetch(FetchDescriptor<Thought>(predicate: #Predicate { $0.persistentModelID == modelID })).isEmpty)
+    }
+
     @Test func timelinePredicateMatchesTheSchedulerRule() throws {
         let tag = ThoughtReps.Tag(name: "a", displayName: "a")
         context.insert(tag)
