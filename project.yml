@@ -46,6 +46,7 @@ targets:
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         TRAppGroupIdentifier: group.$(TR_BUNDLE_ID)
         LSSupportsOpeningDocumentsInPlace: false
+        ITSAppUsesNonExemptEncryption: false
         # AppNavigation, EditorShortcuts and BackupModel are singletons, not per scene, so two windows would fight over them.
         # Set here because the generated manifest (INFOPLIST_KEY_UIApplicationSceneManifest_Generation) always writes true.
         UIApplicationSceneManifest:

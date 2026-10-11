@@ -60,9 +60,20 @@ Before uploading a build to App Store Connect (TestFlight or release), check eve
 
 1. **Privacy manifests are current.** `ThoughtReps/Resources/PrivacyInfo.xcprivacy` and `ThoughtRepsShare/PrivacyInfo.xcprivacy` declare every required-reason API in use and every data type collected. After archiving, open Xcode's Organizer, right-click the archive and choose Generate Privacy Report to confirm the merged result (it includes ZIPFoundation's own manifest).
 2. **App Store Connect privacy answers match the manifest.** Under App Privacy: email address, customer support, other diagnostic data and device ID, each used for App Functionality, linked to the user, not used for tracking. Nothing else is collected; the export-link file is encrypted on device and not declared.
-3. **Export compliance is answered.** The app uses only standard encryption (HTTPS and CryptoKit AES-GCM for export links), which qualifies for the exemption. Answer the questionnaire once, then set `ITSAppUsesNonExemptEncryption: false` under the app target's `info:` in `project.yml` so uploads stop asking. Revisit if any non-standard encryption is added.
+3. **Export compliance is answered.** The app uses only standard encryption (HTTPS and CryptoKit AES-GCM for export links), which qualifies for the exemption. `ITSAppUsesNonExemptEncryption: false` is set under the app target's `info:` in `project.yml`, so uploads don't ask. Revisit if any non-standard encryption is added.
 4. **URLs are live.** Privacy policy `https://thoughtreps.com/privacy` and support `https://thoughtreps.com/support`, and the policy's "Last updated" date reflects any data change since the last release.
 5. **Age rating** is 4+, consistent with the policy's under-13 line.
+
+### Installing on your own devices
+
+`scripts/install-devices.sh` builds Debug once and installs it on every paired iPhone and iPad this Mac can reach, over USB or Wi-Fi, in about a minute with no Apple processing. Pass a name to target one device (`scripts/install-devices.sh iPad`). Pair each device over Wi-Fi once: plug it in, then Xcode > Window > Devices and Simulators > "Connect via network". Devices must be awake and on the Mac's network; a locked device gets the install but the app isn't launched. Use TestFlight for other testers or when away from the Mac.
+
+### Uploading to TestFlight
+
+1. Once: create the app record in App Store Connect for the bundle ID in `TR_BUNDLE_ID` (`Config/Local.xcconfig`).
+2. Commit your changes, then run `scripts/testflight.sh`. It refuses to run with uncommitted tracked changes, archives a Release build with a UTC-timestamp build number (`MARKETING_VERSION` comes from `project.yml`), and uploads it. It uses the Apple account signed into Xcode; to use an API key instead, set `ASC_KEY_PATH`, `ASC_KEY_ID` and `ASC_ISSUER_ID`.
+3. The build appears in TestFlight after Apple's processing (usually 10-30 minutes). Internal testers need no review. Builds expire after 90 days.
+4. TestFlight builds are Release, so DEBUG-only checks (`IntegrityChecker`) don't run. Use Xcode installs for debugging.
 
 ## Web and infrastructure
 
