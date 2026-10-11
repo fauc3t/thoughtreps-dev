@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Caps for wide layouts (iPad). Narrower than the cap, nothing changes, so iPhone is untouched.
+/// Caps for wide layouts (iPad). Narrower than the cap, the system's own side margins stay, so iPhone is untouched.
 enum ReadableWidth {
     /// Lists, thought text and the editor.
     static let column: CGFloat = 680
@@ -18,8 +18,9 @@ private struct ReadableContentMargins: ViewModifier {
     @State private var width: CGFloat = 0
 
     func body(content: Content) -> some View {
-        content
-            .safeAreaPadding(.horizontal, ReadableWidth.sideMargin(for: width, cap: cap))
+        let margin = ReadableWidth.sideMargin(for: width, cap: cap)
+        return content
+            .contentMargins(.horizontal, margin > 0 ? margin : nil, for: .scrollContent)
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
     }
 }

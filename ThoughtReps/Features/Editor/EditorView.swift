@@ -369,13 +369,15 @@ struct EditorView: View {
         return "\n\n#\(prefillTag)"
     }
 
-    /// The body's width is the form's (at most the readable column) less the 16 pt side margins; before
-    /// the form has been measured, the width of the foreground window scene.
+    /// The body's width is the form's rows (the readable column when the form is wider, otherwise the form
+    /// less its 16 pt side margins) less the row's 16 pt insets; before the form has been measured, the width
+    /// of the foreground window scene.
     private func estimatedBodyHeight() -> CGFloat {
         let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
             .first { $0.activationState == .foregroundActive } ?? UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
         let width = formWidth > 0 ? formWidth : (scene?.screen.bounds.width ?? 390)
-        return MarkdownTextView.estimatedHeight(for: text, width: min(width, ReadableWidth.column) - 32)
+        let rowWidth = ReadableWidth.sideMargin(for: width) > 0 ? ReadableWidth.column : width - 32
+        return MarkdownTextView.estimatedHeight(for: text, width: rowWidth - 32)
     }
 
     private func load() {
@@ -435,10 +437,10 @@ struct EditorView: View {
 }
 
 private extension View {
-    /// A row of the body section: edge to edge inside the form's own side margin (about 16 pt), with
-    /// no card background or separator, so the text lines up with the screen's readable margin.
+    /// A row of the body section: no card background or separator, with the same 16 pt insets as a
+    /// card row, so the text lines up with the other sections' content and isn't clipped at the row's edge.
     func bodyRow(vertical: CGFloat = 0) -> some View {
-        listRowInsets(EdgeInsets(top: vertical, leading: 0, bottom: vertical, trailing: 0))
+        listRowInsets(EdgeInsets(top: vertical, leading: 16, bottom: vertical, trailing: 16))
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
     }
