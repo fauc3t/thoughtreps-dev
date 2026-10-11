@@ -118,7 +118,8 @@ describe('interactions', () => {
 
   it('uses relative wording when prerendered', () => {
     const html = renderToString(<LandingPage />);
-    expect(html).toContain('See it again next week.');
+    expect(html).toContain('Your first thought');
+    expect(html).toContain('back next week');
   });
 });
 
@@ -129,8 +130,8 @@ describe('landing page', () => {
     expect(html).toContain('Write it down.');
     expect(html).toContain('It comes');
     expect(html).toContain('Write it once. See it again in a week.');
-    expect(html).toContain('Your thoughts stay on your phone.');
-    expect(html).toContain('Start with one thought.');
+    expect(html).toContain('Just your phone.');
+    expect(html).toContain('Write one today.');
   });
 
   it('links to the contact address', () => {
@@ -157,9 +158,7 @@ describe('landing page', () => {
   });
 
   it('argues for rereading and mentions search', () => {
-    expect(html).toContain(
-      'Most notes apps are where ideas go to be forgotten.',
-    );
+    expect(html).toContain('Notes apps are where ideas get forgotten.');
     expect(html).toContain('commonplace books');
     expect(html).toContain('even archived');
   });
@@ -181,6 +180,31 @@ describe('landing page', () => {
       2,
     );
     expect(cards.filter((c) => c.includes('inert'))).toHaveLength(2);
+  });
+
+  it('hides the decorative timeline cards and ticks, and lists the steps once', () => {
+    expect(html).toMatch(/<div class="tl-lane" aria-hidden="true"/);
+    expect(html).toMatch(/<div class="tl-axis" aria-hidden="true"/);
+    expect(html.match(/<ol class="tl-steps/g)).toHaveLength(1);
+    expect(html.match(/<h3[^>]*>Write it<\/h3>/g)).toHaveLength(1);
+  });
+
+  it('renders the sample "Word: petrichor" in 6 timeline faces and 2 feature spots', () => {
+    expect(html.match(/Word: petrichor/g)).toHaveLength(8);
+  });
+
+  it('puts each privacy sentence on its own line', () => {
+    const h2 = html.match(/<h2 id="priv-h"[^>]*>(.*?)<\/h2>/)![1];
+    const lines = [...h2.matchAll(/<span class="block">([^<]*)<\/span>/g)].map(
+      (m) => m[1],
+    );
+    expect(lines).toEqual(['No account.', 'No trackers.', 'Just your phone.']);
+  });
+
+  it('hides the closer sample card from assistive tech', () => {
+    expect(html).toMatch(
+      /<div class="stk[^"]*"[^>]*aria-hidden="true"[^>]*><p[^>]*>Your first thought<\/p>/,
+    );
   });
 
   it('computes the footer year at render', () => {

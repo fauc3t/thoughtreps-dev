@@ -282,3 +282,282 @@
     transition: none !important;
   }
 }
+
+::selection {
+  background: var(--ink);
+  color: var(--paper);
+}
+:is(
+  .band,
+  .bg-ink,
+  .bg-accent,
+  .small-btn[aria-pressed='true'],
+  .small-btn:hover,
+  [class~='hover:bg-accent']:hover
+)::selection,
+:is(
+    .band,
+    .bg-ink,
+    .bg-accent,
+    .small-btn[aria-pressed='true'],
+    .small-btn:hover,
+    [class~='hover:bg-accent']:hover
+  )
+  ::selection {
+  background: var(--paper);
+  color: var(--ink);
+}
+html,
+input,
+textarea {
+  caret-color: var(--ink);
+}
+
+/* Full-bleed reversed band. */
+@layer components {
+  .band {
+    margin-inline: calc(50% - 50vw);
+  }
+}
+
+/* 7-day timeline. Horizontal from 640px; vertical on phones. --f is the
+   position along the track, 0 to 1. The default is the static layout: three
+   card states at Day 0, mid-track and Day 7. One card travels only where
+   scroll-driven animation is supported and motion is allowed. */
+@layer components {
+  .tl {
+    position: relative;
+    view-timeline: --tl block;
+  }
+  .tl-lane {
+    position: relative;
+    height: 92px;
+  }
+  .tl-axis {
+    position: relative;
+    height: 52px;
+  }
+  .tl-line {
+    position: absolute;
+    inset: 0 0 auto;
+    height: 2.5px;
+    background: var(--ink);
+  }
+  .tl-tick {
+    position: absolute;
+    top: 0;
+    left: calc(var(--f) * (100% - 2.5px));
+    width: 2.5px;
+    height: 12px;
+    background: var(--ink);
+  }
+  .tl-day {
+    position: absolute;
+    top: 22px;
+    left: calc(var(--f) * 100%);
+    translate: calc(var(--f) * -100%) 0;
+    font: 500 13px/1 var(--font-mono);
+    color: var(--muted);
+    white-space: nowrap;
+  }
+  .tl-steps {
+    padding: 0;
+    display: flex;
+    justify-content: space-between;
+    gap: 24px;
+  }
+  .tl-steps > li {
+    width: min(300px, 31%);
+  }
+  .tl-card {
+    position: absolute;
+    top: 6px;
+    width: min(250px, 30%);
+    display: grid;
+  }
+  .tl-static {
+    left: calc(var(--f) * 100%);
+    translate: calc(var(--f) * -100%) 0;
+  }
+  .tl-moving {
+    display: none;
+    left: 0;
+  }
+  .tl-face {
+    grid-area: 1 / 1;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4px 10px;
+    padding: 14px 16px;
+    border: 2.5px dashed var(--ink);
+    border-radius: 14px;
+    background: var(--paper);
+  }
+  .tl-face-due {
+    border-style: solid;
+    background: var(--soft);
+    box-shadow: var(--shadow-sticker);
+  }
+
+  @media (max-width: 639px) {
+    .tl {
+      display: grid;
+      grid-template-columns: 52px clamp(104px, 30vw, 140px) minmax(0, 1fr);
+    }
+    .tl > * {
+      grid-row: 1;
+    }
+    .tl-axis {
+      grid-column: 1;
+      height: auto;
+    }
+    .tl-lane {
+      grid-column: 2;
+      height: auto;
+    }
+    .tl-steps {
+      grid-column: 3;
+      display: grid;
+      grid-template-rows: repeat(3, 1fr);
+      gap: 0;
+      min-height: 640px;
+      padding-left: 16px;
+    }
+    .tl-steps > li {
+      width: 100%;
+      align-self: center;
+    }
+    .tl-steps > li:first-child {
+      align-self: start;
+    }
+    .tl-steps > li:last-child {
+      align-self: end;
+    }
+    .tl-line {
+      inset: 0 0 0 auto;
+      width: 2.5px;
+      height: auto;
+    }
+    .tl-tick {
+      left: auto;
+      right: 0;
+      top: calc(var(--f) * (100% - 2.5px));
+      width: 12px;
+      height: 2.5px;
+    }
+    .tl-day {
+      left: auto;
+      right: 20px;
+      top: calc(var(--f) * 100%);
+      translate: 0 calc(var(--f) * -100%);
+    }
+    .tl-card {
+      left: 18px;
+      right: 0;
+      width: auto;
+      top: 0;
+    }
+    .tl-static {
+      top: calc(var(--f) * 100%);
+      translate: 0 calc(var(--f) * -100%);
+    }
+    .tl-face {
+      flex-direction: column;
+      align-items: flex-start;
+      padding: 12px 14px;
+    }
+  }
+}
+
+@keyframes tl-travel {
+  from {
+    left: 0%;
+    translate: 0 0;
+  }
+  to {
+    left: 100%;
+    translate: -100% 0;
+  }
+}
+@keyframes tl-travel-y {
+  from {
+    top: 0%;
+    translate: 0 0;
+  }
+  to {
+    top: 100%;
+    translate: 0 -100%;
+  }
+}
+@keyframes tl-show-1 {
+  0%,
+  18% {
+    opacity: 1;
+  }
+  22%,
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes tl-show-2 {
+  0%,
+  18% {
+    opacity: 0;
+  }
+  22%,
+  88% {
+    opacity: 1;
+  }
+  92%,
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes tl-show-3 {
+  0%,
+  88% {
+    opacity: 0;
+  }
+  92%,
+  100% {
+    opacity: 1;
+  }
+}
+
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .tl-static {
+      display: none;
+    }
+    .tl-moving {
+      display: grid;
+      animation: tl-travel linear both;
+      animation-timeline: --tl;
+      animation-range: cover 18% cover 52%;
+    }
+    .tl-moving .tl-f1 {
+      animation: tl-show-1 linear both;
+    }
+    .tl-moving .tl-f2 {
+      animation: tl-show-2 linear both;
+    }
+    .tl-moving .tl-f3 {
+      animation: tl-show-3 linear both;
+    }
+    .tl-moving .tl-face {
+      animation-timeline: --tl;
+      animation-range: cover 18% cover 52%;
+    }
+    @media (max-width: 639px) {
+      .tl-moving {
+        animation-name: tl-travel-y;
+      }
+      .tl-moving,
+      .tl-moving .tl-face {
+        animation-range: cover 12% cover 42%;
+      }
+    }
+  }
+}

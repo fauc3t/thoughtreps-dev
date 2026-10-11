@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import type { CSSProperties } from 'react';
 import { useDateFromToday } from '../useDateFromToday';
 import { SectionHead, StoreNote, Use } from './shared';
 import { WaitlistForm } from './WaitlistForm';
@@ -7,40 +8,56 @@ const block = 'border-t-[2.5px] border-ink py-20 max-[620px]:py-[60px]';
 
 const STEPS = [
   {
-    n: '1',
+    f: 0,
     title: 'Write it',
     body: 'Tap + from anywhere. Markdown, photos and #tags all work, and it takes about five seconds.',
     status: 'saved',
   },
   {
-    n: '2',
+    f: 0.5,
     title: 'Let it go',
     body: 'It stays off your timeline for 7 days, or whatever interval you set for that thought.',
     status: 'in 4 days',
   },
   {
-    n: '3',
+    f: 1,
     title: 'Meet it again',
     body: "It's back on your timeline, marked due. Read it and it heads out for another lap. Archive it when you're done.",
     status: 'due today',
   },
 ] as const;
 
+const displayHead =
+  "text-[clamp(40px,8.4vw,96px)] leading-[0.95] font-black tracking-[-0.035em] [font-variation-settings:'wdth'_112]";
+
 export function Why() {
+  const lead = 'max-w-[65ch] text-[20px] leading-[1.6] max-[620px]:text-[18px]';
   return (
-    <section className={block} id="why" aria-labelledby="why-h">
-      <div className="grid grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)] items-end gap-14 max-[920px]:grid-cols-[minmax(0,1fr)] max-[920px]:gap-7">
+    <section
+      className="band my-10 bg-ink py-[clamp(96px,14vw,184px)] text-paper"
+      id="why"
+      aria-labelledby="why-h"
+    >
+      <div className="mx-auto max-w-[1172px] px-4">
         <h2
           id="why-h"
-          className="text-[clamp(38px,5.6vw,72px)] leading-[0.95] font-black tracking-[-0.035em] [font-variation-settings:'wdth'_112]"
+          className="max-w-[18ch] text-[clamp(34px,5vw,72px)] leading-[1] font-black tracking-[-0.035em] [font-variation-settings:'wdth'_112]"
         >
-          Most notes apps are where ideas go to be forgotten.
+          Notes apps are where ideas get forgotten.
         </h2>
-        <p className="text-[19px] leading-[1.6] text-muted">
+        <p className={`${lead} mt-14 max-[620px]:mt-10`}>
           For centuries, readers copied lines they loved into notebooks called
           commonplace books, so they would read them again. Saving was never the
-          point.{' '}
-          <strong className="font-semibold text-ink">Rereading was.</strong>{' '}
+          point.
+        </p>
+        <p className="mt-10 text-[clamp(44px,6.4vw,80px)] leading-[0.95] font-black tracking-[-0.035em] [font-variation-settings:'wdth'_112] max-[620px]:mt-8">
+          <strong className="font-black">Rereading was.</strong>
+          <Use
+            id="loop"
+            className="ml-[0.1em] inline-block size-[0.6em] align-[-0.02em]"
+          />
+        </p>
+        <p className={`${lead} mt-10 max-[620px]:mt-8`}>
           Thought Reps does the &ldquo;again&rdquo; part for you.
         </p>
       </div>
@@ -48,47 +65,84 @@ export function Why() {
   );
 }
 
+function CardFace({
+  status,
+  className = '',
+}: {
+  status: (typeof STEPS)[number]['status'];
+  className?: string;
+}) {
+  const due = status === 'due today';
+  return (
+    <div className={`tl-face ${due ? 'tl-face-due' : ''} ${className}`}>
+      <b className="text-[15px] font-semibold">Word: petrichor</b>
+      <span className={due ? 'due' : 'mono text-muted'}>{status}</span>
+    </div>
+  );
+}
+
+const DAYS = [0, 1, 2, 3, 4, 5, 6, 7] as const;
+const fraction = (f: number) => ({ '--f': f }) as CSSProperties;
+
 export function HowItWorks() {
   return (
-    <section className={block} id="how" aria-labelledby="how-h">
+    <section
+      className="py-20 max-[620px]:py-[60px]"
+      id="how"
+      aria-labelledby="how-h"
+    >
       <SectionHead
-        className="mb-11"
+        className="mb-14"
         id="how-h"
         title="Write it once. See it again in a week."
       >
         Thought Reps only shows you what&apos;s due today, and brings the rest
         back on schedule.
       </SectionHead>
-      <ol className="m-0 grid list-none grid-cols-3 gap-6 p-0 max-[920px]:grid-cols-[minmax(0,1fr)]">
-        {STEPS.map((s, i) => (
-          <li key={s.n} className="stk flex min-w-0 flex-col gap-3 p-6">
-            <span
-              className="grid size-11 place-items-center rounded-full border-[2.5px] border-ink text-[20px] leading-none font-extrabold [font-family:var(--font-display)]"
-              aria-hidden="true"
-            >
-              {s.n}
-            </span>
-            <h3 className="text-[26px] font-extrabold tracking-[-0.01em] [font-variation-settings:'wdth'_104]">
-              {s.title}
-            </h3>
-            <p className="text-muted">{s.body}</p>
+      <div className="tl">
+        <div className="tl-lane" aria-hidden="true">
+          <div className="tl-card tl-moving">
+            <CardFace status="saved" className="tl-f1" />
+            <CardFace status="in 4 days" className="tl-f2" />
+            <CardFace status="due today" className="tl-f3" />
+          </div>
+          {STEPS.map((s) => (
             <div
-              className={`mt-1.5 flex items-center justify-between gap-2.5 rounded-xl border-2 px-3.5 py-3 ${
-                i === STEPS.length - 1
-                  ? 'border-solid border-ink bg-soft'
-                  : 'border-dashed border-ink'
-              }`}
+              key={s.status}
+              className="tl-card tl-static"
+              style={fraction(s.f)}
             >
-              <b className="min-w-0 truncate text-[15px] font-semibold">
-                Word: petrichor
-              </b>
-              <span className={i === STEPS.length - 1 ? 'due' : 'mono'}>
+              <CardFace status={s.status} />
+            </div>
+          ))}
+        </div>
+        <div className="tl-axis" aria-hidden="true">
+          <div className="tl-line" />
+          {DAYS.map((d) => (
+            <span key={d}>
+              <span className="tl-tick" style={fraction(d / 7)} />
+              <span className="tl-day" style={fraction(d / 7)}>
+                Day {d}
+              </span>
+            </span>
+          ))}
+        </div>
+        <ol className="tl-steps m-0 list-none">
+          {STEPS.map((s) => (
+            <li key={s.title} className="flex min-w-0 flex-col gap-2">
+              <h3 className="text-[26px] font-extrabold tracking-[-0.01em] [font-variation-settings:'wdth'_104] max-[639px]:text-[22px]">
+                {s.title}
+              </h3>
+              <span
+                className={`mono ${s.status === 'due today' ? 'text-ink' : 'text-muted'}`}
+              >
                 {s.status}
               </span>
-            </div>
-          </li>
-        ))}
-      </ol>
+              <p className="text-muted">{s.body}</p>
+            </li>
+          ))}
+        </ol>
+      </div>
     </section>
   );
 }
@@ -149,14 +203,18 @@ function Markdown() {
 function BlurredAnswers() {
   const [open, setOpen] = useState(false);
   return (
-    <article className={tile}>
-      <h3 className={tileTitle}>Blurred answers</h3>
-      <p className={tileText}>
+    <article
+      className={`${tile} col-span-2 row-span-2 gap-5 p-8 max-[920px]:row-span-1 max-[620px]:col-auto max-[620px]:p-6`}
+    >
+      <h3 className="text-[clamp(30px,4.4vw,48px)] leading-none font-extrabold tracking-[-0.02em] [font-variation-settings:'wdth'_110]">
+        Blurred answers
+      </h3>
+      <p className="max-w-[40ch] text-[18px] text-muted">
         Hide an answer under a blur and quiz yourself when it comes back.
       </p>
-      <div className="mt-auto flex flex-col gap-2 rounded-xl border-2 border-ink px-4 py-3.5">
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-[14px] font-semibold">
+      <div className="mt-auto flex flex-col gap-4 rounded-xl border-2 border-ink px-5 py-5 min-[921px]:flex-1 min-[921px]:justify-center">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <span className="text-[clamp(18px,2.2vw,24px)] leading-tight font-bold">
             Quiz: what does <i>sonder</i> mean?
           </span>
           <button
@@ -171,7 +229,7 @@ function BlurredAnswers() {
         </div>
         <p
           id="answer"
-          className={`text-[15px] leading-[1.45] transition-[filter] duration-[250ms] ${open ? 'blur-none' : 'blur-[7px] select-none'}`}
+          className={`text-[clamp(20px,2.6vw,30px)] leading-[1.3] font-semibold transition-[filter] duration-[250ms] ${open ? 'blur-none' : 'blur-[9px] select-none'}`}
         >
           The feeling that every stranger has a life as vivid as your own.
         </p>
@@ -385,11 +443,11 @@ export function Features() {
         id="feat-h"
         title="Small app. Everything a thought needs."
       />
-      <div className="grid grid-cols-3 gap-[22px] max-[920px]:grid-cols-2 max-[620px]:grid-cols-[minmax(0,1fr)]">
-        <Markdown />
+      <div className="grid grid-flow-dense grid-cols-3 gap-[22px] max-[920px]:grid-cols-2 max-[620px]:grid-cols-[minmax(0,1fr)]">
         <BlurredAnswers />
         <Tags />
         <Pinned />
+        <Markdown />
         <Snooze />
         <Rhythm />
         <Nudge />
@@ -397,8 +455,6 @@ export function Features() {
     </section>
   );
 }
-
-const check = <path d="M5 12.5l4.5 4.5L19 7.5" />;
 
 const FACTS = [
   { title: 'No account', body: 'Open the app and start writing.' },
@@ -417,48 +473,38 @@ const FACTS = [
 ];
 
 export function Privacy() {
-  const icon = 'mt-0.5 size-[26px]';
   return (
     <section className={block} id="privacy" aria-labelledby="priv-h">
-      <div className="grid grid-cols-2 items-start gap-14 max-[920px]:grid-cols-[minmax(0,1fr)] max-[920px]:gap-8">
-        <SectionHead id="priv-h" title="Your thoughts stay on your phone.">
-          There&apos;s no account and nothing to sign in to. Back it up whenever
-          you like, as files you own.{' '}
-          <a
-            className="font-medium text-ink underline decoration-2 underline-offset-[3px] hover:bg-hl"
-            href="/privacy"
-          >
-            Read the privacy policy
-          </a>
-        </SectionHead>
-        <ul className="m-0 flex list-none flex-col p-0">
-          {FACTS.map((f, i) => (
-            <li
-              key={f.title}
-              className={`grid grid-cols-[32px_minmax(0,1fr)] gap-3.5 border-b-2 border-ink py-[18px] ${i === 0 ? 'border-t-2' : ''}`}
-            >
-              <svg
-                className={icon}
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
-              >
-                {check}
-              </svg>
-              <div>
-                <b className="block text-[19px] leading-tight font-extrabold [font-family:var(--font-display)] [font-variation-settings:'wdth'_104]">
-                  {f.title}
-                </b>
-                <span className="text-[16px] text-muted">{f.body}</span>
-              </div>
-            </li>
-          ))}
-        </ul>
-      </div>
+      <h2
+        id="priv-h"
+        className="text-[clamp(36px,5.4vw,64px)] leading-[1] font-black tracking-[-0.035em] [font-variation-settings:'wdth'_112]"
+      >
+        <span className="block">No account.</span>
+        <span className="block">No trackers.</span>
+        <span className="block">Just your phone.</span>
+      </h2>
+      <p className="mt-10 max-w-[65ch] text-[18px] leading-[1.55] text-muted">
+        There&apos;s no account and nothing to sign in to. Back it up whenever
+        you like, as files you own.{' '}
+        <a
+          className="font-medium text-ink underline decoration-2 underline-offset-[3px] hover:bg-hl"
+          href="/privacy"
+        >
+          Read the privacy policy
+        </a>
+      </p>
+      <ul className="m-0 mt-12 grid list-none grid-cols-4 gap-x-8 gap-y-8 p-0 max-[1023px]:grid-cols-2 max-[620px]:grid-cols-[minmax(0,1fr)]">
+        {FACTS.map((f) => (
+          <li key={f.title} className="flex flex-col gap-2">
+            <b className="font-mono text-[14px] leading-tight font-medium tracking-[0.02em]">
+              {f.title}
+            </b>
+            <span className="text-[16px] leading-normal text-muted">
+              {f.body}
+            </span>
+          </li>
+        ))}
+      </ul>
     </section>
   );
 }
@@ -471,25 +517,21 @@ export function FinalCta() {
       id="get"
       aria-labelledby="get-h"
     >
-      <Use
-        id="app-icon"
-        className="size-32 rounded-[30px] border-[2.5px] border-ink shadow-sticker-lg"
-      />
-      <h2
-        id="get-h"
-        className="max-w-[12ch] text-[clamp(40px,7vw,84px)] leading-[0.92] font-black tracking-[-0.035em] [font-variation-settings:'wdth'_112]"
-      >
-        Start with one thought.
+      <h2 id="get-h" className={displayHead}>
+        Write one today.
       </h2>
-      <p className="text-[18px] text-muted">
-        {fmt ? (
-          <>
-            See it again on <span className="mono">{fmt(7)}</span>.
-          </>
-        ) : (
-          'See it again next week.'
-        )}
-      </p>
+      <div
+        className="stk my-4 flex w-[min(380px,100%)] -rotate-2 flex-col gap-10 p-6 text-left shadow-sticker-lg"
+        aria-hidden="true"
+      >
+        <p className="text-[28px] leading-[1.1] font-extrabold tracking-[-0.01em] [font-variation-settings:'wdth'_100]">
+          Your first thought
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <span className="chip">written today</span>
+          <span className="chip">{`back ${fmt ? fmt(7) : 'next week'}`}</span>
+        </div>
+      </div>
       <WaitlistForm />
       <StoreNote />
     </section>
