@@ -1,7 +1,14 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+} from '@testing-library/react';
 import { renderToString } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LandingPage, NotFoundPage } from './App';
+import { setWaitlistJoined } from './waitlistStore';
 import { buildPage, renderRoute, ROUTES } from './entry-server';
 
 const TEMPLATE = `<html><head><!--ssr-head--><title>x</title><!--/ssr-head-->
@@ -41,6 +48,28 @@ describe('interactions', () => {
   afterEach(() => {
     cleanup();
     vi.unstubAllGlobals();
+  });
+
+  it('keeps only the front card exposed after the deck advances', () => {
+    const { container } = render(<LandingPage />);
+    fireEvent.click(screen.getByText('Bring the next one back'));
+    const exposed = [...container.querySelectorAll('.note')].filter(
+      (n) => !n.hasAttribute('inert'),
+    );
+    expect(exposed.map((n) => n.getAttribute('data-pos'))).toEqual(['0']);
+  });
+
+  it('swaps the nav button for a joined note once signed up', () => {
+    const { container } = render(<LandingPage />);
+    const nav = () => container.querySelector('header nav')!.textContent;
+    expect(nav()).toContain('Join the waitlist');
+    act(() => setWaitlistJoined({ email: 'a@b.co', beta: false }));
+    expect(nav()).not.toContain('waitlist');
+    expect(nav()).toContain("You're on the list");
+    expect(
+      container.querySelector('header a[href="#waitlist-email"]'),
+    ).toBeNull();
+    act(() => setWaitlistJoined(null));
   });
 
   it('advances the deck', () => {
@@ -108,10 +137,54 @@ describe('landing page', () => {
     expect(html).toContain('href="mailto:hello@thoughtreps.com"');
   });
 
-  it('shows a non-clickable coming-soon App Store badge and no placeholder links', () => {
-    expect(html).toContain('Coming soon to the');
+  it('shows the App Store line as plain text, not a button, with no placeholder links', () => {
+    expect(html).toContain('Coming to the App Store · $6.99 once');
     expect(html).not.toContain('href="#"');
     expect(html).not.toContain('Download on the');
+    expect(html).not.toContain('Coming soon');
+  });
+
+  it('puts the price and the deletion promise in view in the hero', () => {
+    expect(html).toContain(
+      '$6.99 once · No subscription · No account · Your email is deleted after launch',
+    );
+  });
+
+  it('claims only the backup file for export, never Markdown export', () => {
+    expect(html).toContain('.thoughtreps file');
+    expect(html).not.toContain('one Markdown file per thought');
+    expect(html).not.toContain('A .zip of JSON');
+  });
+
+  it('argues for rereading and mentions search', () => {
+    expect(html).toContain(
+      'Most notes apps are where ideas go to be forgotten.',
+    );
+    expect(html).toContain('commonplace books');
+    expect(html).toContain('even archived');
+  });
+
+  it('joins the waitlist from the nav and calls help "Help"', () => {
+    expect(html).toMatch(
+      /href="#waitlist-email"[^>]*>Join<span[^>]*> the<\/span> waitlist/,
+    );
+    expect(html).not.toContain('Get the app');
+    expect(html).not.toMatch(/>Learn</);
+  });
+
+  it('hides the back cards of the deck from assistive tech', () => {
+    const cards = [...html.matchAll(/<article class="note stk"[^>]*>/g)].map(
+      (m) => m[0],
+    );
+    expect(cards).toHaveLength(3);
+    expect(cards.filter((c) => c.includes('aria-hidden="true"'))).toHaveLength(
+      2,
+    );
+    expect(cards.filter((c) => c.includes('inert'))).toHaveLength(2);
+  });
+
+  it('computes the footer year at render', () => {
+    expect(html).toContain(`© ${new Date().getFullYear()} Thought Reps LLC`);
   });
 
   it('makes no Google Fonts requests', () => {

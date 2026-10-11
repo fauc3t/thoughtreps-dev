@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useDateFromToday } from '../useDateFromToday';
-import { AppStoreButton, SectionHead, Use } from './shared';
+import { SectionHead, StoreNote, Use } from './shared';
 import { WaitlistForm } from './WaitlistForm';
 
 const block = 'border-t-[2.5px] border-ink py-20 max-[620px]:py-[60px]';
@@ -26,17 +26,38 @@ const STEPS = [
   },
 ] as const;
 
+export function Why() {
+  return (
+    <section className={block} id="why" aria-labelledby="why-h">
+      <div className="grid grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)] items-end gap-14 max-[920px]:grid-cols-[minmax(0,1fr)] max-[920px]:gap-7">
+        <h2
+          id="why-h"
+          className="text-[clamp(38px,5.6vw,72px)] leading-[0.95] font-black tracking-[-0.035em] [font-variation-settings:'wdth'_112]"
+        >
+          Most notes apps are where ideas go to be forgotten.
+        </h2>
+        <p className="text-[19px] leading-[1.6] text-muted">
+          For centuries, readers copied lines they loved into notebooks called
+          commonplace books, so they would read them again. Saving was never the
+          point.{' '}
+          <strong className="font-semibold text-ink">Rereading was.</strong>{' '}
+          Thought Reps does the &ldquo;again&rdquo; part for you.
+        </p>
+      </div>
+    </section>
+  );
+}
+
 export function HowItWorks() {
   return (
     <section className={block} id="how" aria-labelledby="how-h">
       <SectionHead
         className="mb-11"
-        label="How it works"
         id="how-h"
         title="Write it once. See it again in a week."
       >
-        Most notes apps are where ideas go to be forgotten. Thought Reps only
-        shows you what&apos;s due today, and brings the rest back on schedule.
+        Thought Reps only shows you what&apos;s due today, and brings the rest
+        back on schedule.
       </SectionHead>
       <ol className="m-0 grid list-none grid-cols-3 gap-6 p-0 max-[920px]:grid-cols-[minmax(0,1fr)]">
         {STEPS.map((s, i) => (
@@ -72,8 +93,7 @@ export function HowItWorks() {
   );
 }
 
-const tile =
-  'stk flex min-w-0 flex-col gap-3.5 p-6 transition-[transform,box-shadow] duration-150 hover:-translate-px hover:shadow-sticker-lg';
+const tile = 'stk flex min-w-0 flex-col gap-3.5 p-6';
 const tileTitle =
   "text-[23px] font-extrabold tracking-[-0.01em] [font-variation-settings:'wdth'_104]";
 const tileText = 'text-[16px] text-muted';
@@ -176,7 +196,7 @@ function Tags() {
         {rows.map((r) => (
           <li
             key={r.tag}
-            className="flex items-center justify-between gap-2.5 text-[14px] text-muted tabular-nums"
+            className="flex items-center justify-between gap-2.5 font-mono text-[13px] text-muted tabular-nums"
           >
             <span className="chip">{r.tag}</span>
             <span>
@@ -236,12 +256,12 @@ function Snooze() {
     <article className={tile}>
       <h3 className={tileTitle}>Snooze or archive</h3>
       <p className={tileText}>
-        Not today? Push it back. Done with it? Archive it, and restore it any
-        time.
+        Not today? Push it back. Done with it? Archive it. Search still finds
+        anything you&apos;ve written, even archived.
       </p>
       <div className="mt-auto">
         <div
-          className="flex flex-wrap gap-2"
+          className="flex flex-wrap gap-3"
           role="group"
           aria-label="What to do with this thought"
         >
@@ -300,7 +320,7 @@ function Rhythm() {
       </p>
       <div className="mt-auto">
         <div
-          className="inline-flex flex-wrap gap-1.5"
+          className="inline-flex flex-wrap gap-x-1.5 gap-y-3"
           role="group"
           aria-label="Bring this thought back every"
         >
@@ -362,7 +382,6 @@ export function Features() {
     <section className={block} id="features" aria-labelledby="feat-h">
       <SectionHead
         className="mb-11"
-        label="Features"
         id="feat-h"
         title="Small app. Everything a thought needs."
       />
@@ -388,8 +407,8 @@ const FACTS = [
     body: 'Text and images stay in the app, on your device.',
   },
   {
-    title: 'Export any time',
-    body: 'A .zip of JSON and images, or one Markdown file per thought.',
+    title: 'Back up any time',
+    body: 'Save everything to a .thoughtreps file, or move to a new phone with a one-time link.',
   },
   {
     title: 'For your eyes only',
@@ -402,11 +421,7 @@ export function Privacy() {
   return (
     <section className={block} id="privacy" aria-labelledby="priv-h">
       <div className="grid grid-cols-2 items-start gap-14 max-[920px]:grid-cols-[minmax(0,1fr)] max-[920px]:gap-8">
-        <SectionHead
-          label="Privacy"
-          id="priv-h"
-          title="Your thoughts stay on your phone."
-        >
+        <SectionHead id="priv-h" title="Your thoughts stay on your phone.">
           There&apos;s no account and nothing to sign in to. Back it up whenever
           you like, as files you own.{' '}
           <a
@@ -442,32 +457,6 @@ export function Privacy() {
               </div>
             </li>
           ))}
-          <li className="grid grid-cols-[32px_minmax(0,1fr)] gap-3.5 border-b-2 border-ink py-[18px]">
-            <svg
-              className={icon}
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeDasharray="3 3"
-              aria-hidden="true"
-            >
-              <circle cx="12" cy="12" r="8" />
-            </svg>
-            <div>
-              <b className="block text-[19px] leading-tight font-extrabold [font-family:var(--font-display)] [font-variation-settings:'wdth'_104]">
-                iCloud sync
-                <span className="ml-2 rounded-md border-2 border-ink px-1.5 py-1 align-[3px] font-mono text-[11px] leading-none font-medium tracking-[0.06em] uppercase">
-                  Later
-                </span>
-              </b>
-              <span className="text-[16px] text-muted">
-                Optional sync across your devices is planned.
-              </span>
-            </div>
-          </li>
         </ul>
       </div>
     </section>
@@ -501,8 +490,8 @@ export function FinalCta() {
           'See it again next week.'
         )}
       </p>
-      <AppStoreButton />
       <WaitlistForm />
+      <StoreNote />
     </section>
   );
 }
@@ -511,7 +500,9 @@ export function Footer({ base = '' }: { base?: string }) {
   const link = 'no-underline hover:text-ink hover:underline';
   return (
     <footer className="flex flex-wrap justify-between gap-4 border-t-[2.5px] border-ink pt-6 pb-10 font-mono text-[13px] text-muted">
-      <span>© 2026 Thought Reps LLC</span>
+      <span suppressHydrationWarning>
+        {`© ${new Date().getFullYear()} Thought Reps LLC`}
+      </span>
       <nav className="flex flex-wrap gap-4" aria-label="Footer">
         <a className={link} href={`${base}#how`}>
           How it works
@@ -523,7 +514,7 @@ export function Footer({ base = '' }: { base?: string }) {
           Privacy
         </a>
         <a className={link} href="/help">
-          Learn
+          Help
         </a>
         <a className={link} href="/blog">
           Blog

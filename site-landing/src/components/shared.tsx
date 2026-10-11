@@ -65,38 +65,28 @@ export function Use({ id, className }: { id: string; className?: string }) {
   );
 }
 
-export function AppStoreButton() {
+export function StoreNote({
+  detail = '$6.99 once',
+  className = '',
+}: {
+  detail?: string;
+  className?: string;
+}) {
   return (
-    <div className="soon">
-      <svg
-        width="24"
-        height="24"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        aria-hidden="true"
-      >
-        <rect x="6" y="2.5" width="12" height="19" rx="3" />
-        <path d="M10.5 18.5h3" />
-      </svg>
-      <span>
-        <small>Coming soon to the</small>
-        <b>App Store</b>
-      </span>
-    </div>
+    <p
+      className={`font-mono text-[13px] tracking-[0.02em] text-muted ${className}`}
+    >
+      {`Coming to the App Store · ${detail}`}
+    </p>
   );
 }
 
 export function SectionHead({
-  label,
   id,
   title,
   children,
   className = '',
 }: {
-  label: string;
   id: string;
   title: string;
   children?: ReactNode;
@@ -104,7 +94,6 @@ export function SectionHead({
 }) {
   return (
     <div className={`flex max-w-[680px] flex-col gap-3.5 ${className}`}>
-      <span className="label">{label}</span>
       <h2
         id={id}
         className="text-[clamp(34px,5vw,58px)] leading-[0.98] font-black tracking-[-0.03em] [font-variation-settings:'wdth'_110]"
@@ -112,7 +101,9 @@ export function SectionHead({
         {title}
       </h2>
       {children && (
-        <p className="max-w-[34em] text-[18px] text-muted">{children}</p>
+        <p className="max-w-[34em] text-[18px] leading-[1.55] text-muted">
+          {children}
+        </p>
       )}
     </div>
   );

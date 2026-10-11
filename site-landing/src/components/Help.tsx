@@ -16,7 +16,7 @@ import { HelpExampleView } from './HelpExamples';
 import { InlineIcon } from './HelpIcons';
 import { Nav } from './Hero';
 import { Footer } from './Sections';
-import { AppStoreButton, Sprites } from './shared';
+import { Sprites, StoreNote } from './shared';
 
 export const displayHeading =
   "font-black tracking-[-0.03em] [font-variation-settings:'wdth'_110]";
@@ -30,7 +30,7 @@ export function HelpShell({ children }: { children: ReactNode }) {
     <>
       <Sprites />
       <div className="mx-auto max-w-[1140px]">
-        <Nav base="/" learnCurrent />
+        <Nav base="/" helpCurrent />
         <main>{children}</main>
         <Footer base="/" />
       </div>
@@ -179,8 +179,8 @@ export function HelpCta() {
       </h2>
       <p className="text-[18px] text-muted">Write it down. It comes back.</p>
       <div className="flex flex-wrap items-center justify-center gap-3.5">
-        <AppStoreButton />
-        <a className="btn ghost" href="/">
+        <StoreNote />
+        <a className="btn" href="/">
           About Thought Reps
         </a>
       </div>
@@ -297,7 +297,7 @@ export function HelpArticleView({
           ))}
         </div>
         <RelatedArticles article={article} />
-        <a className="btn ghost mt-12" href={HELP_INDEX_PATH}>
+        <a className="btn mt-12" href={HELP_INDEX_PATH}>
           Back to Help center
         </a>
       </article>

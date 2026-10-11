@@ -522,26 +522,26 @@ describe('help pages', () => {
       }
       expect(html).toContain('href="/help"');
       expect(html).toContain('Back to Help center');
-      expect(html).toContain('Coming soon to the');
+      expect(html).toContain('Coming to the App Store');
     }
   });
 
-  it('uses the landing header and footer, with Learn marked current', () => {
+  it('uses the landing header and footer, with Help marked current', () => {
     const { html } = renderRoute('/help');
     expect(html).toContain('href="/#how"');
-    expect(html).toContain('href="/#get"');
-    expect(html).toMatch(/aria-current="page"[^>]*>Learn</);
+    expect(html).toContain('href="/#waitlist-email"');
+    expect(html).toMatch(/aria-current="page"[^>]*>Help</);
     expect(html).toContain('aria-label="Footer"');
-    expect(html).toContain('© 2026 Thought Reps LLC');
+    expect(html).toContain(`© ${new Date().getFullYear()} Thought Reps LLC`);
   });
 });
 
 describe('landing links to the help center', () => {
   const html = renderToString(<LandingPage />);
 
-  it('has a Learn link in the header and the footer', () => {
-    const links = html.match(/<a[^>]*href="\/help"[^>]*>Learn<\/a>/g) ?? [];
+  it('has a Help link in the header and the footer', () => {
+    const links = html.match(/<a[^>]*href="\/help"[^>]*>Help<\/a>/g) ?? [];
     expect(links).toHaveLength(2);
-    expect(html).not.toMatch(/aria-current="page"[^>]*>Learn</);
+    expect(html).not.toMatch(/aria-current="page"[^>]*>Help</);
   });
 });

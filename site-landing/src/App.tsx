@@ -8,6 +8,7 @@ import {
   Footer,
   HowItWorks,
   Privacy,
+  Why,
 } from './components/Sections';
 import { SupportPage as SupportPageView } from './components/SupportPage';
 import { Sprites } from './components/shared';
@@ -68,6 +69,7 @@ export function LandingPage() {
         <Nav />
         <main id="top">
           <Hero />
+          <Why />
           <HowItWorks />
           <Features />
           <Privacy />
@@ -92,7 +94,7 @@ export function NotFoundPage() {
           <p className="max-w-[33em] text-[19px] text-muted">
             There&apos;s no page at this address.
           </p>
-          <a className="btn ghost" href="/">
+          <a className="btn" href="/">
             Back to Thought Reps
           </a>
         </main>

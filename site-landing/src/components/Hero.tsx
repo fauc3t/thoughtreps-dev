@@ -1,21 +1,34 @@
 import { useEffect, useState } from 'react';
-import { AppStoreButton, ThemeToggle, Use } from './shared';
+import type { MouseEvent } from 'react';
+import { useWaitlistJoined } from '../waitlistStore';
+import { StoreNote, ThemeToggle, Use } from './shared';
 import { WaitlistForm } from './WaitlistForm';
+
+const WAITLIST_INPUT_ID = 'waitlist-email';
+
+function focusWaitlist(e: MouseEvent<HTMLAnchorElement>) {
+  const input = document.getElementById(WAITLIST_INPUT_ID);
+  if (!input) return;
+  e.preventDefault();
+  input.scrollIntoView({ block: 'center' });
+  input.focus({ preventScroll: true });
+}
 
 export function Nav({
   base = '',
-  learnCurrent = false,
+  helpCurrent = false,
 }: {
   base?: string;
-  learnCurrent?: boolean;
+  helpCurrent?: boolean;
 }) {
+  const joined = useWaitlistJoined();
   const link =
     'rounded-[10px] border-2 border-transparent px-3 py-2 text-[15px] font-medium no-underline transition-[border-color,background] duration-[120ms] hover:border-ink hover:bg-soft aria-[current=page]:border-ink aria-[current=page]:bg-soft';
   const hideOnPhone = 'max-[680px]:hidden';
   return (
-    <header className="flex items-center justify-between gap-4 py-[18px]">
+    <header className="flex items-center justify-between gap-3 py-[18px]">
       <a
-        className="flex items-center gap-2.5 text-[19px] leading-none font-extrabold tracking-[-0.01em] no-underline [font-family:var(--font-display)] [font-variation-settings:'wdth'_108]"
+        className="flex items-center gap-2.5 whitespace-nowrap text-[19px] leading-none font-extrabold tracking-[-0.01em] no-underline [font-family:var(--font-display)] [font-variation-settings:'wdth'_108]"
         href={base || '#top'}
         aria-label="Thought Reps home"
       >
@@ -38,18 +51,25 @@ export function Nav({
         <a
           className={`${link} ${hideOnPhone}`}
           href="/help"
-          aria-current={learnCurrent ? 'page' : undefined}
+          aria-current={helpCurrent ? 'page' : undefined}
         >
-          Learn
+          Help
         </a>
         <ThemeToggle />
-        <a
-          className="rounded-[10px] border-2 border-ink px-3 py-2 text-[15px] font-medium no-underline shadow-sticker-sm transition-[border-color,background] duration-[120ms] hover:bg-accent hover:text-accent-ink"
-          href={`${base}#get`}
-          aria-label="Get the app"
-        >
-          Get<span className="max-[480px]:hidden"> the app</span>
-        </a>
+        {joined ? (
+          <span className="rounded-[10px] border-2 border-ink bg-soft px-3 py-2 text-[15px] font-medium whitespace-nowrap">
+            <span className="max-[480px]:hidden">You&apos;re on the list</span>
+            <span className="min-[481px]:hidden">On the list</span>
+          </span>
+        ) : (
+          <a
+            className="rounded-[10px] border-2 border-ink px-3 py-2 text-[15px] font-medium whitespace-nowrap no-underline shadow-sticker-sm transition-[border-color,background] duration-[120ms] hover:bg-accent hover:text-accent-ink"
+            href={`${base}#${WAITLIST_INPUT_ID}`}
+            onClick={focusWaitlist}
+          >
+            Join<span className="max-[480px]:hidden"> the</span> waitlist
+          </a>
+        )}
       </nav>
     </header>
   );
@@ -121,7 +141,7 @@ function Deck() {
   return (
     <div
       role="group"
-      className="relative h-[420px] min-w-0 max-[920px]:h-[380px] max-[620px]:h-[340px]"
+      className="relative h-[420px] min-w-0 min-[921px]:col-start-2 min-[921px]:row-span-4 min-[921px]:row-start-1 max-[920px]:row-start-2 max-[920px]:h-[380px] max-[620px]:h-[310px]"
       aria-label="A stack of thoughts. Every few seconds the top one goes to the back and the next one comes up."
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
@@ -134,6 +154,8 @@ function Deck() {
             key={n.title}
             className={`note stk${swinging === i ? ' swing' : ''}`}
             data-pos={pos[i]}
+            aria-hidden={pos[i] === 0 ? undefined : true}
+            inert={pos[i] !== 0}
             onAnimationEnd={swinging === i ? () => finishSwing(i) : undefined}
           >
             <span className="text-[24px] leading-[1.15] font-extrabold tracking-[-0.01em] [font-family:var(--font-display)] [font-variation-settings:'wdth'_100] max-[620px]:text-[21px]">
@@ -156,7 +178,7 @@ function Deck() {
         ))}
       </div>
       <div
-        className="absolute bottom-9 left-[4%] z-[5] grid size-[82px] place-items-center rounded-full stk max-[620px]:bottom-4 max-[620px]:size-[66px]"
+        className="absolute bottom-9 left-[4%] z-[5] grid size-[82px] place-items-center rounded-full stk max-[620px]:hidden"
         aria-hidden="true"
       >
         <svg
@@ -167,7 +189,7 @@ function Deck() {
         </svg>
       </div>
       <button
-        className="absolute right-[6%] bottom-[30px] z-[5] cursor-pointer rounded-[10px] border-2 border-ink bg-paper px-3 py-2.5 font-mono text-[13px] leading-none font-medium text-ink shadow-sticker-sm transition-[transform,box-shadow,background] duration-[120ms] hover:-translate-px hover:bg-soft hover:shadow-[3px_3px_0_var(--ink)] active:translate-[2px] active:shadow-none max-[620px]:right-[2%] max-[620px]:bottom-[18px]"
+        className="absolute right-[6%] bottom-[30px] z-[5] cursor-pointer rounded-[10px] border-2 border-ink bg-paper px-3 py-2.5 font-mono text-[13px] leading-none font-medium text-ink shadow-sticker-sm transition-[transform,box-shadow,background] duration-[120ms] hover:-translate-px hover:bg-soft hover:shadow-[3px_3px_0_var(--ink)] active:translate-[2px] active:shadow-none max-[620px]:right-[2%] max-[620px]:bottom-1"
         type="button"
         onClick={cycle}
       >
@@ -180,27 +202,27 @@ function Deck() {
 export function Hero() {
   return (
     <section
-      className="grid grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)] items-center gap-14 pt-10 pb-22 max-[920px]:grid-cols-[minmax(0,1fr)] max-[920px]:gap-8 max-[920px]:pt-6 max-[920px]:pb-16"
+      className="grid grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)] grid-rows-[1fr_auto_auto_1fr] gap-x-14 gap-y-6 pt-10 pb-22 max-[920px]:grid-cols-[minmax(0,1fr)] max-[920px]:grid-rows-none max-[920px]:gap-y-5 max-[920px]:pt-6 max-[920px]:pb-16"
       aria-labelledby="hero-h"
     >
-      <div className="flex min-w-0 flex-col gap-6">
-        <h1
-          id="hero-h"
-          className="text-[clamp(46px,7.4vw,92px)] leading-[0.92] min-[921px]:text-[clamp(46px,5vw,64px)] font-black tracking-[-0.035em] [font-variation-settings:'wdth'_112]"
-        >
-          Write it down.{' '}
-          <span className="block">
-            It comes{' '}
-            <span className="bg-[linear-gradient(transparent_60%,var(--hl)_60%,var(--hl)_92%,transparent_92%)] px-[0.04em]">
-              back
-            </span>
-            <Use
-              id="loop"
-              className="ml-[0.06em] inline-block size-[0.7em] align-[-0.02em] text-accent"
-            />
+      <h1
+        id="hero-h"
+        className="col-start-1 row-start-2 min-w-0 text-[clamp(40px,7.4vw,92px)] leading-[0.92] min-[921px]:text-[clamp(46px,5vw,64px)] font-black tracking-[-0.035em] [font-variation-settings:'wdth'_112] max-[920px]:row-start-1"
+      >
+        Write it down.{' '}
+        <span className="block">
+          It comes{' '}
+          <span className="[box-decoration-break:clone] bg-[linear-gradient(transparent_60%,var(--hl)_60%,var(--hl)_92%,transparent_92%)] px-[0.04em]">
+            back
           </span>
-        </h1>
-        <p className="max-w-[33em] text-[19px] text-muted">
+          <Use
+            id="loop"
+            className="ml-[0.06em] inline-block size-[0.7em] align-[-0.02em] text-accent"
+          />
+        </span>
+      </h1>
+      <div className="col-start-1 row-start-3 flex min-w-0 flex-col gap-5 max-[920px]:row-start-3">
+        <p className="max-w-[33em] text-[20px] leading-[1.5] text-muted max-[620px]:text-[18px]">
           Thought Reps is a notebook that hands your ideas back to you. Jot
           something down in five seconds, and{' '}
           <strong className="font-semibold text-ink">
@@ -208,16 +230,11 @@ export function Hero() {
           </strong>
           , so the good ones get a second look.
         </p>
-        <div className="flex flex-wrap items-center gap-3.5">
-          <AppStoreButton />
-          <a className="btn ghost" href="#how">
-            How it works
-          </a>
-        </div>
-        <WaitlistForm compact />
-        <p className="mono text-muted">
-          One email at launch · No account · Stays on your phone · iOS 18+
-        </p>
+        <WaitlistForm
+          inputId={WAITLIST_INPUT_ID}
+          hint="$6.99 once · No subscription · No account · Your email is deleted after launch"
+        />
+        <StoreNote detail="iOS 18+" />
       </div>
       <Deck />
     </section>

@@ -89,7 +89,7 @@ export function BlogPostView({ post }: { post: BlogPost }) {
             <Section key={section.heading ?? i} section={section} />
           ))}
         </div>
-        <a className="btn ghost mt-12" href={BLOG_INDEX_PATH}>
+        <a className="btn mt-12" href={BLOG_INDEX_PATH}>
           More from the blog
         </a>
       </article>

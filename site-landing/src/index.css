@@ -78,7 +78,7 @@
 
 @theme {
   --font-display: 'Archivo Variable', 'Arial Black', system-ui, sans-serif;
-  --font-body: 'Paper Mono', ui-monospace, Menlo, monospace;
+  --font-body: 'Archivo Variable', system-ui, sans-serif;
   --font-mono: 'Paper Mono', ui-monospace, Menlo, monospace;
   --breakpoint-xs: 520px;
 }
@@ -91,7 +91,7 @@
     margin: 0;
     background: var(--paper);
     color: var(--ink);
-    font: 400 17px/1.6 var(--font-body);
+    font: 400 17px/1.55 var(--font-body);
     padding-inline: 16px;
     overflow-x: hidden;
   }
@@ -161,68 +161,30 @@
     display: inline-flex;
     align-items: center;
     gap: 12px;
-    padding: 12px 20px 12px 16px;
+    padding: 12px 18px;
     border-radius: 14px;
     border: 2.5px solid var(--ink);
     box-shadow: var(--shadow-sticker);
-    background: var(--ink);
-    color: var(--paper);
+    background: var(--paper);
+    color: var(--ink);
     text-decoration: none;
     font-weight: 600;
     transition:
       transform 0.12s ease,
       box-shadow 0.12s ease,
-      background 0.12s,
-      color 0.12s;
+      background 0.12s;
   }
   .btn:hover {
     transform: translate(-2px, -2px);
     box-shadow: 6px 6px 0 var(--ink);
-    background: var(--accent);
-    color: var(--accent-ink);
+    background: var(--soft);
   }
   .btn:active {
     transform: translate(3px, 3px);
     box-shadow: 1px 1px 0 var(--ink);
   }
-  .soon {
-    display: inline-flex;
-    align-items: center;
-    gap: 12px;
-    padding: 12px 20px 12px 16px;
-    border-radius: 14px;
-    border: 2.5px dashed var(--ink);
-    background: var(--soft);
-    color: var(--muted);
-    cursor: default;
-    user-select: none;
-  }
-  .btn small,
-  .soon small {
-    display: block;
-    font: 500 11px/1.1 var(--font-body);
-    opacity: 0.8;
-  }
-  .btn b,
-  .soon b {
-    display: block;
-    font: 800 18px/1.1 var(--font-display);
-    font-variation-settings: 'wdth' 110;
-  }
-  .btn svg,
-  .soon svg {
-    flex: none;
-  }
-  .btn.ghost {
-    background: var(--paper);
-    color: var(--ink);
-    padding: 12px 18px;
-  }
-  .btn.ghost:hover {
-    background: var(--soft);
-    color: var(--ink);
-  }
   .small-btn {
+    position: relative;
     font: 500 13px/1 var(--font-mono);
     padding: 8px 10px;
     border-radius: 9px;
@@ -236,6 +198,11 @@
       box-shadow 0.1s,
       background 0.12s,
       color 0.12s;
+  }
+  .small-btn::after {
+    content: '';
+    position: absolute;
+    inset: -6px 0;
   }
   .small-btn:hover {
     background: var(--accent);
