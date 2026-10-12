@@ -23,7 +23,7 @@ struct ThoughtLink<Label: View>: View {
             }
             .accessibilityAddTraits(selection.isSelected(thought) ? .isSelected : [])
         } else {
-            NavigationLink(value: thought) { label }
+            NavigationLink(value: AppRoute.thought(thought)) { label }
         }
     }
 }

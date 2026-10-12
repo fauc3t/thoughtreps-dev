@@ -95,7 +95,7 @@ struct ThoughtTimelineView: View {
     private var toolbarContent: some ToolbarContent {
         if !isScoped {
             ToolbarItem(placement: .topBarTrailing) {
-                NavigationLink(value: SearchRoute()) {
+                NavigationLink(value: AppRoute.search) {
                     Image(systemName: "magnifyingglass")
                 }
                 .accessibilityLabel("Search")

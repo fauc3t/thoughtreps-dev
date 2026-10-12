@@ -16,7 +16,9 @@ struct RootTabView: View {
     @State private var saveErrors = SaveErrorCenter.shared
     @State private var navigation = AppNavigation.shared
     @State private var thoughtSelection = ThoughtSelection()
-    @State private var compactTimelinePath = NavigationPath()
+    @State private var compactPaths = Dictionary(uniqueKeysWithValues: AppTab.allCases.map { ($0, [AppRoute]()) })
+    @State private var splitPaths = Dictionary(uniqueKeysWithValues: AppTab.allCases.map { ($0, [AppRoute]()) })
+    @State private var viewHandoff = ViewHandoff()
     @State private var inboxImporter = InboxImporter()
     @State private var backup = BackupModel.shared
     @Environment(\.scenePhase) private var scenePhase
@@ -54,30 +56,65 @@ struct RootTabView: View {
         capture = CaptureRequest(prefillTag: prefillTag)
     }
 
+    private func compactPath(_ tab: AppTab) -> Binding<[AppRoute]> {
+        Binding(get: { compactPaths[tab] ?? [] }, set: { compactPaths[tab] = $0 })
+    }
+
+    /// The thought open in the split detail column, looked up by id so a deleted one is just absent.
+    private func selectedThought() -> Thought? {
+        guard let modelID = thoughtSelection.current?.modelID else { return nil }
+        var descriptor = FetchDescriptor<Thought>(predicate: #Predicate { $0.persistentModelID == modelID })
+        descriptor.fetchLimit = 1
+        return try? context.fetch(descriptor).first
+    }
+
+    /// Moves the selected tab's open thought and pushed screens across a size-class switch. It was
+    /// already open, so the handoff keeps the remounted detail from recording another view.
+    private func carryAcrossLayouts(toSplit: Bool) {
+        let tab = navigation.selectedTab
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            if toSplit {
+                let carried = LayoutCarry.unfold(compactPath: compactPaths[tab] ?? [])
+                splitPaths[tab] = carried.contentPath
+                if let thought = carried.thought {
+                    viewHandoff.offer(thought.id, now: .now)
+                    thoughtSelection.select(thought)
+                }
+            } else {
+                let thought = selectedThought()
+                compactPaths[tab] = LayoutCarry.fold(contentPath: splitPaths[tab] ?? [], selected: thought)
+                if let thought { viewHandoff.offer(thought.id, now: .now) }
+                thoughtSelection.clear()
+            }
+        }
+    }
+
     private var compactTabs: some View {
         TabView(selection: $navigation.selectedTab) {
-            NavigationStack(path: $compactTimelinePath) {
+            NavigationStack(path: compactPath(.timeline)) {
                 ThoughtTimelineView()
                     .thoughtDestinations()
             }
             .tabItem { Label(AppTab.timeline.title, systemImage: AppTab.timeline.systemImage) }
             .tag(AppTab.timeline)
 
-            NavigationStack {
+            NavigationStack(path: compactPath(.tags)) {
                 TagListView()
                     .thoughtDestinations()
             }
             .tabItem { Label(AppTab.tags.title, systemImage: AppTab.tags.systemImage) }
             .tag(AppTab.tags)
 
-            NavigationStack {
+            NavigationStack(path: compactPath(.archive)) {
                 ArchiveView()
                     .thoughtDestinations()
             }
             .tabItem { Label(AppTab.archive.title, systemImage: AppTab.archive.systemImage) }
             .tag(AppTab.archive)
 
-            NavigationStack {
+            NavigationStack(path: compactPath(.stats)) {
                 StatsView()
                     .thoughtDestinations()
             }
@@ -89,22 +126,23 @@ struct RootTabView: View {
             CaptureOverlay(bottomInset: 66, onCapture: startCapture) // clears the tab bar
         }
         .onChange(of: navigation.searchRequestCount) {
-            compactTimelinePath = NavigationPath([SearchRoute()])
+            compactPaths[.timeline] = [.search]
         }
     }
 
     var body: some View {
         Group {
             if usesSplitView {
-                SplitRootView(onCapture: startCapture)
+                SplitRootView(onCapture: startCapture, paths: $splitPaths)
                     .environment(thoughtSelection)
             } else {
                 compactTabs
             }
         }
         .environment(captureContext)
+        .environment(viewHandoff)
         .onChange(of: usesSplitView) { _, usesSplit in
-            if !usesSplit { thoughtSelection.clear() }
+            carryAcrossLayouts(toSplit: usesSplit)
         }
         .onChange(of: navigation.newThoughtRequestCount) {
             startCapture(prefillTag: captureContext.tag?.displayName)

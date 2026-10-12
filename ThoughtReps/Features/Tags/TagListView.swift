@@ -31,7 +31,7 @@ struct TagListView: View {
     var body: some View {
         List {
             ForEach(visible) { tag in
-                NavigationLink(value: tag) {
+                NavigationLink(value: AppRoute.tag(tag)) {
                     TagRow(tag: tag, counts: tagCounts[tag.name] ?? Counts())
                 }
                 .inkRow()
@@ -45,7 +45,7 @@ struct TagListView: View {
             }
             if showsUntagged {
                 Section {
-                    NavigationLink(value: UntaggedRoute()) {
+                    NavigationLink(value: AppRoute.untagged) {
                         UntaggedRow(counts: untaggedCounts)
                     }
                     .inkRow()
@@ -174,9 +174,6 @@ struct TagTimelineView: View {
         ThoughtTimelineView(scope: .tag(tag))
     }
 }
-
-/// Route value for the untagged timeline.
-struct UntaggedRoute: Hashable {}
 
 #Preview {
     NavigationStack {

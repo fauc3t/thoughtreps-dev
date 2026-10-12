@@ -9,6 +9,7 @@ struct ThoughtDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(CaptureContext.self) private var captureContext: CaptureContext?
     @Environment(ThoughtSelection.self) private var selection: ThoughtSelection?
+    @Environment(ViewHandoff.self) private var viewHandoff: ViewHandoff?
     @AppStorage(AppSettings.Key.defaultIntervalDays) private var defaultIntervalDays = Scheduler.defaultIntervalDays
 
     @State private var hasRecordedView = false
@@ -299,7 +300,12 @@ struct ThoughtDetailView: View {
     // MARK: Actions
 
     private func recordView() {
-        guard !hasRecordedView, !thought.isArchived else { return }
+        guard !hasRecordedView else { return }
+        let handedOff = viewHandoff?.consume(thought.id, now: .now) == true
+        guard ViewHandoff.recordsView(hasRecordedView: hasRecordedView, isArchived: thought.isArchived, handedOff: handedOff) else {
+            hasRecordedView = hasRecordedView || handedOff
+            return
+        }
         hasRecordedView = true
         store.markViewed(thought, now: .now)
     }

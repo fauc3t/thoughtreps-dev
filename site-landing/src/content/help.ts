@@ -231,7 +231,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
         paragraphs: [
           'The right column says "Select a thought" until you pick one. The app never opens one for you, because opening a thought sends it back to wait for its next interval.',
           'Snooze, archive or delete the open thought, and the right column clears. Tap a tag inside a thought to see that tag\'s timeline in the middle column.',
-          'When the window is narrow, like in Split View or Slide Over, you get the same tabs as on iPhone. It switches back as you resize. It works in Split View, Slide Over and Stage Manager, but you can only open one window. The iPad turns to any side. The iPhone stays upright.',
+          'When the window is narrow, like in Split View or Slide Over, you get the same tabs as on iPhone. It switches back as you resize, and the thought you have open comes along without counting as another view. It works in Split View, Slide Over and Stage Manager, but you can only open one window. The iPad turns to any side. The iPhone stays upright.',
         ],
       },
       {

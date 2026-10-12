@@ -15,7 +15,7 @@ struct TagChips: View {
                     Button { selection.pendingTag = tag } label: { chip(tag) }
                         .buttonStyle(.plain)
                 } else if linked {
-                    NavigationLink(value: tag) { chip(tag) }
+                    NavigationLink(value: AppRoute.tag(tag)) { chip(tag) }
                         .buttonStyle(.plain)
                 } else {
                     chip(tag)

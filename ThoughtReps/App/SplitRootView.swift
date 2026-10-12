@@ -8,7 +8,8 @@ struct SplitRootView: View {
     @Environment(ThoughtSelection.self) private var selection: ThoughtSelection?
     @State private var navigation = AppNavigation.shared
     /// Each section keeps its own pushed screens (a tag's timeline, search) while another is selected.
-    @State private var paths = Dictionary(uniqueKeysWithValues: AppTab.allCases.map { ($0, NavigationPath()) })
+    /// Owned by `RootTabView` so a fold to the compact tabs can carry them over.
+    @Binding var paths: [AppTab: [AppRoute]]
 
     var body: some View {
         NavigationSplitView {
@@ -22,10 +23,10 @@ struct SplitRootView: View {
         .onChange(of: selection?.pendingTag) { _, tag in
             guard let tag else { return }
             selection?.pendingTag = nil
-            paths[navigation.selectedTab, default: NavigationPath()].append(tag)
+            paths[navigation.selectedTab, default: []].append(.tag(tag))
         }
         .onChange(of: navigation.searchRequestCount) {
-            paths[.timeline] = NavigationPath([SearchRoute()])
+            paths[.timeline] = [.search]
         }
     }
 
@@ -45,7 +46,7 @@ struct SplitRootView: View {
 
     private var content: some View {
         let tab = navigation.selectedTab
-        return NavigationStack(path: Binding(get: { paths[tab] ?? NavigationPath() }, set: { paths[tab] = $0 })) {
+        return NavigationStack(path: Binding(get: { paths[tab] ?? [] }, set: { paths[tab] = $0 })) {
             root(of: tab)
                 .thoughtDestinations()
         }

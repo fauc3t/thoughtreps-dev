@@ -84,5 +84,3 @@ private struct SearchContent: View {
     }
 }
 
-/// Route value for the search screen.
-struct SearchRoute: Hashable {}
