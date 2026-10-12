@@ -154,6 +154,9 @@ private struct TimelineList: View {
     /// Bumped on every save. The empty state and "come back" text come from queries run in `body`, which
     /// `shown` alone doesn't invalidate (a first thought that isn't due yet, a snooze).
     @State private var saveToken = 0
+    /// Row order as of `snapshot`, so opening a thought (which requeues it) doesn't move its row.
+    /// Unused in "show all", which lists every thought and is shown as loaded.
+    @State private var order = TimelineOrder.Frozen()
 
     init(scope: TimelineScope, showAll: Bool, snapshot: Date, keeping: UUID?, onRefresh: @escaping () -> Void) {
         self.scope = scope
@@ -167,14 +170,25 @@ private struct TimelineList: View {
         )
     }
 
+    /// Fetched directly rather than read from `shown`, which may not have refetched for the new snapshot yet.
+    private func freezeOrder() {
+        let descriptor = FetchDescriptor<Thought>(
+            predicate: ThoughtCounts.timeline(scope.queryScope, showAll: false, snapshot: snapshot, keeping: keeping),
+            sortBy: [SortDescriptor(\.nextDueAt)]
+        )
+        let thoughts = (try? context.fetch(descriptor)) ?? Array(shown)
+        order = TimelineOrder.Frozen(snapshot: snapshot, ranks: TimelineOrder.ranks(thoughts))
+    }
+
     private var store: ThoughtStore {
         ThoughtStore(context: context, defaultIntervalDays: defaultIntervalDays)
     }
 
     var body: some View {
         let _ = saveToken
-        let pinned = shown.filter(\.isPinned)
-        let listed = shown.filter { !$0.isPinned }
+        let rows = showAll ? Array(shown) : TimelineOrder.sorted(shown, by: order.ranks)
+        let pinned = rows.filter(\.isPinned)
+        let listed = rows.filter { !$0.isPinned }
         List {
             if !pinned.isEmpty {
                 Section {
@@ -209,6 +223,12 @@ private struct TimelineList: View {
             }
         }
         .refreshable { @MainActor in onRefresh() }
+        .onChange(of: snapshot, initial: true) {
+            if !showAll { freezeOrder() }
+        }
+        .onChange(of: showAll ? [] : shown.map(\.id)) {
+            order = TimelineOrder.refreshed(order, with: shown, snapshot: snapshot)
+        }
         .onReceive(NotificationCenter.default.publisher(for: ModelContext.didSave)) { _ in saveToken += 1 }
     }
 

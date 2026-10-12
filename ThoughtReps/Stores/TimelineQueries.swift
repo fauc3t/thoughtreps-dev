@@ -73,3 +73,45 @@ extension ThoughtCounts {
         return (next, count(upcoming(scope, from: start, before: end), in: context))
     }
 }
+
+/// The default timeline's row order, frozen at its snapshot. Rows load sorted by `nextDueAt`, but opening
+/// a thought requeues it, which would move its row while you're still on the list. So the order seen at
+/// the snapshot is kept until the next one; thoughts that join later go after, in their loaded order.
+/// Only the default timeline (pinned, due, viewed since the snapshot) is frozen: it is bounded, while
+/// "show all" lists every thought and is shown as loaded.
+enum TimelineOrder {
+    /// Ranks plus the snapshot they were taken for.
+    struct Frozen {
+        var snapshot: Date?
+        var ranks: [UUID: Int] = [:]
+    }
+
+    /// Extends `frozen` with `thoughts`, or rebuilds it from them when it was taken for another snapshot
+    /// (e.g. from rows the previous query had loaded).
+    static func refreshed(_ frozen: Frozen, with thoughts: [Thought], snapshot: Date) -> Frozen {
+        if frozen.snapshot == snapshot {
+            return Frozen(snapshot: snapshot, ranks: ranks(thoughts, extending: frozen.ranks))
+        }
+        return Frozen(snapshot: snapshot, ranks: ranks(thoughts))
+    }
+
+    /// `thoughts`' positions, keeping every rank already in `existing` and appending new ids after them.
+    static func ranks(_ thoughts: [Thought], extending existing: [UUID: Int] = [:]) -> [UUID: Int] {
+        var ranks = existing
+        var next = (existing.values.max() ?? -1) + 1
+        for thought in thoughts where ranks[thought.id] == nil {
+            ranks[thought.id] = next
+            next += 1
+        }
+        return ranks
+    }
+
+    static func sorted(_ thoughts: [Thought], by ranks: [UUID: Int]) -> [Thought] {
+        thoughts.enumerated().sorted { a, b in
+            let rankA = ranks[a.element.id] ?? Int.max
+            let rankB = ranks[b.element.id] ?? Int.max
+            if rankA != rankB { return rankA < rankB }
+            return a.offset < b.offset
+        }.map(\.element)
+    }
+}

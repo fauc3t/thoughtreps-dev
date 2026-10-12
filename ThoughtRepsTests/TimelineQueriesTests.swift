@@ -115,4 +115,45 @@ struct TimelineQueriesTests {
         try context.save()
         #expect(ThoughtCounts.nextUp(.all, in: context) == nil)
     }
+
+    @Test func orderStaysFrozenWhenAThoughtIsRequeued() throws {
+        let first = thought("first", due: -300)
+        let second = thought("second", due: -200)
+        let third = thought("third", due: -100)
+        let ranks = TimelineOrder.ranks([first, second, third])
+        first.nextDueAt = snapshot.addingTimeInterval(7 * 86_400) // opened, so requeued
+        let reloaded = [second, third, first] // as a nextDueAt sort would now load them
+        #expect(TimelineOrder.sorted(reloaded, by: ranks).map(\.body) == ["first", "second", "third"])
+    }
+
+    @Test func thoughtsJoiningLaterGoAfterInLoadedOrder() throws {
+        let first = thought("first", due: -300)
+        let second = thought("second", due: -200)
+        let lateA = thought("late a", due: -400)
+        let lateB = thought("late b", due: -50)
+        let ranks = TimelineOrder.ranks([lateA, first, second, lateB], extending: TimelineOrder.ranks([first, second]))
+        #expect(TimelineOrder.sorted([lateA, first, second, lateB], by: ranks).map(\.body) == ["first", "second", "late a", "late b"])
+        #expect(TimelineOrder.sorted([lateB, second, lateA, first], by: [:]).map(\.body) == ["late b", "second", "late a", "first"])
+    }
+
+    @Test func refreshRebuildsForANewSnapshotAndExtendsForTheSame() throws {
+        let old = thought("old", due: -300)
+        let first = thought("first", due: -200)
+        let second = thought("second", due: -100)
+        let stale = TimelineOrder.Frozen(snapshot: nil, ranks: TimelineOrder.ranks([old]))
+        let rebuilt = TimelineOrder.refreshed(stale, with: [first, second], snapshot: snapshot)
+        #expect(rebuilt.snapshot == snapshot)
+        #expect(TimelineOrder.sorted([second, first], by: rebuilt.ranks).map(\.body) == ["first", "second"])
+        let extended = TimelineOrder.refreshed(rebuilt, with: [old, second, first], snapshot: snapshot)
+        #expect(TimelineOrder.sorted([old, second, first], by: extended.ranks).map(\.body) == ["first", "second", "old"])
+    }
+
+    @Test func sameSnapshotRefetchAfterRequeueKeepsFrozenOrder() throws {
+        let first = thought("first", due: -300)
+        let second = thought("second", due: -200)
+        let frozen = TimelineOrder.Frozen(snapshot: snapshot, ranks: TimelineOrder.ranks([first, second]))
+        first.nextDueAt = snapshot.addingTimeInterval(7 * 86_400)
+        let refreshed = TimelineOrder.refreshed(frozen, with: [second, first], snapshot: snapshot)
+        #expect(TimelineOrder.sorted([second, first], by: refreshed.ranks).map(\.body) == ["first", "second"])
+    }
 }
