@@ -30,6 +30,7 @@ final class SearchModel {
 
     private var loadedScope: SearchScope?
     private let source: Source
+    private let isIncluded: ((Thought) -> Bool)?
     private let context: ModelContext
     private var nextOffset = 0
     private var hasMore = false
@@ -37,13 +38,15 @@ final class SearchModel {
 
     private static let logger = Logger(subsystem: "com.thoughtreps", category: "search")
 
-    convenience init(scope: SearchScope, index: SearchIndex = .shared, context: ModelContext) {
-        self.init(scope: scope, context: context) { query, scope, limit, offset in
+    convenience init(scope: SearchScope, index: SearchIndex = .shared, context: ModelContext, isIncluded: ((Thought) -> Bool)? = nil) {
+        self.init(scope: scope, context: context, isIncluded: isIncluded) { query, scope, limit, offset in
             try await index.search(query, scope: scope, limit: limit, offset: offset)
         }
     }
 
-    init(scope: SearchScope, context: ModelContext, source: @escaping Source) {
+    /// `isIncluded` hides results from `rows`; pages keep loading until a page's worth is visible or the index runs out.
+    init(scope: SearchScope, context: ModelContext, isIncluded: ((Thought) -> Bool)? = nil, source: @escaping Source) {
+        self.isIncluded = isIncluded
         self.scope = scope
         self.source = source
         self.context = context
@@ -76,8 +79,8 @@ final class SearchModel {
         guard !Task.isCancelled, requestedScope == scope else { return }
         failed = page == nil
         rows = page?.rows ?? []
-        nextOffset = Self.pageSize
-        hasMore = page?.count == Self.pageSize
+        nextOffset = page?.endOffset ?? 0
+        hasMore = page?.hasMore ?? false
         loadedQuery = query
         loadedScope = requestedScope
     }
@@ -95,8 +98,8 @@ final class SearchModel {
         else { return }
         let known = Set(rows.map(\.id))
         rows += page.rows.filter { !known.contains($0.id) }
-        nextOffset += Self.pageSize
-        hasMore = page.count == Self.pageSize
+        nextOffset = page.endOffset
+        hasMore = page.hasMore
     }
 
     /// `rows` without thoughts deleted, or moved out of the scope, since the page loaded.
@@ -131,16 +134,27 @@ final class SearchModel {
         hasMore = false
     }
 
-    /// `count` is the number of index results, which can exceed `rows.count` when thoughts are missing.
-    private func fetchPage(_ query: String, scope: SearchScope, offset: Int) async throws -> (rows: [Row], count: Int) {
-        let results: [SearchResult]
-        do {
-            results = try await source(query, scope, Self.pageSize, offset)
-        } catch {
-            Self.logger.error("Search failed: \(error)")
-            throw error
+    /// Fetches index pages from `offset` until `pageSize` rows are visible. Without a filter that is one page.
+    /// `endOffset` is where the next page starts in the index; `hasMore` is whether the index may have more.
+    private func fetchPage(_ query: String, scope: SearchScope, offset: Int) async throws -> (rows: [Row], endOffset: Int, hasMore: Bool) {
+        var rows: [Row] = []
+        var offset = offset
+        while true {
+            let results: [SearchResult]
+            do {
+                results = try await source(query, scope, Self.pageSize, offset)
+            } catch {
+                Self.logger.error("Search failed: \(error)")
+                throw error
+            }
+            let found = try thoughtRows(for: results)
+            rows += isIncluded.map { include in found.filter { include($0.thought) } } ?? found
+            offset += Self.pageSize
+            let more = results.count == Self.pageSize
+            if !more || isIncluded == nil || rows.count >= Self.pageSize || Task.isCancelled {
+                return (rows, offset, more)
+            }
         }
-        return (try thoughtRows(for: results), results.count)
     }
 
     private func thoughtRows(for results: [SearchResult]) throws -> [Row] {

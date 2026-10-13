@@ -426,6 +426,43 @@ function BlurredBlock() {
   );
 }
 
+function LinkedThought() {
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-1 rounded-[14px] border-2 border-ink bg-paper p-3">
+        <span className="flex items-baseline gap-2 text-[15px] font-semibold">
+          <IconGlyph
+            name="link"
+            className="size-3.5 shrink-0 self-center text-muted"
+          />
+          Why spaced repetition works
+        </span>
+        <span className="line-clamp-2 text-[13px] text-muted">
+          Memory fades on a curve. Each review resets it and flattens the next
+          drop, so the gaps can grow.
+        </span>
+        <span className="text-[13px] text-muted">#learning #memory</span>
+      </div>
+      <div className="flex flex-col gap-1 rounded-[14px] border-2 border-ink bg-paper p-3 opacity-60">
+        <span className="flex items-baseline gap-2 text-[15px] font-semibold">
+          <IconGlyph
+            name="link"
+            className="size-3.5 shrink-0 self-center text-muted"
+          />
+          <span className="grow">Old reading list</span>
+          <span className="text-[12px] font-semibold text-muted">Archived</span>
+        </span>
+        <span className="text-[13px] text-muted">
+          Books to get to this year.
+        </span>
+      </div>
+      <div className="rounded-[14px] border-2 border-ink bg-paper p-3 text-[13px] text-muted">
+        This thought was deleted
+      </div>
+    </div>
+  );
+}
+
 function TagList() {
   const tags = [
     { name: '#quotes', due: 2, total: 14 },
@@ -989,6 +1026,7 @@ const EXAMPLES: Record<
   'markdown-pair': { Mock: MarkdownPair },
   gallery: { Mock: Gallery },
   'blurred-block': { Mock: BlurredBlock, interactive: true },
+  'linked-thought': { Mock: LinkedThought },
   'tag-list': { Mock: TagList },
   'color-sheet': { Mock: ColorSheet },
   'share-sheet': { Mock: ShareSheet },

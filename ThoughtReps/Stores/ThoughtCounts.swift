@@ -60,6 +60,25 @@ enum ThoughtCounts {
         }
     }
 
+    /// The link picker's empty-query list: unarchived thoughts other than `excluded`, most recently updated first.
+    static let recentPickerLimit = 20
+
+    static func recentForPicker(excluding excluded: [UUID]) -> FetchDescriptor<Thought> {
+        var descriptor = FetchDescriptor<Thought>(predicate: #Predicate { !$0.isArchived && !excluded.contains($0.id) })
+        descriptor.sortBy = [SortDescriptor(\.updatedAt, order: .reverse), SortDescriptor(\.id)]
+        descriptor.fetchLimit = recentPickerLimit
+        return descriptor
+    }
+
+    static func recentForPicker(excluding excluded: [UUID], in context: ModelContext) -> [Thought] {
+        do {
+            return try context.fetch(recentForPicker(excluding: excluded))
+        } catch {
+            logger.error("Recent thoughts fetch failed: \(error)")
+            return []
+        }
+    }
+
     /// The thoughts that link to `id`, archived ones left out, at most `linkedFromLimit`, and how many
     /// there are in all. Sources are the most recently updated first.
     static func linkedFrom(_ id: UUID, in context: ModelContext) -> (thoughts: [Thought], total: Int) {

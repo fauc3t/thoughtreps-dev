@@ -1,6 +1,6 @@
 # Thought Reps — Linked Thoughts Spec
 
-Status: draft, 2026-10-13. Not built. **In 1.0.** It changes the model and the backup record, so it must land before the schema freezes (section 9).
+Status: built, 2026-10-13 (help article and mockup done). **In 1.0.** It changes the model and the backup record, so it must land before the schema freezes (section 9).
 
 Linked thoughts let you add another thought to a thought as a block. The block shows that thought as a small card, and tapping the card opens it. Following cards from thought to thought gives a lightweight mind map: one thought that comes due can lead you through others if you want to walk them.
 
@@ -132,8 +132,8 @@ Each step lands as its own push through the usual pipeline (dev agent, then revi
 
 1. **Model, store, backup and integrity:** `BlockKind`, the `Block` field, `ThoughtStore` add, remove and reorder, the `BlockRecord` and validation, the `IntegrityChecker` and randomized ops, and the fixture regenerated.
 2. **Rendering and walking (done):** the link card, the batched resolution, the `.linkedThought` route and visit mode, "Linked from", and the split detail stack.
-3. **Editor and picker:** the add-block menu entry, the search sheet, removing deleted links.
-4. **Docs:** the help article, its mockup and CLAUDE.md.
+3. **Editor and picker (done):** the add-block menu entry, the search sheet, removing deleted links.
+4. **Docs (done):** the help article, its mockup and CLAUDE.md.
 
 ## 12. Naming
 

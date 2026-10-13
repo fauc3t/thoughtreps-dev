@@ -5,8 +5,7 @@ struct AddBlockMenuItems: View {
     let onAdd: (BlockKind) -> Void
 
     var body: some View {
-        // Hidden until there's a picker to choose a thought.
-        ForEach(BlockKind.allCases.filter { $0 != .thoughtLink }) { kind in
+        ForEach(BlockKind.allCases) { kind in
             Button {
                 onAdd(kind)
             } label: {
@@ -52,6 +51,10 @@ struct BlockDraftEditor: View {
     var onFocusRequestDone: () -> Void = {}
     /// Called with this block's id when its image processing starts or finishes, so the owner can hold Save.
     var onProcessingChange: (UUID, Bool) -> Void = { _, _ in }
+    /// The thought a link block points to, or `nil` when it no longer exists. Unused by other kinds.
+    var linkTarget: Thought?
+    /// Removes this block; a link row offers it as a button.
+    var onRemove: () -> Void = {}
     /// Called with this block's id when processed images are ready.
     let onAddImages: (UUID, [ImageDraft]) -> Void
 
@@ -82,8 +85,7 @@ struct BlockDraftEditor: View {
                     .font(.subheadline.weight(.semibold))
                 gallery
             case .thoughtLink:
-                // Link blocks have no editing row yet.
-                EmptyView()
+                link
             }
         }
         .padding(.vertical, 4)
@@ -115,6 +117,43 @@ struct BlockDraftEditor: View {
                 }
             }
             Toggle("Blur until tapped", isOn: $draft.isBlurred)
+        }
+    }
+
+    private var link: some View {
+        let model = LinkedThoughtCardModel(target: linkTarget)
+        let tags = model.state == .deleted ? [] : (linkTarget?.sortedTags ?? [])
+        return HStack(alignment: .top, spacing: 8) {
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(model.title)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(model.state == .deleted ? .secondary : .primary)
+                        .lineLimit(1)
+                    if model.state == .archived {
+                        Text("Archived").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                if !model.preview.isEmpty {
+                    Text(model.preview).font(.footnote).foregroundStyle(.secondary).lineLimit(2)
+                }
+                if !tags.isEmpty {
+                    Text(tags.map { "#\($0.displayName)" }.joined(separator: " "))
+                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(model.accessibilityLabel)
+            .accessibilityValue(model.preview)
+            Button(role: .destructive, action: onRemove) {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundStyle(.secondary)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel(model.state == .deleted ? "Remove deleted link" : "Remove link to \(model.title)")
         }
     }
 

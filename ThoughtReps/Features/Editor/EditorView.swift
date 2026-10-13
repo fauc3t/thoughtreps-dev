@@ -43,6 +43,8 @@ struct EditorView: View {
     @State private var openedDrafts: [BlockDraft] = []
     @State private var openedIntervalDays: Int?
     @State private var openedLearn = false
+    @State private var isPickingLink = false
+    @State private var linkTargets: [UUID: Thought] = [:]
 
     private var isNew: Bool {
         if case .new = mode { return true }
@@ -144,7 +146,32 @@ struct EditorView: View {
 
     /// Adds a block; `pendingNewBlockID` then drives scrolling to it and focusing its Markdown field.
     private func addBlock(_ kind: BlockKind) {
-        pendingNewBlockID = drafts.addBlock(kind)
+        if kind == .thoughtLink {
+            isPickingLink = true
+        } else {
+            pendingNewBlockID = drafts.addBlock(kind)
+        }
+    }
+
+    private var linkedIDs: Set<UUID> {
+        Set(drafts.compactMap { $0.kind == .thoughtLink ? $0.linkedThoughtID : nil })
+    }
+
+    /// The thoughts the picker leaves out: this one and every thought the drafts already link.
+    private var pickerExclusions: Set<UUID> {
+        var ids = linkedIDs
+        if case let .edit(thought) = mode { ids.insert(thought.id) }
+        return ids
+    }
+
+    private func addLink(to id: UUID) {
+        let draft = BlockDraft(kind: .thoughtLink, linkedThoughtID: id)
+        drafts.append(draft)
+        pendingNewBlockID = draft.id
+    }
+
+    private func refreshLinkTargets() {
+        linkTargets = ThoughtCounts.targets(of: Array(linkedIDs), in: context)
     }
 
     /// Thumbnail bytes for an image token in any Markdown field: only this thought's own images and the new inline ones.
@@ -196,7 +223,9 @@ struct EditorView: View {
             wantsFocus: pendingNewBlockID == id,
             canTakeFocus: { focus == nil || focus == field },
             onFocusRequestDone: { if pendingNewBlockID == id { pendingNewBlockID = nil } },
-            onProcessingChange: setBlockProcessing
+            onProcessingChange: setBlockProcessing,
+            linkTarget: draft.wrappedValue.linkedThoughtID.flatMap { linkTargets[$0] },
+            onRemove: { drafts.removeAll { $0.id == id } }
         ) { addGalleryImages(to: $0, $1) }
     }
 
@@ -261,7 +290,7 @@ struct EditorView: View {
                 } header: {
                     Text("Blocks")
                 } footer: {
-                    Text("Add more text or a gallery. Turn on blur to hide an answer until you tap it.")
+                    Text("Add more text, a gallery or a linked thought. Turn on blur to hide an answer until you tap it.")
                 }
 
                 Section {
@@ -313,10 +342,14 @@ struct EditorView: View {
                     intervalDays = days
                 }
             }
+            .sheet(isPresented: $isPickingLink) {
+                LinkPickerSheet(excluded: pickerExclusions, onPick: addLink)
+            }
             .onAppear {
                 load()
                 loadTagUseCounts()
             }
+            .onChange(of: linkedIDs) { refreshLinkTargets() }
             .onChange(of: text) { old, new in
                 continueList(in: .body, from: old, to: new)
             }
@@ -410,6 +443,7 @@ struct EditorView: View {
         openedDrafts = drafts
         openedIntervalDays = intervalDays
         openedLearn = learn
+        refreshLinkTargets()
     }
 
     /// Dismisses only if the save succeeded, so a failed save keeps the draft on screen.

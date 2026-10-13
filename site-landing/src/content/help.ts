@@ -70,6 +70,7 @@ export const HELP_EXAMPLE_KINDS = [
   'markdown-pair',
   'gallery',
   'blurred-block',
+  'linked-thought',
   'tag-list',
   'color-sheet',
   'share-sheet',
@@ -139,7 +140,7 @@ export const HELP_CATEGORIES: HelpCategory[] = [
     slug: 'writing',
     title: 'Writing',
     description:
-      'Markdown, images, text blocks you can blur, tags and saving from other apps.',
+      'Markdown, images, text blocks you can blur, links between thoughts, tags and saving from other apps.',
   },
   {
     slug: 'reviewing',
@@ -162,7 +163,12 @@ export const HELP_ARTICLES: HelpArticle[] = [
     title: 'What Thought Reps is',
     description:
       'Thought Reps is a notebook for iPhone and iPad that brings your ideas back. Write a thought, and it returns to your timeline after a week.',
-    related: ['write-your-first-thought', 'how-resurfacing-works', 'ipad', 'privacy'],
+    related: [
+      'write-your-first-thought',
+      'how-resurfacing-works',
+      'ipad',
+      'privacy',
+    ],
     sections: [
       {
         paragraphs: [
@@ -186,7 +192,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
       {
         heading: 'What you get',
         list: [
-          'Thoughts written in Markdown, with photos, image galleries and extra text blocks you can blur to quiz yourself.',
+          'Thoughts written in Markdown, with photos, image galleries, extra text blocks you can blur to quiz yourself and links to other thoughts.',
           'Tags, with a timeline for each tag.',
           'Pin, snooze and archive, so you choose what stays in front of you.',
           'An optional daily reminder.',
@@ -210,7 +216,12 @@ export const HELP_ARTICLES: HelpArticle[] = [
     title: 'Use Thought Reps on iPad',
     description:
       'Thought Reps runs on iPad with a three-column layout, keyboard shortcuts and drag and drop for images. Each device keeps its own thoughts.',
-    related: ['the-timeline', 'images-and-galleries', 'backup-and-restore', 'move-to-a-new-phone'],
+    related: [
+      'the-timeline',
+      'images-and-galleries',
+      'backup-and-restore',
+      'move-to-a-new-phone',
+    ],
     sections: [
       {
         paragraphs: [
@@ -231,7 +242,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
       {
         paragraphs: [
           'The right column says "Select a thought" until you pick one. The app never opens one for you, because opening a thought sends it back to wait for its next interval.',
-          'Snooze, archive or delete the open thought, and the right column clears. Tap a tag inside a thought to see that tag\'s timeline in the middle column.',
+          "Snooze, archive or delete the open thought, and the right column clears. Tap a tag inside a thought to see that tag's timeline in the middle column.",
           'When the window is narrow, like in Split View or Slide Over, you get the same tabs as on iPhone. It switches back as you resize, and the thought you have open comes along without counting as another view. It works in Split View, Slide Over and Stage Manager, but you can only open one window. The iPad turns to any side. The iPhone stays upright.',
         ],
       },
@@ -305,7 +316,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
         list: [
           'Add `#tags` anywhere in the text to file the thought. See [Organize with tags](/help/tags).',
           'Add photos with the {icon:photo} button above the keyboard. See [Add images and galleries](/help/images-and-galleries).',
-          'Add a text block and blur it to hide an answer. See [Quiz yourself with blurred blocks](/help/blurred-blocks).',
+          'Add a text block and blur it to hide an answer. See [Quiz yourself with blurred blocks](/help/blurred-blocks). Or link to another thought. See [Link thoughts into a mind map](/help/link-thoughts).',
           'Under "Schedule", use "Comes back every" if this thought should return sooner or later than usual.',
         ],
       },
@@ -353,7 +364,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
         heading: 'What opening a thought does',
         paragraphs: [
           'Opening a thought counts as seeing it. It goes back to waiting. Its next due date is its interval, counted from that moment. The card leaves your timeline when you go back to it, not while you read. So it will not vanish in the middle of a read.',
-          'This is true wherever you open the thought from, even a tag page. Opening an archived thought does not requeue it.',
+          'This is true wherever you open the thought from, even a tag page. Opening an archived thought does not requeue it. Neither does opening a thought from a link inside another thought. See [Link thoughts into a mind map](/help/link-thoughts).',
           'Thoughts in Learn mode are the exception. Opening one does not requeue it. You tell it how it went with "Again" or "Got it". See [Learn mode](/help/learn-mode).',
         ],
       },
@@ -659,7 +670,12 @@ export const HELP_ARTICLES: HelpArticle[] = [
     title: 'Add images and galleries',
     description:
       'Put photos in the middle of a thought, or collect several in a gallery. Learn how to add, view and remove them, and what happens to the file.',
-    related: ['markdown-formatting', 'blurred-blocks', 'backup-and-restore', 'ipad'],
+    related: [
+      'markdown-formatting',
+      'blurred-blocks',
+      'link-thoughts',
+      'backup-and-restore',
+    ],
     sections: [
       {
         paragraphs: [
@@ -730,8 +746,8 @@ export const HELP_ARTICLES: HelpArticle[] = [
     description:
       'Add a text block under your thought and blur it. It stays hidden until you tap it, so you can test yourself each time the thought returns.',
     related: [
-      'write-your-first-thought',
       'markdown-formatting',
+      'link-thoughts',
       'how-resurfacing-works',
       'learn-mode',
     ],
@@ -783,6 +799,74 @@ export const HELP_ARTICLES: HelpArticle[] = [
           'The title, the timeline preview and pinning come from the main text.',
           'Blocks, and whether each is blurred, are in your backups.',
           'Older blurred blocks, and older backups, open as blurred text blocks.',
+        ],
+      },
+    ],
+  },
+  {
+    slug: 'link-thoughts',
+    category: 'writing',
+    title: 'Link thoughts into a mind map',
+    description:
+      'Add a link to another thought and tap through your ideas. Learn how to add a link, follow it, see what links back, and what happens when a thought goes away.',
+    related: [
+      'blurred-blocks',
+      'images-and-galleries',
+      'how-resurfacing-works',
+      'pin-and-archive',
+    ],
+    sections: [
+      {
+        paragraphs: [
+          'You can add a link to another thought. It shows up as a small card, and tapping the card opens that thought. It is a simple way to connect ideas and keep linked notes together. One thought that comes back can lead you on to the others.',
+        ],
+        example: {
+          kind: 'linked-thought',
+          caption:
+            'A linked thought shows as a card with its title, a short preview and its tags.',
+        },
+      },
+      {
+        heading: 'Add a link',
+        steps: [
+          'In the editor, tap {icon:block} in the row above the keyboard. Or scroll to the "Blocks" section and tap "Add block".',
+          'Choose "Linked thought". A list of your thoughts opens.',
+          'Search by title or text, or pick one from the list. With no search, it shows the 20 thoughts you changed most recently.',
+          'Tap the thought you want. The link appears in the editor as a "Linked thought" row.',
+        ],
+      },
+      {
+        paragraphs: [
+          'To remove a link, tap {icon:clear} on its row. The other thought is not touched. If nothing matches your search, you see "No thoughts match". If search is still getting ready, you see "Search is catching up. Showing recent thoughts for now."',
+          'The list leaves out the thought you are editing, thoughts you already linked, and archived thoughts. A thought can link to another one only once.',
+        ],
+      },
+      {
+        heading: 'Follow a link',
+        paragraphs: [
+          'Tap a card to open the thought it points to. That thought has its own cards, so you can keep going. A card only shows one step. To go further, open the thought and look at its cards.',
+          'Opening a thought from a link counts as a view. But it does not change the due date. The thought does not go back to waiting. See [How resurfacing works](/help/how-resurfacing-works).',
+        ],
+      },
+      {
+        heading: 'Linked from',
+        paragraphs: [
+          'Links go both ways when you read. At the bottom of a thought, "Linked from" lists the thoughts that link to it. Tap one to open it. If more than 50 link to it, you see the first 50 and "and N more".',
+        ],
+      },
+      {
+        heading: 'Deleted and archived thoughts',
+        list: [
+          'If you delete a thought, links to it stay. Their cards say "This thought was deleted". You can remove them in the editor.',
+          'An archived thought still opens from a link. Its card is dimmed and says "Archived". See [Pin or archive a thought](/help/pin-and-archive).',
+        ],
+      },
+      {
+        heading: 'Good to know',
+        list: [
+          'A link is part of the thought you add it to. Adding or removing one counts as an edit to that thought.',
+          'Links are in your backups.',
+          'Links do not add text to search. Search finds the linked thought by its own words.',
         ],
       },
     ],
@@ -1080,7 +1164,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
           'A pinned Learn thought shows "Pinned · not reviewed" and has no buttons. Unpin it to review it.',
           'In the editor, the interval is called "First wait". Changing it does not move the due date.',
           'Learn thoughts have a small "LEARN" mark on their card on the Timeline.',
-          'Your backups keep Learn mode and each thought\'s current wait.',
+          "Your backups keep Learn mode and each thought's current wait.",
         ],
       },
     ],
