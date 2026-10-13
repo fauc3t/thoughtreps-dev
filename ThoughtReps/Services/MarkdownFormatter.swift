@@ -17,13 +17,14 @@ enum MarkdownFormatter {
     }
 
     enum LinePrefix: CaseIterable {
-        case heading, bullet, task
+        case heading, bullet, task, quote
 
         var marker: String {
             switch self {
             case .heading: "# "
             case .bullet: "- "
             case .task: "- [ ] "
+            case .quote: "> "
             }
         }
 
@@ -33,6 +34,7 @@ enum MarkdownFormatter {
             case .heading: ["# "]
             case .bullet: ["- "]
             case .task: ["- [ ] ", "- [x] ", "- [X] "]
+            case .quote: ["> "]
             }
         }
     }
@@ -82,7 +84,7 @@ enum MarkdownFormatter {
     // MARK: Line prefixes
 
     /// Adds `prefix` to every line the selection touches, removes it when all of them already
-    /// have it, and replaces a different heading, bullet or task prefix. Blank lines in a
+    /// have it, and replaces a different heading, bullet, task or quote prefix. Blank lines in a
     /// multi-line selection are skipped, except that a single empty line, or a selection of
     /// only blank lines, still gets the prefix. The selection keeps pointing at the same characters.
     static func toggle(_ prefix: LinePrefix, in text: String, selection: Range<String.Index>) -> Edit {
@@ -120,9 +122,10 @@ enum MarkdownFormatter {
 
     // MARK: List continuation
 
-    /// If `new` is `old` with a single newline typed after a list item, returns the text with
-    /// the next item's prefix added (a task continues unchecked, a number increments). On an
-    /// empty item the prefix is removed instead, ending the list. Nil for any other change.
+    /// If `new` is `old` with a single newline typed after a list item or quote line, returns the
+    /// text with the next line's prefix added (a task continues unchecked, a number increments, a
+    /// quote repeats `> `). On an empty item or quote line the prefix is removed instead, ending
+    /// the list or quote. Nil for any other change.
     /// `cursor` is the insertion point after the typed newline; it is only needed to locate the
     /// newline when it was typed next to another one, which looks identical in the text.
     static func continueList(
@@ -210,7 +213,7 @@ enum MarkdownFormatter {
     }
 
     private static func existingPrefix(in units: [UInt16], at lineStart: Int) -> (kind: LinePrefix, length: Int)? {
-        for kind in [LinePrefix.task, .bullet, .heading] {
+        for kind in [LinePrefix.task, .bullet, .heading, .quote] {
             for spelling in kind.spellings {
                 let candidate = Array(spelling.utf16)
                 if units[lineStart...].starts(with: candidate) { return (kind, candidate.count) }
@@ -231,6 +234,9 @@ enum MarkdownFormatter {
         }
         if body.starts(with: Array(LinePrefix.bullet.marker.utf16)) {
             return (indentLength + 2, indent + LinePrefix.bullet.marker)
+        }
+        if body.starts(with: Array(LinePrefix.quote.marker.utf16)) {
+            return (indentLength + 2, indent + LinePrefix.quote.marker)
         }
 
         let digits = body.prefix { $0 >= 0x30 && $0 <= 0x39 }

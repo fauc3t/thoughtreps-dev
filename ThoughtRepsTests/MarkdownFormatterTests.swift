@@ -119,6 +119,17 @@ struct MarkdownFormatterTests {
         #expect(prefix(.bullet, "# abc|") == "- abc|")
     }
 
+    @Test func quotePrefixToggles() {
+        #expect(prefix(.quote, "abc|") == "> abc|")
+        #expect(prefix(.quote, "> ab|c") == "ab|c")
+        #expect(prefix(.quote, "- abc|") == "> abc|")
+        #expect(prefix(.bullet, "> abc|") == "- abc|")
+        #expect(prefix(.quote, "[one\ntwo]") == "[> one\n> two]")
+        #expect(prefix(.quote, "[> one\n> two]") == "[one\ntwo]")
+        #expect(prefix(.quote, "[> one\ntwo]") == "[> one\n> two]")
+        #expect(prefix(.quote, "|") == "> |")
+    }
+
     @Test func multiLineSelectionAppliesToEveryLine() {
         #expect(prefix(.bullet, "[one\ntwo\nthree]") == "[- one\n- two\n- three]")
         #expect(prefix(.bullet, "one\n[two\nthr]ee") == "one\n[- two\n- thr]ee")
@@ -166,6 +177,27 @@ struct MarkdownFormatterTests {
         let r = try #require(continued("- one", inserting: 5))
         #expect(r.text == "- one\n- ")
         #expect(r.cursor == 8)
+    }
+
+    @Test func continuesQuote() throws {
+        let r = try #require(continued("> one", inserting: 5))
+        #expect(r.text == "> one\n> ")
+        #expect(r.cursor == r.text.utf16.count)
+    }
+
+    @Test func emptyQuoteLineEndsQuote() throws {
+        let r = try #require(continued("> one\n> ", inserting: 8))
+        #expect(r.text == "> one\n")
+    }
+
+    @Test func continuesIndentedQuote() throws {
+        let r = try #require(continued("  > a", inserting: 5))
+        #expect(r.text == "  > a\n  > ")
+    }
+
+    @Test func emptyQuoteLineWithTextAfterEndsQuote() throws {
+        let r = try #require(continued("> a\n> \nafter", inserting: 6, hint: true))
+        #expect(r.text == "> a\n\nafter")
     }
 
     @Test func continuesTaskUnchecked() throws {

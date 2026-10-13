@@ -461,26 +461,28 @@ struct FormatBar: View {
                 button("Italic", systemImage: "italic") { apply(.italic) }
                 button("List", systemImage: "list.bullet") { apply(.bullet) }
                 button("Task", systemImage: "checklist") { apply(.task) }
+                button("Quote", systemImage: "text.quote") { apply(.quote) }
                 button("Code", systemImage: "chevron.left.forwardslash.chevron.right") { apply(.code) }
                 button("Tag", systemImage: "tag") { insertHash() }
                 Menu {
                     ImageSourceButtons(intake: intake)
                 } label: {
                     Image(systemName: "photo")
-                        .frame(minWidth: 44, minHeight: 44)
+                        .frame(minWidth: AccessoryMetrics.tapSize, minHeight: AccessoryMetrics.tapSize)
                 }
                 .accessibilityLabel("Add image")
                 Menu {
                     AddBlockMenuItems(onAdd: onAddBlock)
                 } label: {
                     Image(systemName: "plus.circle")
-                        .frame(minWidth: 44, minHeight: 44)
+                        .frame(minWidth: AccessoryMetrics.tapSize, minHeight: AccessoryMetrics.tapSize)
                 }
                 .accessibilityLabel("Add block")
             }
             .padding(.horizontal, 12)
         }
         .scrollBounceBehavior(.basedOnSize)
+        .font(AccessoryMetrics.isPad ? .title3 : .body)
         // Plain white (black in light mode) icons, not the accent color.
         .tint(.primary)
     }
@@ -488,7 +490,7 @@ struct FormatBar: View {
     private func button(_ label: String, systemImage: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: systemImage)
-                .frame(minWidth: 44, minHeight: 44)
+                .frame(minWidth: AccessoryMetrics.tapSize, minHeight: AccessoryMetrics.tapSize)
         }
         .accessibilityLabel(label)
     }
@@ -542,9 +544,9 @@ struct SuggestionBar: View {
         let color = tags.first { $0.name == candidate.key }.map(TagColor.color(for:)) ?? .secondary
         return HStack(spacing: 4) {
             Text("#\(candidate.display)")
-                .font(.caption.weight(.medium))
+                .font((AccessoryMetrics.isPad ? Font.callout : .caption).weight(.medium))
             Text("\(candidate.count)")
-                .font(.caption2)
+                .font(AccessoryMetrics.isPad ? .caption : .caption2)
                 .foregroundStyle(.secondary)
         }
         .lineLimit(1)
@@ -552,7 +554,7 @@ struct SuggestionBar: View {
         .padding(.vertical, 6)
         .background(RoundedRectangle(cornerRadius: 8).fill(color.opacity(0.15)))
         .foregroundStyle(.primary)
-        .frame(minHeight: 44)
+        .frame(minHeight: AccessoryMetrics.tapSize)
         .contentShape(Rectangle())
     }
 }

@@ -140,6 +140,7 @@ const FORMAT_BAR: HelpIconName[] = [
   'italic',
   'list',
   'checklist',
+  'quote',
   'code',
   'tag',
   'photo',

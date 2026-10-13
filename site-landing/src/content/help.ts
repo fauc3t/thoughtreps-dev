@@ -38,6 +38,7 @@ export const HELP_ICONS = {
   italic: 'Italic',
   list: 'List',
   checklist: 'Task',
+  quote: 'Quote',
   link: 'Link',
   code: 'Code',
   heading: 'Heading',
@@ -605,6 +606,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
           'The {icon:italic} button wraps text in `_underscores_`.',
           'The {icon:list} button adds `- ` at the start of the line.',
           'The {icon:checklist} button adds `- [ ] `, which shows as a checklist item.',
+          'The {icon:quote} button adds `> ` at the start of every selected line, so it works on several lines at once.',
           'The {icon:code} button wraps text in backticks.',
           'The {icon:tag} button types a `#` and shows your tags to pick from.',
           'The {icon:photo} button adds an image. See [Add images and galleries](/help/images-and-galleries).',
@@ -625,7 +627,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
       {
         heading: 'Lists keep going',
         paragraphs: [
-          "Press return at the end of a bullet, numbered or task item, and the next item starts for you. Press return on an empty item to end the list. Delete at the start of an item to remove its bullet. Tap a task's box to tick or untick it.",
+          "Press return at the end of a bullet, numbered or task item, and the next item starts for you. Press return on an empty item to end the list. Quotes work the same way: return continues the quote, and return on an empty quote line ends it. Delete at the start of an item to remove its bullet. Tap a task's box to tick or untick it.",
         ],
       },
       {

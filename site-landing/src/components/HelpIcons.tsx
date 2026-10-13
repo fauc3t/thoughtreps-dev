@@ -129,6 +129,11 @@ const GLYPHS: Record<HelpIconName, ReactNode> = {
       <path d="m3 7 2 2 4-4" />
     </>
   ),
+  quote: (
+    <>
+      <path d="M17 5H3M21 12H8M21 19H8M3 12v7" />
+    </>
+  ),
   link: (
     <>
       <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />

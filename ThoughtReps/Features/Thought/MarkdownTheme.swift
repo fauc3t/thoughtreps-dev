@@ -140,13 +140,18 @@ extension Theme {
                     .markdownMargin(top: .zero, bottom: gap)
             }
             .blockquote { configuration in
-                HStack(spacing: 10) {
-                    Rectangle()
-                        .fill(Color.ink)
-                        .frame(width: 2)
+                HStack(alignment: .top, spacing: 12) {
+                    Capsule()
+                        .fill(Color.accent)
+                        .frame(width: 3)
                     configuration.label
-                        .markdownTextStyle { ForegroundColor(Color.subtle) }
+                        .markdownTextStyle { ForegroundColor(Color.ink.opacity(0.85)) }
                 }
+                .padding(.vertical, 10)
+                .padding(.leading, 12)
+                .padding(.trailing, 14)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(RoundedRectangle(cornerRadius: 10).fill(ThemeManager.shared.current.card.alwaysFilled ? Color.hl : Color.surface))
                 .fixedSize(horizontal: false, vertical: true)
                 .markdownMargin(top: .zero, bottom: gap)
             }

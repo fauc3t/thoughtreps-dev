@@ -165,17 +165,25 @@ final class StyledTextView: UITextView {
     }
 }
 
+/// Sizes of the keyboard accessory. The idiom, not the size class, decides: the bar's height is fixed
+/// when it is created, and an iPad window narrowed to compact width keeps the larger bar.
+enum AccessoryMetrics {
+    static var isPad: Bool { UIDevice.current.userInterfaceIdiom == .pad }
+    static var pillHeight: CGFloat { isPad ? 56 : 48 }
+    static var tapSize: CGFloat { isPad ? 52 : 44 }
+    static var maxWidth: CGFloat { isPad ? 640 : .infinity }
+}
+
 /// Keyboard accessory that floats its SwiftUI content in a glass pill above the keyboard, like
 /// SwiftUI's `.keyboard` toolbar.
 @MainActor
 private final class AccessoryBar: UIInputView {
-    static let pillHeight: CGFloat = 48
     static let margin: CGFloat = 8
     private let content: UIView & UIContentView
 
     init(rootView: AnyView) {
         content = Self.configuration(rootView).makeContentView()
-        let height = Self.pillHeight + 2 * Self.margin
+        let height = AccessoryMetrics.pillHeight + 2 * Self.margin
         super.init(frame: CGRect(x: 0, y: 0, width: 0, height: height), inputViewStyle: .default)
         allowsSelfSizing = true
         backgroundColor = .clear
@@ -212,7 +220,7 @@ private struct AccessoryPill: View {
     var body: some View {
         let pill = content
             .padding(.horizontal, 4)
-            .frame(maxWidth: .infinity, minHeight: AccessoryBar.pillHeight, maxHeight: AccessoryBar.pillHeight)
+            .frame(maxWidth: AccessoryMetrics.maxWidth, minHeight: AccessoryMetrics.pillHeight, maxHeight: AccessoryMetrics.pillHeight)
             .clipShape(Capsule())
         Group {
             if #available(iOS 26, *) {
@@ -225,6 +233,7 @@ private struct AccessoryPill: View {
             }
         }
         .padding(AccessoryBar.margin)
+        .frame(maxWidth: .infinity)
     }
 }
 
