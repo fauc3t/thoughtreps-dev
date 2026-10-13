@@ -136,8 +136,8 @@ struct PersistenceTests {
         #expect(pinned.createdAt == t0)
         #expect(pinned.sortedTags.map(\.name) == ["study", "swift"])
         #expect(pinned.sortedTags.map(\.displayName) == ["study", "Swift"])
-        #expect(pinned.sortedBlocks.map(\.content) == ["Answer one", "Answer two"])
-        #expect(pinned.sortedBlocks.map(\.title) == ["Quiz", nil])
+        #expect(pinned.sortedBlocks.map(\.content) == ["Answer one", "Answer two", ""])
+        #expect(pinned.sortedBlocks.map(\.title) == ["Quiz", nil, nil])
 
         let viewed = try thought("# Viewed twice")
         #expect(viewed.viewCount == 2)
@@ -170,11 +170,12 @@ struct PersistenceTests {
         #expect(archived.firstImage === gallery.sortedImages.first)
 
         #expect(try context.fetchCount(FetchDescriptor<ThoughtReps.Tag>()) == 3)
-        #expect(try context.fetchCount(FetchDescriptor<Block>()) == 3)
+        #expect(try context.fetchCount(FetchDescriptor<Block>()) == 4)
         #expect(try context.fetchCount(FetchDescriptor<ImageAsset>()) == 3)
 
-        #expect(pinned.sortedBlocks.map(\.kindRaw) == ["markdown", "markdown"])
-        #expect(pinned.sortedBlocks.map(\.isBlurred) == [true, true])
+        #expect(pinned.sortedBlocks.map(\.kindRaw) == ["markdown", "markdown", "thoughtLink"])
+        #expect(pinned.sortedBlocks.map(\.isBlurred) == [true, true, false])
+        #expect(pinned.sortedBlocks.map(\.linkedThoughtID) == [nil, nil, viewed.id])
         #expect(gallery.isBlurred == false)
         #expect(try IntegrityChecker.check(context).isEmpty)
     }

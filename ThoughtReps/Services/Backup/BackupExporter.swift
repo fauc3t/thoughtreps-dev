@@ -217,7 +217,8 @@ extension ThoughtRecord {
                 return BlockRecord(
                     id: block.id, kindRaw: block.kind.rawValue, title: block.title, content: content, order: block.order,
                     isBlurred: block.kind == .markdown && (block.isBlurred || block.kindRaw == BlockKind.legacyBlurredRaw),
-                    images: block.sortedImages.filter { hasImage($0.id) }.map(record)
+                    images: block.sortedImages.filter { hasImage($0.id) }.map(record),
+                    linkedThoughtID: block.linkedThoughtID
                 )
             },
             images: (thought.images ?? []).filter { $0.block == nil && hasImage($0.id) }

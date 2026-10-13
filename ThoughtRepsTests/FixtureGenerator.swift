@@ -50,6 +50,7 @@ struct FixtureGenerator {
         store.archive(shelved, now: t0.addingTimeInterval(20 * day))
 
         store.create(body: "# Plain", now: t0)
+        store.addLink(to: viewed.id, in: pinned, now: t0)
         #expect(try IntegrityChecker.check(container.mainContext).isEmpty)
     }
 }

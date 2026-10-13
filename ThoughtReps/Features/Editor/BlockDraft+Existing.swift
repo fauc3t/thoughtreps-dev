@@ -13,7 +13,8 @@ extension BlockDraft {
                 title: $0.title ?? "",
                 content: $0.content,
                 isBlurred: resolved.isBlurred,
-                images: $0.sortedImages.map { ImageDraft(existing: $0) }
+                images: $0.sortedImages.map { ImageDraft(existing: $0) },
+                linkedThoughtID: $0.linkedThoughtID
             )
         }
     }

@@ -42,4 +42,40 @@ enum ThoughtCounts {
             return 0
         }
     }
+
+    // MARK: Linked thoughts
+
+    /// The most "Linked from" lists; the rest show as a count.
+    static let linkedFromLimit = 50
+
+    /// The thoughts with these ids, archived or not, in one fetch. Ids with no thought are missing from the result.
+    static func targets(of ids: [UUID], in context: ModelContext) -> [UUID: Thought] {
+        guard !ids.isEmpty else { return [:] }
+        do {
+            let found = try context.fetch(FetchDescriptor<Thought>(predicate: #Predicate { ids.contains($0.id) }))
+            return Dictionary(found.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        } catch {
+            logger.error("Link target fetch failed: \(error)")
+            return [:]
+        }
+    }
+
+    /// The thoughts that link to `id`, archived ones left out, at most `linkedFromLimit`, and how many
+    /// there are in all. Sources are the most recently updated first.
+    static func linkedFrom(_ id: UUID, in context: ModelContext) -> (thoughts: [Thought], total: Int) {
+        let link = BlockKind.thoughtLink.rawValue
+        let predicate = #Predicate<Block> {
+            $0.kindRaw == link && $0.linkedThoughtID == id && !($0.thought?.isArchived ?? true)
+        }
+        do {
+            let total = try context.fetchCount(FetchDescriptor<Block>(predicate: predicate))
+            var descriptor = FetchDescriptor<Block>(predicate: predicate)
+            descriptor.sortBy = [SortDescriptor(\.thought?.updatedAt, order: .reverse), SortDescriptor(\.id)]
+            descriptor.fetchLimit = linkedFromLimit
+            return (try context.fetch(descriptor).compactMap(\.thought), total)
+        } catch {
+            logger.error("Linked-from fetch failed: \(error)")
+            return ([], 0)
+        }
+    }
 }

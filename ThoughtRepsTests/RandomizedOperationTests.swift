@@ -65,13 +65,26 @@ struct RandomizedOperationTests {
         thought.sortedBlocks.map {
             BlockDraft(
                 id: $0.id, kind: $0.kind, title: $0.title ?? "", content: $0.content, isBlurred: $0.isBlurred,
-                images: $0.sortedImages.map { ImageDraft(existing: $0) }
+                images: $0.sortedImages.map { ImageDraft(existing: $0) }, linkedThoughtID: $0.linkedThoughtID
             )
         }
     }
 
-    static func randomBlocks(_ rng: inout SeededGenerator) -> [BlockDraft] {
+    /// Each link block with its owner and the owner's `updatedAt`, to check that deleting a target leaves them be.
+    static func linkSnapshot(_ context: ModelContext, excluding excluded: UUID) throws -> [String] {
+        try context.fetch(FetchDescriptor<Thought>()).filter { $0.id != excluded }.flatMap { thought in
+            (thought.blocks ?? []).filter { $0.kind == .thoughtLink }.map {
+                "\(thought.id) \($0.id) \($0.linkedThoughtID?.uuidString ?? "-") \($0.order) \(thought.updatedAt.timeIntervalSince1970)"
+            }
+        }.sorted()
+    }
+
+    static func randomBlocks(_ rng: inout SeededGenerator, linkable: [UUID] = []) -> [BlockDraft] {
         (0..<Int.random(in: 0...4, using: &rng)).map { _ in
+            if Int.random(in: 0..<5, using: &rng) == 0 {
+                // Targets may be live, missing, repeated, the thought itself (when `linkable` holds it) or absent.
+                return BlockDraft(kind: .thoughtLink, linkedThoughtID: (linkable.map(Optional.some) + [UUID(), nil]).randomElement(using: &rng)!)
+            }
             if Int.random(in: 0..<4, using: &rng) == 0 {
                 // No images drops the gallery.
                 return BlockDraft(kind: .gallery, title: Bool.random(using: &rng) ? "Gallery" : "", images: randomImages(&rng, count: 0...3))
@@ -186,7 +199,7 @@ struct RandomizedOperationTests {
 
         for step in 0..<Self.stepsPerSeed {
             let thoughts = try context.fetch(FetchDescriptor<Thought>(sortBy: [SortDescriptor(\.createdAt), SortDescriptor(\.id)]))
-            var op = Int.random(in: 0..<24, using: &rng)
+            var op = Int.random(in: 0..<27, using: &rng)
             if op == 22 && Int.random(in: 0..<6, using: &rng) != 0 { op = 12 }
             if thoughts.isEmpty && op >= 2 && op != 11 && op != 12 && op != 18 && op != 22 && op != 23 { op = 0 }
             let target = thoughts.randomElement(using: &rng)
@@ -204,14 +217,14 @@ struct RandomizedOperationTests {
             case 0, 1:
                 let interval = Self.randomInterval(&rng)
                 let learn = Int.random(in: 0..<4, using: &rng) == 0
-                var blocks = Self.randomBlocks(&rng)
+                var blocks = Self.randomBlocks(&rng, linkable: thoughts.map(\.id))
                 var (body, images) = Self.withInlineImages(Self.randomBody(&rng), &rng)
                 Self.moveTokensToBlocks(body: &body, images: images, blocks: &blocks, &rng)
                 store.create(body: body, blocks: blocks, images: images, intervalDays: interval, learn: learn, now: now)
                 description = "create(interval: \(String(describing: interval)), learn: \(learn), blocks: \(blocks.count), inline: \(images.count))"
             case 2:
                 var (body, images) = Self.withInlineImages(Self.randomBody(&rng), &rng)
-                var blocks = Self.randomBlocks(&rng)
+                var blocks = Self.randomBlocks(&rng, linkable: thoughts.map(\.id))
                 Self.moveTokensToBlocks(body: &body, images: images, blocks: &blocks, &rng)
                 let interval = Self.randomInterval(&rng)
                 store.update(target!, body: body, blocks: blocks, images: images, intervalDays: interval, now: now)
@@ -332,6 +345,30 @@ struct RandomizedOperationTests {
                     store.setLearnMode(target!, true, now: now)
                     allowedClocks = [1]
                     description = "setLearnMode(true) (instead of review)"
+                }
+            case 24:
+                let linkTarget = (thoughts.map(\.id) + [UUID()]).randomElement(using: &rng)!
+                store.addLink(to: linkTarget, in: target!, now: now)
+                allowedClocks = [0]
+                description = "add link (to self: \(linkTarget == target!.id))"
+            case 25:
+                if let linkTarget = target!.sortedBlocks.compactMap(\.linkedThoughtID).randomElement(using: &rng) {
+                    store.removeLink(to: linkTarget, in: target!, now: now)
+                    description = "remove link"
+                } else {
+                    description = "remove link (none)"
+                }
+                allowedClocks = [0]
+            case 26:
+                let linked = try context.fetch(FetchDescriptor<Block>()).filter { $0.kind == .thoughtLink }.compactMap(\.linkedThoughtID)
+                let live = Dictionary(thoughts.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+                if let doomed = linked.filter({ live[$0] != nil }).randomElement(using: &rng), let victim = live[doomed] {
+                    let untouched = try Self.linkSnapshot(context, excluding: doomed)
+                    if store.delete(victim, now: now) { deletedIDs.insert(doomed) }
+                    #expect(try Self.linkSnapshot(context, excluding: doomed) == untouched, "seed \(seed) step \(step) delete touched linking thoughts")
+                    description = "delete a link target"
+                } else {
+                    description = "delete a link target (none)"
                 }
             case 22:
                 store.deleteAll()

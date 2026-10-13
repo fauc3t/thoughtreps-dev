@@ -127,8 +127,13 @@ enum BackupFormatV1 {
         var isBlurred: Bool
         /// Gallery blocks only.
         var images: [ImageRecord]
+        /// Link blocks only. Absent in archives from before it existed.
+        var linkedThoughtID: UUID?
 
-        init(id: UUID, kindRaw: String, title: String?, content: String, order: Int, isBlurred: Bool = false, images: [ImageRecord]) {
+        init(
+            id: UUID, kindRaw: String, title: String?, content: String, order: Int, isBlurred: Bool = false,
+            images: [ImageRecord], linkedThoughtID: UUID? = nil
+        ) {
             self.id = id
             self.kindRaw = kindRaw
             self.title = title
@@ -136,6 +141,7 @@ enum BackupFormatV1 {
             self.order = order
             self.isBlurred = isBlurred
             self.images = images
+            self.linkedThoughtID = linkedThoughtID
         }
 
         init(from decoder: Decoder) throws {
@@ -147,6 +153,7 @@ enum BackupFormatV1 {
             order = try container.decode(Int.self, forKey: .order)
             isBlurred = try container.decodeIfPresent(Bool.self, forKey: .isBlurred) ?? false
             images = try container.decode([ImageRecord].self, forKey: .images)
+            linkedThoughtID = try container.decodeIfPresent(UUID.self, forKey: .linkedThoughtID)
         }
 
         /// The kind and blur state this record stands for, mapping the old "blurred" kind; nil if unknown.
@@ -199,13 +206,19 @@ extension ThoughtRecord {
         guard Set(galleryIDs).count == galleryIDs.count, Set(galleryIDs).isDisjoint(with: inlineIDs),
               Set(blocks.map(\.id)).count == blocks.count
         else { return false }
+        var linkTargets = Set<UUID>()
         for block in blocks {
             guard let kind = block.resolved?.kind else { return false }
+            guard kind == .thoughtLink || block.linkedThoughtID == nil else { return false }
             switch kind {
             case .markdown:
                 guard block.images.isEmpty, !block.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
             case .gallery:
                 guard !block.images.isEmpty, !block.isBlurred else { return false }
+            case .thoughtLink:
+                guard let target = block.linkedThoughtID, target != id, linkTargets.insert(target).inserted,
+                      block.images.isEmpty, !block.isBlurred, block.content.isEmpty, block.title == nil
+                else { return false }
             }
         }
         guard (images + blocks.flatMap(\.images)).allSatisfy({ $0.width > 0 && $0.height > 0 }) else { return false }

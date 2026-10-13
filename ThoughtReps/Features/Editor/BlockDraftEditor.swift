@@ -5,7 +5,8 @@ struct AddBlockMenuItems: View {
     let onAdd: (BlockKind) -> Void
 
     var body: some View {
-        ForEach(BlockKind.allCases) { kind in
+        // Hidden until there's a picker to choose a thought.
+        ForEach(BlockKind.allCases.filter { $0 != .thoughtLink }) { kind in
             Button {
                 onAdd(kind)
             } label: {
@@ -80,6 +81,9 @@ struct BlockDraftEditor: View {
                 TextField("Title (optional)", text: $draft.title)
                     .font(.subheadline.weight(.semibold))
                 gallery
+            case .thoughtLink:
+                // Link blocks have no editing row yet.
+                EmptyView()
             }
         }
         .padding(.vertical, 4)

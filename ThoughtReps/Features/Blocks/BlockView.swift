@@ -19,6 +19,9 @@ struct BlockView: View {
             )
         case .gallery:
             GalleryBlockView(title: block.title, images: block.sortedImages, onOpenImage: onOpenImage)
+        case .thoughtLink:
+            // Link cards render in a later change; nothing to show yet.
+            EmptyView()
         }
     }
 }

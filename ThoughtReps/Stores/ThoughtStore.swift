@@ -30,6 +30,9 @@ struct BlockDraft: Identifiable, Equatable {
     var isBlurred = false
     /// Gallery blocks only: the images in display order, new or already stored.
     var images: [ImageDraft] = []
+    /// Link blocks only: the thought linked to. A draft without one, or linking to its own thought
+    /// or to a target an earlier draft already links, is dropped by the store.
+    var linkedThoughtID: UUID?
 }
 
 /// All writes go through here so tag syncing and scheduling rules are applied in one place.
@@ -148,6 +151,7 @@ struct ThoughtStore {
         var isBlurred = false
         /// Gallery blocks: the images wanted, in display order.
         var images: [ImageDraft] = []
+        var linkedThoughtID: UUID?
         var existing: Block?
     }
 
@@ -197,6 +201,11 @@ struct ThoughtStore {
         let storedImageIDs = Set((thought.images ?? []).map(\.id))
         let listedElsewhere = Set(drafts.filter { $0.kind == .gallery }.flatMap(\.images).filter { $0.processed == nil }.map(\.id))
         var claimedImageIDs = Set<UUID>()
+        var reusableLinks = Dictionary(
+            (thought.blocks ?? []).filter { $0.kind == .thoughtLink }.map { ($0.id, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        var claimedLinkTargets = Set<UUID>()
 
         for draft in drafts where claimedBlockIDs.insert(draft.id).inserted {
             let trimmedTitle = draft.title.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -234,9 +243,17 @@ struct ThoughtStore {
                 reusableGalleries[draft.id] = nil
                 let id = existing != nil || !existingBlockIDs.contains(draft.id) ? draft.id : UUID()
                 plan.blocks.append(PlannedBlock(id: id, kind: .gallery, title: title, content: "", images: wanted, existing: existing))
+            case .thoughtLink:
+                guard let target = draft.linkedThoughtID, target != thought.id, claimedLinkTargets.insert(target).inserted else { continue }
+                let existing = reusableLinks[draft.id]
+                reusableLinks[draft.id] = nil
+                let id = existing != nil || !existingBlockIDs.contains(draft.id) ? draft.id : UUID()
+                plan.blocks.append(PlannedBlock(
+                    id: id, kind: .thoughtLink, title: nil, content: "", linkedThoughtID: target, existing: existing
+                ))
             }
         }
-        plan.surplusBlocks = Array(reusableMarkdown) + Array(reusableGalleries.values)
+        plan.surplusBlocks = Array(reusableMarkdown) + Array(reusableGalleries.values) + Array(reusableLinks.values)
 
         let markdown = plan.blocks.filter { $0.kind == .markdown }
         plan.texts = [body] + markdown.map(\.content)
@@ -274,6 +291,7 @@ struct ThoughtStore {
             block.title = planned.title
             block.content = planned.content
             block.isBlurred = planned.isBlurred
+            block.linkedThoughtID = planned.linkedThoughtID
         }
     }
 
@@ -316,7 +334,7 @@ struct ThoughtStore {
             } else {
                 let block = Block(
                     id: planned.id, kind: planned.kind, content: planned.content, title: planned.title,
-                    isBlurred: planned.isBlurred, order: order
+                    isBlurred: planned.isBlurred, order: order, linkedThoughtID: planned.linkedThoughtID
                 )
                 order += 1
                 context.insert(block)
@@ -509,6 +527,49 @@ struct ThoughtStore {
         return tag
     }
 
+    // MARK: Links
+
+    /// Adds a link to `targetID` as the thought's last block. Rejected (false, nothing written) for a
+    /// link to the thought itself or to a target it already links. The target isn't looked up, so a
+    /// link can point at a thought that isn't there. Content change: `updatedAt` only, saved first,
+    /// then the block alone, as `update` does for new blocks.
+    @discardableResult
+    func addLink(to targetID: UUID, in thought: Thought, now: Date) -> Bool {
+        let blocks = thought.blocks ?? []
+        guard targetID != thought.id, !blocks.contains(where: { $0.linkedThoughtID == targetID }) else { return false }
+        if pendingImageSaves.ids.contains(thought.id), !removeTokenlessInlineImages(of: thought) { return false }
+        let order = (blocks.map(\.order).max() ?? -1) + 1
+        defer { reindex(ids: [thought.id]) }
+        thought.updatedAt = now
+        guard persist() else { return false }
+        let block = Block(kind: .thoughtLink, content: "", order: order, linkedThoughtID: targetID)
+        context.insert(block)
+        block.thought = thought
+        return persist()
+    }
+
+    /// Removes the thought's link to `targetID`, then renumbers the remaining blocks. True if there was
+    /// none. Same step order as `update`: `updatedAt`, then the deletion with the renumbering.
+    @discardableResult
+    func removeLink(to targetID: UUID, in thought: Thought, now: Date) -> Bool {
+        guard let link = (thought.blocks ?? []).first(where: { $0.kind == .thoughtLink && $0.linkedThoughtID == targetID }) else {
+            return true
+        }
+        if pendingImageSaves.ids.contains(thought.id), !removeTokenlessInlineImages(of: thought) { return false }
+        defer { reindex(ids: [thought.id]) }
+        thought.updatedAt = now
+        guard persist() else { return false }
+        for image in link.images ?? [] {
+            remove(image)
+        }
+        link.thought = nil
+        context.delete(link)
+        for (index, block) in thought.sortedBlocks.filter({ $0 !== link }).enumerated() {
+            setOrder(of: block, to: index)
+        }
+        return persist()
+    }
+
     // MARK: Schedule actions
 
     @discardableResult
@@ -525,6 +586,14 @@ struct ThoughtStore {
         guard persist() else { return false }
         if countsAsDueOpen { ratingPrompt.recordDueOpen() }
         return true
+    }
+
+    /// A visit through a link: a view for the stats only. The schedule, its clock and the rating prompt stay.
+    @discardableResult
+    func recordVisit(_ thought: Thought, now: Date) -> Bool {
+        thought.viewCount += 1
+        thought.lastViewedAt = now
+        return persist()
     }
 
     @discardableResult
@@ -936,7 +1005,8 @@ struct ThoughtStore {
             takenBlockIDs.insert(id)
             let resolved = source.resolved ?? (kind: .markdown, isBlurred: false)
             let block = Block(
-                id: id, kind: resolved.kind, content: source.content, title: source.title, isBlurred: resolved.isBlurred, order: order
+                id: id, kind: resolved.kind, content: source.content, title: source.title, isBlurred: resolved.isBlurred, order: order,
+                linkedThoughtID: source.linkedThoughtID
             )
             context.insert(block)
             block.thought = thought
@@ -979,7 +1049,8 @@ struct ThoughtStore {
             let resolved = block.resolved ?? (kind: .markdown, isBlurred: false)
             return BlockDraft(
                 id: blockID(block.id), kind: resolved.kind, title: block.title ?? "", content: block.content, isBlurred: resolved.isBlurred,
-                images: block.images.enumerated().sorted { ($0.element.order, $0.offset) < ($1.element.order, $1.offset) }.map { draft($0.element) }
+                images: block.images.enumerated().sorted { ($0.element.order, $0.offset) < ($1.element.order, $1.offset) }.map { draft($0.element) },
+                linkedThoughtID: block.linkedThoughtID
             )
         }
         // The index fingerprint is `updatedAt` plus the archive flag. If the app dies mid-replace, `updatedAt`

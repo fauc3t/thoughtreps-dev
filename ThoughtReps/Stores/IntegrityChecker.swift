@@ -150,6 +150,23 @@ enum IntegrityChecker {
                 if block.kind == .gallery && block.isBlurred {
                     add("Gallery block \(block.id) is blurred", block.id.uuidString)
                 }
+                if block.kind == .thoughtLink {
+                    if block.linkedThoughtID == nil {
+                        add("Link block \(block.id) has no linkedThoughtID", block.id.uuidString)
+                    } else if block.linkedThoughtID == thought.id {
+                        add("Link block \(block.id) links to its own thought", block.id.uuidString)
+                    }
+                    if !block.content.isEmpty || block.title != nil || block.isBlurred || !(block.images ?? []).isEmpty {
+                        add("Link block \(block.id) has content, a title, blur or images", block.id.uuidString)
+                    }
+                } else if block.linkedThoughtID != nil {
+                    add("Non-link block \(block.id) has a linkedThoughtID", block.id.uuidString)
+                }
+            }
+            // Links to thoughts that no longer exist are allowed.
+            let linkTargets = (thought.blocks ?? []).filter { $0.kind == .thoughtLink }.compactMap(\.linkedThoughtID)
+            if Set(linkTargets).count != linkTargets.count {
+                add("Thought \(id) links to the same thought twice", id)
             }
 
             let orders = (thought.blocks ?? []).map(\.order).sorted()
