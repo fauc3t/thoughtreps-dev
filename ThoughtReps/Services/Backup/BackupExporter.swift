@@ -14,6 +14,7 @@ struct BackupExporter: Sendable {
     var build: String
     var thoughtBatchSize = 500
     var imageBatchSize = 25
+    var fileBatchSize = 5
 
     /// Returns the finished file, inside a fresh temporary directory the caller removes after use.
     /// `progress` runs on the calling thread with a fraction from 0 to 1.
@@ -33,7 +34,8 @@ struct BackupExporter: Sendable {
         let encoder = BackupFormat.encoder()
         var entries: [String: String] = [:]
 
-        let imageHashes = try hashImages { progress(0.25 * $0) }
+        let imageHashes = try hashImages { progress(0.2 * $0) }
+        let fileHashes = try hashFiles { progress(0.2 + 0.05 * $0) }
 
         let tagsURL = directory.appendingPathComponent(BackupFormat.tagsPath)
         let tagLines = try JSONLWriter(url: tagsURL, encoder: encoder)
@@ -48,12 +50,17 @@ struct BackupExporter: Sendable {
         let thoughtLines = try JSONLWriter(url: thoughtsURL, encoder: encoder)
         var referenced: [UUID] = []
         var seen = Set<UUID>()
+        var referencedFiles: [UUID] = []
+        var seenFiles = Set<UUID>()
         let total = max(1, try ModelContext(container).fetchCount(FetchDescriptor<Thought>()))
         try forEachThoughtBatch { thoughts in
             for thought in thoughts {
-                let record = ThoughtRecord(thought, hasImage: { imageHashes[$0] != nil })
+                let record = ThoughtRecord(thought, hasImage: { imageHashes[$0] != nil }, hasFile: { fileHashes[$0] != nil })
                 for id in record.imageIDs where seen.insert(id).inserted {
                     referenced.append(id)
+                }
+                for id in record.fileIDs where seenFiles.insert(id).inserted {
+                    referencedFiles.append(id)
                 }
                 try thoughtLines.append(record)
             }
@@ -63,11 +70,14 @@ struct BackupExporter: Sendable {
         for id in referenced {
             entries[BackupFormat.imagePath(for: id)] = imageHashes[id]
         }
+        for id in referencedFiles {
+            entries[BackupFormat.filePath(for: id)] = fileHashes[id]
+        }
 
         let manifest = BackupManifest(
             format: BackupFormat.identifier, formatVersion: BackupFormat.currentVersion,
             appVersion: appVersion, build: build, exportedAt: now,
-            counts: .init(thoughts: thoughtLines.count, tags: tagLines.count, images: referenced.count),
+            counts: .init(thoughts: thoughtLines.count, tags: tagLines.count, images: referenced.count, files: referencedFiles.count),
             entries: entries
         )
 
@@ -94,8 +104,23 @@ struct BackupExporter: Sendable {
                 }
             }
             added += ids.count
-            progress(0.5 + 0.5 * Double(added) / Double(max(1, referenced.count)))
+            progress(0.5 + 0.4 * Double(added) / Double(max(1, referenced.count)))
         }
+
+        for ids in referencedFiles.chunked(into: fileBatchSize) {
+            try autoreleasepool {
+                let context = ModelContext(container)
+                let files = try context.fetch(FetchDescriptor<FileAsset>(predicate: #Predicate { ids.contains($0.id) }))
+                let byID = Dictionary(files.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+                for id in ids {
+                    guard let data = byID[id]?.data, hash(of: data) == fileHashes[id] else {
+                        throw BackupError.changedDuringExport
+                    }
+                    try add(data, as: BackupFormat.filePath(for: id), to: archive, method: .deflate)
+                }
+            }
+        }
+        progress(1)
         return archiveURL
     }
 
@@ -108,6 +133,21 @@ struct BackupExporter: Sendable {
             for image in images {
                 if let data = image.data {
                     hashes[image.id] = hash(of: data)
+                }
+            }
+            progress(Double(hashes.count) / Double(total))
+        }
+        return hashes
+    }
+
+    /// SHA-256 of every attached file's bytes, like `hashImages`.
+    private func hashFiles(progress: (Double) -> Void) throws -> [UUID: String] {
+        var hashes: [UUID: String] = [:]
+        let total = max(1, try ModelContext(container).fetchCount(FetchDescriptor<FileAsset>()))
+        try forEachFileBatch { files in
+            for file in files {
+                if let data = file.data {
+                    hashes[file.id] = hash(of: data)
                 }
             }
             progress(Double(hashes.count) / Double(total))
@@ -139,7 +179,7 @@ struct BackupExporter: Sendable {
                     descriptor.predicate = #Predicate { $0.createdAt > date || ($0.createdAt == date && $0.id > id) }
                 }
                 descriptor.fetchLimit = thoughtBatchSize
-                descriptor.relationshipKeyPathsForPrefetching = [\.tags, \.blocks, \.images]
+                descriptor.relationshipKeyPathsForPrefetching = [\.tags, \.blocks, \.images, \.files]
                 let thoughts = try context.fetch(descriptor)
                 try body(thoughts)
                 if let end = thoughts.last { last = (end.createdAt, end.id) }
@@ -169,6 +209,26 @@ struct BackupExporter: Sendable {
         }
     }
 
+    private func forEachFileBatch(_ body: ([FileAsset]) throws -> Void) throws {
+        var last: UUID?
+        while true {
+            let count: Int = try autoreleasepool {
+                let context = ModelContext(container)
+                context.autosaveEnabled = false
+                var descriptor = FetchDescriptor<FileAsset>(sortBy: [SortDescriptor(\.id)])
+                if let last {
+                    descriptor.predicate = #Predicate { $0.id > last }
+                }
+                descriptor.fetchLimit = fileBatchSize
+                let files = try context.fetch(descriptor)
+                try body(files)
+                if let end = files.last { last = end.id }
+                return files.count
+            }
+            if count < fileBatchSize { return }
+        }
+    }
+
     /// Tags are few, so plain offset paging is enough.
     private func forEachBatch<Model: PersistentModel>(
         of _: Model.Type, sortedBy sort: [SortDescriptor<Model>], size: Int, _ body: ([Model]) throws -> Void
@@ -192,7 +252,7 @@ struct BackupExporter: Sendable {
 }
 
 extension ThoughtRecord {
-    init(_ thought: Thought, hasImage: (UUID) -> Bool) {
+    init(_ thought: Thought, hasImage: (UUID) -> Bool, hasFile: (UUID) -> Bool = { _ in true }) {
         func record(_ image: ImageAsset) -> ImageRecord {
             ImageRecord(id: image.id, width: image.width, height: image.height, order: image.order)
         }
@@ -211,6 +271,8 @@ extension ThoughtRecord {
             isPinned: thought.isPinned, isArchived: thought.isArchived, archivedAt: thought.archivedAt,
             tags: thought.sortedTags.map(\.name),
             blocks: thought.sortedBlocks.compactMap { block in
+                // A file block with no bytes isn't exported, since an importer would refuse it.
+                if block.kind == .file, block.file.map({ !hasFile($0.id) }) ?? true { return nil }
                 let isMarkdown = block.kind == .markdown
                 let content = isMarkdown ? stripped(block.content) : block.content
                 if isMarkdown, content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return nil }
@@ -218,7 +280,8 @@ extension ThoughtRecord {
                     id: block.id, kindRaw: block.kind.rawValue, title: block.title, content: content, order: block.order,
                     isBlurred: block.kind == .markdown && (block.isBlurred || block.kindRaw == BlockKind.legacyBlurredRaw),
                     images: block.sortedImages.filter { hasImage($0.id) }.map(record),
-                    linkedThoughtID: block.linkedThoughtID
+                    linkedThoughtID: block.linkedThoughtID,
+                    file: (block.kind == .file ? block.file : nil).map { FileRecord(id: $0.id, filename: $0.filename, typeIdentifier: $0.typeIdentifier, byteCount: $0.byteCount) }
                 )
             },
             images: (thought.images ?? []).filter { $0.block == nil && hasImage($0.id) }

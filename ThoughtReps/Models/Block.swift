@@ -7,6 +7,7 @@ enum BlockKind: String, CaseIterable, Identifiable {
     case markdown
     case gallery
     case thoughtLink
+    case file
 
     var id: String { rawValue }
 
@@ -25,6 +26,7 @@ enum BlockKind: String, CaseIterable, Identifiable {
         case .markdown: "Text"
         case .gallery: "Image gallery"
         case .thoughtLink: "Linked thought"
+        case .file: "File"
         }
     }
 
@@ -33,6 +35,7 @@ enum BlockKind: String, CaseIterable, Identifiable {
         case .markdown: "text.alignleft"
         case .gallery: "photo.on.rectangle"
         case .thoughtLink: "link"
+        case .file: "paperclip"
         }
     }
 }
@@ -41,7 +44,8 @@ enum BlockKind: String, CaseIterable, Identifiable {
 /// (Markdown, which can hold #tags and inline image tokens), an optional title, and stays hidden
 /// until tapped when `isBlurred`. A gallery block has an optional title, no `content`, and its
 /// `images`. A link block shows another thought by `linkedThoughtID` and has no content, title,
-/// images or blur; the target may no longer exist. The thought's own `body` acts as the first
+/// images or blur; the target may no longer exist. A file block has no content, title, blur or
+/// images and holds one `FileAsset` in `files`. The thought's own `body` acts as the first
 /// markdown block and is never a `Block`.
 @Model
 final class Block {
@@ -58,6 +62,10 @@ final class Block {
     @Relationship(deleteRule: .cascade, inverse: \ImageAsset.block)
     var images: [ImageAsset]? = []
 
+    /// File blocks only: exactly one.
+    @Relationship(deleteRule: .cascade, inverse: \FileAsset.block)
+    var files: [FileAsset]? = []
+
     init(id: UUID = UUID(), kind: BlockKind, content: String, title: String? = nil, isBlurred: Bool = false, order: Int, linkedThoughtID: UUID? = nil) {
         self.id = id
         self.kindRaw = kind.rawValue
@@ -70,6 +78,10 @@ final class Block {
 
     var kind: BlockKind {
         BlockKind(rawValue: kindRaw) ?? .markdown
+    }
+
+    var file: FileAsset? {
+        files?.first
     }
 
     var sortedImages: [ImageAsset] {

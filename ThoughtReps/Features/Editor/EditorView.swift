@@ -30,6 +30,7 @@ struct EditorView: View {
     @State private var blockSelections: [UUID: TextSelection] = [:]
     @State private var activeField: EditorField = .body
     @State private var intake = ImageIntake()
+    @State private var fileIntake = FileIntake()
     /// The Markdown field that is the first responder; each field's text view keeps this in step.
     @State private var focus: EditorField?
     @State private var pendingNewBlockID: UUID?
@@ -148,6 +149,8 @@ struct EditorView: View {
     private func addBlock(_ kind: BlockKind) {
         if kind == .thoughtLink {
             isPickingLink = true
+        } else if kind == .file {
+            fileIntake.isImporting = true
         } else {
             pendingNewBlockID = drafts.addBlock(kind)
         }
@@ -201,6 +204,13 @@ struct EditorView: View {
         let field = EditorField.resolve(activeField, drafts: drafts)
         inlineDrafts.append(contentsOf: added)
         EditorField.insertImageTokens(added.map(\.id), into: textBinding(for: field), selection: selectionBinding(for: field))
+    }
+
+    /// Each file becomes a block of its own, at the end.
+    private func addFiles(_ added: [FileDraft]) {
+        let blocks = added.map { BlockDraft(kind: .file, file: $0) }
+        drafts.append(contentsOf: blocks)
+        pendingNewBlockID = blocks.last?.id
     }
 
     /// Looks the block up by id because it may have moved or been deleted while the image processed.
@@ -264,6 +274,16 @@ struct EditorView: View {
                         ImageProcessingIndicator(intake: intake)
                             .bodyRow(vertical: 6)
                     }
+                    if fileIntake.isProcessing {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                            Text("Adding file…")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+                        .accessibilityElement(children: .combine)
+                        .bodyRow(vertical: 6)
+                    }
                     let thumbnails = inlineThumbnails(in: text, drafts: inlineDrafts, stored: storedImages)
                     if !thumbnails.isEmpty {
                         InlineImageStrip(thumbnails: thumbnails, remove: removeInlineImage)
@@ -290,7 +310,7 @@ struct EditorView: View {
                 } header: {
                     Text("Blocks")
                 } footer: {
-                    Text("Add more text, a gallery or a linked thought. Turn on blur to hide an answer until you tap it.")
+                    Text("Add more text, a gallery, a linked thought or a file. Turn on blur to hide an answer until you tap it.")
                 }
 
                 Section {
@@ -317,7 +337,8 @@ struct EditorView: View {
             }
             .readableContentMargins()
             .saveErrorAlert(saveErrors)
-            .imageIntake(intake, onAdd: addInlineImages)
+            .imageIntake(intake, files: fileIntake, onAdd: addInlineImages)
+            .fileIntake(fileIntake, onAdd: addFiles)
             .navigationTitle(isNew ? "New thought" : "Edit thought")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -380,7 +401,7 @@ struct EditorView: View {
         .onDisappear { EditorShortcuts.shared.close() }
     }
 
-    private var canSave: Bool { !trimmedText.isEmpty && !isProcessingImages }
+    private var canSave: Bool { !trimmedText.isEmpty && !isProcessingImages && !fileIntake.isProcessing }
 
     private func requestCancel() {
         if isDirty { isConfirmingDiscard = true } else { dismiss() }

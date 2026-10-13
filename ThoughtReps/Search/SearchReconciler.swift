@@ -48,7 +48,7 @@ actor SearchReconciler {
     private func documents(for ids: [UUID]) throws -> [SearchDocument] {
         let context = ModelContext(modelContainer)
         var descriptor = FetchDescriptor<Thought>(predicate: #Predicate { ids.contains($0.id) })
-        descriptor.relationshipKeyPathsForPrefetching = [\.blocks, \.tags]
+        descriptor.relationshipKeyPathsForPrefetching = [\.blocks, \.tags, \.files]
         return try context.fetch(descriptor).map { SearchDocument($0) }
     }
 

@@ -2,9 +2,18 @@ import Foundation
 
 /// One thought handed from the share extension to the app. Encoded as `<id>.json` in the inbox.
 struct InboxItem: Codable, Equatable, Sendable {
+    /// A file shared with the thought, copied into the inbox as `path` (relative to the inbox).
+    /// Items written before attachments existed decode with none.
+    struct Attachment: Codable, Equatable, Sendable {
+        var filename: String
+        var typeIdentifier: String
+        var path: String
+    }
+
     var id: UUID
     var body: String
     var createdAt: Date
+    var attachment: Attachment?
 
     static func encoder() -> JSONEncoder {
         let encoder = JSONEncoder()
@@ -36,6 +45,27 @@ enum Inbox {
         let directory = container.appendingPathComponent(directoryName, isDirectory: true)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         return directory
+    }
+
+    static func attachmentPath(for id: UUID) -> String {
+        "\(id.uuidString).attachment"
+    }
+
+    /// Where the extension holds a shared file until the user saves; private to the extension.
+    static func stagingURL(for id: UUID) -> URL {
+        FileManager.default.temporaryDirectory.appendingPathComponent(attachmentPath(for: id))
+    }
+
+    /// Copies a shared file into the inbox without reading it into memory, and returns its relative path.
+    /// Write the item that names it afterwards: an attachment with no item is an orphan the app deletes.
+    static func copyAttachment(
+        from source: URL, id: UUID, to directory: URL, name: String? = nil, fileManager: FileManager = .default
+    ) throws -> String {
+        let path = name ?? attachmentPath(for: id)
+        let destination = directory.appendingPathComponent(path)
+        try? fileManager.removeItem(at: destination)
+        try fileManager.copyItem(at: source, to: destination)
+        return path
     }
 
     /// Writes to a temp name, then renames to `<id>.json`, so a reader never sees a partial file.

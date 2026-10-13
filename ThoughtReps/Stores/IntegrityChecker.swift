@@ -34,6 +34,7 @@ enum IntegrityChecker {
         let tags = try context.fetch(FetchDescriptor<Tag>())
         let blocks = try context.fetch(FetchDescriptor<Block>())
         let images = try context.fetch(FetchDescriptor<ImageAsset>())
+        let files = try context.fetch(FetchDescriptor<FileAsset>())
         let tombstones = try context.fetch(FetchDescriptor<Tombstone>())
 
         var seenNames = Set<String>()
@@ -79,6 +80,11 @@ enum IntegrityChecker {
             add("Duplicate image id \(image.id)", image.id.uuidString)
         }
 
+        var seenFileIDs = Set<UUID>()
+        for file in files where !seenFileIDs.insert(file.id).inserted {
+            add("Duplicate file id \(file.id)", file.id.uuidString)
+        }
+
         for block in blocks {
             guard let owner = block.thought else {
                 add("Block \(block.id) has no thought", block.id.uuidString)
@@ -114,6 +120,46 @@ enum IntegrityChecker {
             }
         }
 
+        for file in files {
+            let fileID = file.id.uuidString
+            guard let owner = file.thought else {
+                add("File \(fileID) has no thought", fileID)
+                continue
+            }
+            if !(owner.files ?? []).contains(where: { $0 === file }) {
+                add("File \(fileID) points to thought \(owner.id) which does not list it", fileID)
+            }
+            guard let data = file.data else {
+                add("File \(fileID) is missing its data", fileID)
+                continue
+            }
+            if file.byteCount != data.count {
+                add("File \(fileID) byteCount \(file.byteCount) != data length \(data.count)", fileID)
+            }
+            if data.count > FileAttachment.maxBytes {
+                add("File \(fileID) is over the size limit", fileID)
+            }
+            if file.filename.isEmpty || file.filename != FileAttachment.sanitizedFilename(file.filename) {
+                add("File \(fileID) has an unsafe or empty filename", fileID)
+            }
+            if file.typeIdentifier.isEmpty {
+                add("File \(fileID) has no type identifier", fileID)
+            }
+            guard let block = file.block else {
+                add("File \(fileID) has no block", fileID)
+                continue
+            }
+            if block.thought !== owner {
+                add("File \(fileID) belongs to a block of a different thought", fileID)
+            }
+            if block.kind != .file {
+                add("File \(fileID) is in block \(block.id) which is not a file block", fileID)
+            }
+            if !(block.files ?? []).contains(where: { $0 === file }) {
+                add("File \(fileID) points to block \(block.id) which does not list it", fileID)
+            }
+        }
+
         for thought in thoughts {
             let id = thought.id.uuidString
 
@@ -130,6 +176,9 @@ enum IntegrityChecker {
             }
             for image in thought.images ?? [] where image.thought !== thought {
                 add("Thought \(id) lists image \(image.id) whose thought differs", id)
+            }
+            for file in thought.files ?? [] where file.thought !== thought {
+                add("Thought \(id) lists file \(file.id) whose thought differs", id)
             }
 
             let inlineIDs = Set((thought.images ?? []).filter { $0.block == nil }.map(\.id))
@@ -149,6 +198,17 @@ enum IntegrityChecker {
                 }
                 if block.kind == .gallery && block.isBlurred {
                     add("Gallery block \(block.id) is blurred", block.id.uuidString)
+                }
+                let fileCount = (block.files ?? []).count
+                if block.kind == .file {
+                    if fileCount != 1 {
+                        add("File block \(block.id) has \(fileCount) files", block.id.uuidString)
+                    }
+                    if !block.content.isEmpty || block.title != nil || block.isBlurred || !(block.images ?? []).isEmpty {
+                        add("File block \(block.id) has content, a title, blur or images", block.id.uuidString)
+                    }
+                } else if fileCount > 0 {
+                    add("Non-file block \(block.id) has files", block.id.uuidString)
                 }
                 if block.kind == .thoughtLink {
                     if block.linkedThoughtID == nil {

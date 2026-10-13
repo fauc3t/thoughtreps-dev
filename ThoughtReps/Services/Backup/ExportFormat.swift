@@ -9,7 +9,8 @@ extension UTType {
 
 /// The export file: a zip whose first entry is an uncompressed `mimetype` (so the signature sits at a
 /// fixed offset, as in EPUB and ODF), then `manifest.json`, `tags.jsonl`, `thoughts.jsonl` and
-/// `images/<uuid>` (the original image bytes; thumbnails are regenerated on import).
+/// `images/<uuid>` (the original image bytes; thumbnails are regenerated on import) and
+/// `files/<uuid>` (attached file bytes).
 enum BackupFormat {
     static let identifier = "com.thoughtreps.export"
     static let mimeType = "application/vnd.thoughtreps.export+zip"
@@ -21,6 +22,7 @@ enum BackupFormat {
     static let tagsPath = "tags.jsonl"
     static let thoughtsPath = "thoughts.jsonl"
     static let imagePrefix = "images/"
+    static let filePrefix = "files/"
 
     /// Temporary folders for an export being built and an import being read; swept at launch.
     static let exportDirectoryPrefix = "ThoughtRepsExport-"
@@ -34,6 +36,17 @@ enum BackupFormat {
     static func imageID(inPath path: String) -> UUID? {
         guard path.hasPrefix(imagePrefix), let id = UUID(uuidString: String(path.dropFirst(imagePrefix.count))),
               imagePath(for: id) == path
+        else { return nil }
+        return id
+    }
+
+    static func filePath(for id: UUID) -> String {
+        filePrefix + id.uuidString
+    }
+
+    static func fileID(inPath path: String) -> UUID? {
+        guard path.hasPrefix(filePrefix), let id = UUID(uuidString: String(path.dropFirst(filePrefix.count))),
+              filePath(for: id) == path
         else { return nil }
         return id
     }
@@ -80,6 +93,7 @@ typealias TagRecord = BackupFormatV1.TagRecord
 typealias ThoughtRecord = BackupFormatV1.ThoughtRecord
 typealias BlockRecord = BackupFormatV1.BlockRecord
 typealias ImageRecord = BackupFormatV1.ImageRecord
+typealias FileRecord = BackupFormatV1.FileRecord
 
 /// Format version 1. A change to any shape here is a new `BackupFormatV2` and a bumped `formatVersion`;
 /// importers read the version first and decode with the matching types.
@@ -89,6 +103,8 @@ enum BackupFormatV1 {
             var thoughts: Int
             var tags: Int
             var images: Int
+            /// Absent in archives from before file blocks existed.
+            var files: Int = 0
         }
 
         var format: String
@@ -116,6 +132,13 @@ enum BackupFormatV1 {
         var order: Int
     }
 
+    struct FileRecord: Codable, Equatable {
+        var id: UUID
+        var filename: String
+        var typeIdentifier: String
+        var byteCount: Int
+    }
+
     struct BlockRecord: Codable, Equatable {
         var id: UUID
         var kindRaw: String
@@ -129,10 +152,12 @@ enum BackupFormatV1 {
         var images: [ImageRecord]
         /// Link blocks only. Absent in archives from before it existed.
         var linkedThoughtID: UUID?
+        /// File blocks only. Absent in archives from before it existed.
+        var file: FileRecord?
 
         init(
             id: UUID, kindRaw: String, title: String?, content: String, order: Int, isBlurred: Bool = false,
-            images: [ImageRecord], linkedThoughtID: UUID? = nil
+            images: [ImageRecord], linkedThoughtID: UUID? = nil, file: FileRecord? = nil
         ) {
             self.id = id
             self.kindRaw = kindRaw
@@ -142,6 +167,7 @@ enum BackupFormatV1 {
             self.isBlurred = isBlurred
             self.images = images
             self.linkedThoughtID = linkedThoughtID
+            self.file = file
         }
 
         init(from decoder: Decoder) throws {
@@ -154,6 +180,7 @@ enum BackupFormatV1 {
             isBlurred = try container.decodeIfPresent(Bool.self, forKey: .isBlurred) ?? false
             images = try container.decode([ImageRecord].self, forKey: .images)
             linkedThoughtID = try container.decodeIfPresent(UUID.self, forKey: .linkedThoughtID)
+            file = try container.decodeIfPresent(FileRecord.self, forKey: .file)
         }
 
         /// The kind and blur state this record stands for, mapping the old "blurred" kind; nil if unknown.
@@ -187,6 +214,16 @@ enum BackupFormatV1 {
     }
 }
 
+extension BackupFormatV1.Manifest.Counts {
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        thoughts = try container.decode(Int.self, forKey: .thoughts)
+        tags = try container.decode(Int.self, forKey: .tags)
+        images = try container.decode(Int.self, forKey: .images)
+        files = try container.decodeIfPresent(Int.self, forKey: .files) ?? 0
+    }
+}
+
 extension TagRecord {
     var updatedClock: Date { updatedAt ?? .distantPast }
 }
@@ -210,6 +247,7 @@ extension ThoughtRecord {
         for block in blocks {
             guard let kind = block.resolved?.kind else { return false }
             guard kind == .thoughtLink || block.linkedThoughtID == nil else { return false }
+            guard kind == .file || block.file == nil else { return false }
             switch kind {
             case .markdown:
                 guard block.images.isEmpty, !block.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
@@ -219,8 +257,14 @@ extension ThoughtRecord {
                 guard let target = block.linkedThoughtID, target != id, linkTargets.insert(target).inserted,
                       block.images.isEmpty, !block.isBlurred, block.content.isEmpty, block.title == nil
                 else { return false }
+            case .file:
+                guard let file = block.file, (0...FileAttachment.maxBytes).contains(file.byteCount), !file.filename.isEmpty,
+                      !file.typeIdentifier.isEmpty, block.images.isEmpty, !block.isBlurred, block.content.isEmpty, block.title == nil
+                else { return false }
             }
         }
+        let fileIDs = self.fileIDs
+        guard Set(fileIDs).count == fileIDs.count else { return false }
         guard (images + blocks.flatMap(\.images)).allSatisfy({ $0.width > 0 && $0.height > 0 }) else { return false }
 
         if isArchived {
@@ -244,6 +288,11 @@ extension ThoughtRecord {
     /// Image ids referenced by tokens in `markdownTexts`.
     var inlineImageReferences: [UUID] {
         markdownTexts.flatMap { ImageToken.references(in: $0) }
+    }
+
+    /// The attached files' ids, in block order.
+    var fileIDs: [UUID] {
+        blocks.compactMap { $0.file?.id }
     }
 
     /// Inline images first, then each gallery's.

@@ -4,7 +4,7 @@
 
 export const PRIVACY_PATH = '/privacy';
 
-export const LAST_UPDATED = '2026-10-07';
+export const LAST_UPDATED = '2026-10-13';
 
 export const PRIVACY_TITLE = 'Privacy policy | Thought Reps';
 
@@ -50,7 +50,7 @@ export const PRIVACY_SECTIONS: PrivacySection[] = [
   {
     heading: 'On your phone',
     paragraphs: [
-      'Your thoughts, images, tags and settings are stored in the app, on your iPhone. We never receive your thoughts in a form we can read.',
+      'Your thoughts, images, attached files, tags and settings are stored in the app, on your iPhone. We never receive your thoughts in a form we can read.',
       'If you make an export link, an encrypted copy is uploaded. It is deleted after one download or 24 hours. See Export links below.',
       'Notifications are scheduled on your phone. The share extension does not use the internet.',
       'A backup (a `.thoughtreps` file) goes wherever you save it, like Files, AirDrop or iCloud Drive. That is between you and that service.',

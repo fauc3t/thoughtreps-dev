@@ -117,10 +117,9 @@ targets:
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
           NSExtensionAttributes:
             NSExtensionActivationRule: >-
-              SUBQUERY(extensionItems, $i, SUBQUERY($i.attachments, $a, (ANY $a.registeredTypeIdentifiers UTI-CONFORMS-TO "public.plain-text" || ANY $a.registeredTypeIdentifiers UTI-CONFORMS-TO "net.daringfireball.markdown") || (ANY $a.registeredTypeIdentifiers UTI-CONFORMS-TO "public.url" && NOT (ANY $a.registeredTypeIdentifiers UTI-CONFORMS-TO "public.file-url"))).@count >= 1).@count >= 1 AND
-              SUBQUERY(extensionItems, $i, SUBQUERY($i.attachments, $a, (ANY $a.registeredTypeIdentifiers UTI-CONFORMS-TO "public.file-url")).@count > 1).@count == 0 AND
-              SUBQUERY(extensionItems, $i, SUBQUERY($i.attachments, $a, (ANY $a.registeredTypeIdentifiers UTI-CONFORMS-TO "public.url" && NOT (ANY $a.registeredTypeIdentifiers UTI-CONFORMS-TO "public.file-url"))).@count > 1).@count == 0 AND
-              SUBQUERY(extensionItems, $i, SUBQUERY($i.attachments, $a, (ANY $a.registeredTypeIdentifiers UTI-CONFORMS-TO "public.file-url") && NOT (ANY $a.registeredTypeIdentifiers UTI-CONFORMS-TO "public.plain-text" || ANY $a.registeredTypeIdentifiers UTI-CONFORMS-TO "net.daringfireball.markdown")).@count > 0).@count == 0
+              SUBQUERY(extensionItems, $i, SUBQUERY($i.attachments, $a, (ANY $a.registeredTypeIdentifiers UTI-CONFORMS-TO "public.plain-text" || ANY $a.registeredTypeIdentifiers UTI-CONFORMS-TO "net.daringfireball.markdown") || (ANY $a.registeredTypeIdentifiers UTI-CONFORMS-TO "public.url" && NOT (ANY $a.registeredTypeIdentifiers UTI-CONFORMS-TO "public.file-url")) || (ANY $a.registeredTypeIdentifiers UTI-CONFORMS-TO "public.file-url" || ANY $a.registeredTypeIdentifiers UTI-CONFORMS-TO "public.image")).@count >= 1).@count >= 1 AND
+              SUBQUERY(extensionItems, $i, SUBQUERY($i.attachments, $a, (ANY $a.registeredTypeIdentifiers UTI-CONFORMS-TO "public.file-url" || ANY $a.registeredTypeIdentifiers UTI-CONFORMS-TO "public.image")).@count > 1).@count == 0 AND
+              SUBQUERY(extensionItems, $i, SUBQUERY($i.attachments, $a, (ANY $a.registeredTypeIdentifiers UTI-CONFORMS-TO "public.url" && NOT (ANY $a.registeredTypeIdentifiers UTI-CONFORMS-TO "public.file-url"))).@count > 1).@count == 0
     entitlements:
       path: ThoughtRepsShare/ThoughtRepsShare.entitlements
       properties:

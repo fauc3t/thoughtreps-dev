@@ -218,7 +218,8 @@ final class BackupModel {
     }
 
     static func summary(of plan: BackupPlan) -> String {
-        var text = "\(count(plan.thoughtCount, "thought")) · \(count(plan.imageCount, "image")) — "
+        let files = plan.fileCount > 0 ? ", \(count(plan.fileCount, "file"))" : ""
+        var text = "\(count(plan.thoughtCount, "thought")) · \(count(plan.imageCount, "image"))\(files) — "
             + "\(plan.new.formatted()) new, \(plan.newer.formatted()) newer, \(plan.upToDate.formatted()) already up to date"
         if plan.preflight.unimportable > 0 {
             text += ". \(count(plan.preflight.unimportable, "thought")) can't be imported."

@@ -1,4 +1,5 @@
 import Foundation
+import ImageIO
 import UniformTypeIdentifiers
 
 enum SharedContent {
@@ -42,6 +43,33 @@ enum SharedContent {
         identifiers.lazy.compactMap { UTType($0) }.contains { type in
             type.conforms(to: .fileURL) || (markdown.map(type.conforms(to:)) ?? false)
         }
+    }
+
+    /// The type to load from a provider that carries a file or an image to attach, or nil for text,
+    /// web links and anything else. Markdown and plain-text files are read as text instead.
+    static func attachmentType(in identifiers: [String]) -> UTType? {
+        let types = identifiers.compactMap { UTType($0) }
+        if types.contains(where: { $0.conforms(to: .text) || (markdown.map($0.conforms(to:)) ?? false) }) { return nil }
+        if let image = types.first(where: { $0.conforms(to: .image) }) { return image }
+        guard types.contains(where: { $0.conforms(to: .fileURL) }) else { return nil }
+        return types.first { $0.conforms(to: .data) && !$0.conforms(to: .url) } ?? .item
+    }
+
+    /// Whether the app can process this as a photo (and so skips the 5 MB file cap): an image type that
+    /// ImageIO recognizes. Reads the header only, so memory stays flat.
+    static func isDecodableImage(type: UTType, at url: URL) -> Bool {
+        guard type.conforms(to: .image), let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return false }
+        return CGImageSourceGetType(source) != nil && CGImageSourceGetCount(source) > 0
+    }
+
+    /// Whether a shared file is refused for size: over the file cap, and not a photo the app can process.
+    static func exceedsFileCap(type: UTType, at url: URL, size: Int) -> Bool {
+        size > FileAttachment.maxBytes && !isDecodableImage(type: type, at: url)
+    }
+
+    /// Whether a file of this type is processed as a photo, which the 5 MB file cap doesn't apply to.
+    static func isImage(typeIdentifier: String) -> Bool {
+        UTType(typeIdentifier)?.conforms(to: .image) == true
     }
 
     /// Decodes a shared Markdown/plain-text file verbatim: strips a UTF-8 BOM and normalizes CRLF and CR to LF.

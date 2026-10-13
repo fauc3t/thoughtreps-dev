@@ -11,6 +11,8 @@ struct ImportLimits: Sendable {
     var tagsBytes = 16 << 20
     var thoughtsBytes = 16 << 30
     var imageBytes = 64 << 20
+    /// One attached file: the size cap plus headroom.
+    var fileBytes = FileAttachment.maxBytes + (64 << 10)
     /// One line of `thoughts.jsonl`.
     var lineBytes = 8 << 20
     var entryCount = 2_000_000
@@ -25,7 +27,10 @@ struct ImportLimits: Sendable {
         case BackupFormat.manifestPath: manifestBytes
         case BackupFormat.tagsPath: tagsBytes
         case BackupFormat.thoughtsPath: thoughtsBytes
-        default: BackupFormat.imageID(inPath: path) == nil ? nil : imageBytes
+        default:
+            if BackupFormat.imageID(inPath: path) != nil { imageBytes }
+            else if BackupFormat.fileID(inPath: path) != nil { fileBytes }
+            else { nil }
         }
     }
 }
@@ -85,6 +90,7 @@ struct BackupPlan: Sendable {
 
     var thoughtCount: Int { preflight.manifest.counts.thoughts }
     var imageCount: Int { preflight.manifest.counts.images }
+    var fileCount: Int { preflight.manifest.counts.files }
 }
 
 enum BackupImporter {
@@ -122,6 +128,8 @@ enum BackupImporter {
         }
         let imageCount = listed.filter { BackupFormat.imageID(inPath: $0) != nil }.count
         guard manifest.counts.images == imageCount else { throw BackupError.damaged("image count") }
+        let fileCount = listed.filter { BackupFormat.fileID(inPath: $0) != nil }.count
+        guard manifest.counts.files == fileCount else { throw BackupError.damaged("file count") }
 
         var tags: [TagRecord] = []
         var stamps: [UUID: ThoughtClocks] = [:]
@@ -133,7 +141,8 @@ enum BackupImporter {
         func readThought(_ line: Data) throws {
             thoughtLines += 1
             let record = try decode(ThoughtRecord.self, line, decoder)
-            if record.isImportable, record.imageIDs.allSatisfy({ listed.contains(BackupFormat.imagePath(for: $0)) }) {
+            if record.isImportable, record.imageIDs.allSatisfy({ listed.contains(BackupFormat.imagePath(for: $0)) }),
+               record.fileIDs.allSatisfy({ listed.contains(BackupFormat.filePath(for: $0)) }) {
                 if stamps[record.id].map({ record.updatedAt > $0.updatedAt }) ?? true {
                     stamps[record.id] = ThoughtClocks(record)
                 }
@@ -341,8 +350,10 @@ enum BackupImporter {
         let url = plan.preflight.fileURL
         let thoughtsArchive = try openArchive(url)
         let imagesArchive = try openArchive(url)
+        let filesArchive = try openArchive(url)
         let entries = try catalog(thoughtsArchive, limits: limits)
         let imageEntries = try catalog(imagesArchive, limits: limits)
+        let fileEntries = try catalog(filesArchive, limits: limits)
         guard let thoughtsEntry = entries[BackupFormat.thoughtsPath] else { throw BackupError.damaged("no thoughts") }
         let decoder = BackupFormat.decoder()
         var lines = LineReader(maxLineBytes: limits.lineBytes)
@@ -366,6 +377,7 @@ enum BackupImporter {
             else { return }
             do {
                 var images: [UUID: ProcessedImage] = [:]
+                var files: [UUID: FileDraft] = [:]
                 var bytes = 0
                 for ref in record.images + record.blocks.flatMap(\.images) {
                     guard let entry = imageEntries[BackupFormat.imagePath(for: ref.id)] else { throw BackupError.damaged("missing image") }
@@ -374,9 +386,20 @@ enum BackupImporter {
                     bytes += processed.data.count + processed.thumbnailData.count
                     images[ref.id] = processed
                 }
-                batch.thoughts.append(ImportedThought(record: record, images: images))
+                for ref in record.blocks.compactMap(\.file) {
+                    guard let entry = fileEntries[BackupFormat.filePath(for: ref.id)] else { throw BackupError.damaged("missing file") }
+                    let data = try read(entry, of: filesArchive, limit: limits.fileBytes)
+                    guard data.count == ref.byteCount else { throw FileProcessingError.sizeMismatch }
+                    var draft = try FileProcessor.process(data: data, filename: ref.filename, typeIdentifier: ref.typeIdentifier)
+                    draft.id = ref.id
+                    bytes += data.count + (draft.thumbnailData?.count ?? 0)
+                    files[ref.id] = draft
+                }
+                batch.thoughts.append(ImportedThought(record: record, images: images, files: files))
                 batchBytes += bytes
             } catch is ImageProcessingError {
+                batch.unreadable += 1
+            } catch is FileProcessingError {
                 batch.unreadable += 1
             }
             if batch.thoughts.count + batch.unreadable >= batchSize || batchBytes >= limits.batchImageBytes { try flush() }
@@ -394,6 +417,7 @@ enum BackupImporter {
 struct ImportedThought: Sendable {
     let record: ThoughtRecord
     let images: [UUID: ProcessedImage]
+    var files: [UUID: FileDraft] = [:]
 }
 
 /// What `ThoughtStore.importThoughts` did, summed over batches.

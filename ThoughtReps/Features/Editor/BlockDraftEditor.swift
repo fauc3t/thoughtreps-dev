@@ -86,6 +86,8 @@ struct BlockDraftEditor: View {
                 gallery
             case .thoughtLink:
                 link
+            case .file:
+                file
             }
         }
         .padding(.vertical, 4)
@@ -154,6 +156,26 @@ struct BlockDraftEditor: View {
             }
             .buttonStyle(.borderless)
             .accessibilityLabel(model.state == .deleted ? "Remove deleted link" : "Remove link to \(model.title)")
+        }
+    }
+
+    @ViewBuilder
+    private var file: some View {
+        if let file = draft.file {
+            let model = FileCardModel(file)
+            HStack(alignment: .center, spacing: 8) {
+                FileCardContent(model: model)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(model.accessibilityLabel)
+                Button(role: .destructive, action: onRemove) {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel("Remove \(model.filename)")
+            }
         }
     }
 

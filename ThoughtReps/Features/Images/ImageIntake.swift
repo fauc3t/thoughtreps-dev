@@ -147,6 +147,7 @@ struct ImageProcessingIndicator: View {
 
 private struct ImageIntakeModifier: ViewModifier {
     @Bindable var intake: ImageIntake
+    let files: FileIntake?
     let onAdd: ([ImageDraft]) -> Void
 
     @State private var pickerItems: [PhotosPickerItem] = []
@@ -161,8 +162,10 @@ private struct ImageIntakeModifier: ViewModifier {
             .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
                 intake.refreshPasteAvailability()
             }
-            .onDrop(of: [.image], isTargeted: nil) { providers in
-                intake.ingestDropped(providers)
+            .onDrop(of: files == nil ? [.image] : [.image, .fileURL, .data], isTargeted: nil) { providers in
+                let tookImages = intake.ingestDropped(providers)
+                let tookFiles = files?.ingestDropped(providers) ?? false
+                return tookImages || tookFiles
             }
             .photosPicker(isPresented: $intake.isPickingLibrary, selection: $pickerItems, matching: .images)
             .fullScreenCover(isPresented: $intake.isTakingPhoto) {
@@ -202,8 +205,9 @@ private struct ImageIntakeModifier: ViewModifier {
 }
 
 extension View {
-    func imageIntake(_ intake: ImageIntake, onAdd: @escaping ([ImageDraft]) -> Void) -> some View {
-        modifier(ImageIntakeModifier(intake: intake, onAdd: onAdd))
+    /// With `files`, dropped files that aren't images go to it; images still go through `intake`.
+    func imageIntake(_ intake: ImageIntake, files: FileIntake? = nil, onAdd: @escaping ([ImageDraft]) -> Void) -> some View {
+        modifier(ImageIntakeModifier(intake: intake, files: files, onAdd: onAdd))
     }
 }
 

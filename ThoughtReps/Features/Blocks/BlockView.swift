@@ -23,6 +23,8 @@ struct BlockView: View {
             GalleryBlockView(title: block.title, images: block.sortedImages, onOpenImage: onOpenImage)
         case .thoughtLink:
             LinkedThoughtCard(target: block.linkedThoughtID.flatMap { linkTargets[$0] })
+        case .file:
+            FileBlockView(file: block.file)
         }
     }
 }

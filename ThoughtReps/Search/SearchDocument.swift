@@ -13,7 +13,7 @@ struct SearchDocument: Sendable, Equatable {
     var body: String
     /// Contents of the markdown blocks, blurred or not.
     var blocks: String
-    /// Titles of all blocks (galleries mostly).
+    /// Titles of all blocks (galleries mostly) and the names of attached files.
     var titles: String
     var tags: String
 
@@ -37,7 +37,8 @@ struct SearchDocument: Sendable, Equatable {
             isArchived: thought.isArchived,
             body: SearchText.plain(thought.body),
             blocks: blocks.filter { $0.kind == .markdown }.map { SearchText.plain($0.content) }.filter { !$0.isEmpty }.joined(separator: "\n"),
-            titles: blocks.compactMap(\.title).filter { !$0.isEmpty }.joined(separator: "\n"),
+            titles: (blocks.compactMap(\.title) + (thought.files ?? []).sorted { ($0.filename, $0.id.uuidString) < ($1.filename, $1.id.uuidString) }.map(\.filename))
+                .filter { !$0.isEmpty }.joined(separator: "\n"),
             tags: (thought.tags ?? []).map(\.name).sorted().joined(separator: " ")
         )
     }

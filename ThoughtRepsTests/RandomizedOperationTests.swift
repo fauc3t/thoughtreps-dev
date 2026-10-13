@@ -47,6 +47,10 @@ struct RandomizedOperationTests {
         return lines.joined(separator: "\n")
     }
 
+    static func randomFile(_ rng: inout SeededGenerator) -> FileDraft {
+        fakeFile(UInt8.random(in: 0...255, using: &rng), name: ["notes.pdf", "a b.txt", "x/y:z.csv", ".hidden"].randomElement(using: &rng)!)
+    }
+
     static func randomImages(_ rng: inout SeededGenerator, count: ClosedRange<Int>) -> [ImageDraft] {
         (0..<Int.random(in: count, using: &rng)).map { _ in newImage(UInt8.random(in: 0...255, using: &rng)) }
     }
@@ -65,7 +69,8 @@ struct RandomizedOperationTests {
         thought.sortedBlocks.map {
             BlockDraft(
                 id: $0.id, kind: $0.kind, title: $0.title ?? "", content: $0.content, isBlurred: $0.isBlurred,
-                images: $0.sortedImages.map { ImageDraft(existing: $0) }, linkedThoughtID: $0.linkedThoughtID
+                images: $0.sortedImages.map { ImageDraft(existing: $0) }, linkedThoughtID: $0.linkedThoughtID,
+                file: $0.kind == .file ? $0.file.map { FileDraft(existing: $0) } : nil
             )
         }
     }
@@ -84,6 +89,10 @@ struct RandomizedOperationTests {
             if Int.random(in: 0..<5, using: &rng) == 0 {
                 // Targets may be live, missing, repeated, the thought itself (when `linkable` holds it) or absent.
                 return BlockDraft(kind: .thoughtLink, linkedThoughtID: (linkable.map(Optional.some) + [UUID(), nil]).randomElement(using: &rng)!)
+            }
+            if Int.random(in: 0..<8, using: &rng) == 0 {
+                // No file drops the block.
+                return BlockDraft(kind: .file, file: Int.random(in: 0..<5, using: &rng) == 0 ? nil : randomFile(&rng))
             }
             if Int.random(in: 0..<4, using: &rng) == 0 {
                 // No images drops the gallery.
@@ -114,6 +123,7 @@ struct RandomizedOperationTests {
     /// an `updatedAt` on either side of its current one.
     static func randomImported(replacing existing: Thought?, id: UUID? = nil, now: Date, _ rng: inout SeededGenerator) -> ImportedThought {
         var images: [UUID: ProcessedImage] = [:]
+        var files: [UUID: FileDraft] = [:]
         func imageRecord(order: Int) -> ImageRecord {
             let id = UUID()
             images[id] = fakeImage(UInt8.random(in: 0...255, using: &rng))
@@ -128,6 +138,14 @@ struct RandomizedOperationTests {
             if Int.random(in: 0..<3, using: &rng) == 0 {
                 let gallery = (0..<Int.random(in: 1...3, using: &rng)).map { imageRecord(order: $0) }
                 return BlockRecord(id: UUID(), kindRaw: BlockKind.gallery.rawValue, title: nil, content: "", order: order, images: gallery.shuffled(using: &rng))
+            }
+            if Int.random(in: 0..<4, using: &rng) == 0 {
+                let draft = randomFile(&rng)
+                files[draft.id] = draft
+                return BlockRecord(
+                    id: UUID(), kindRaw: BlockKind.file.rawValue, title: nil, content: "", order: order, images: [],
+                    file: FileRecord(id: draft.id, filename: draft.filename, typeIdentifier: draft.typeIdentifier, byteCount: draft.byteCount)
+                )
             }
             let legacy = Int.random(in: 0..<3, using: &rng) == 0
             return BlockRecord(
@@ -157,7 +175,7 @@ struct RandomizedOperationTests {
             isPinned: !archived && Bool.random(using: &rng), isArchived: archived, archivedAt: archived ? updatedAt : nil,
             tags: [], blocks: blocks, images: inline
         )
-        return ImportedThought(record: imported, images: images)
+        return ImportedThought(record: imported, images: images, files: files)
     }
 
     static func randomInterval(_ rng: inout SeededGenerator) -> Int? {
@@ -199,7 +217,7 @@ struct RandomizedOperationTests {
 
         for step in 0..<Self.stepsPerSeed {
             let thoughts = try context.fetch(FetchDescriptor<Thought>(sortBy: [SortDescriptor(\.createdAt), SortDescriptor(\.id)]))
-            var op = Int.random(in: 0..<27, using: &rng)
+            var op = Int.random(in: 0..<29, using: &rng)
             if op == 22 && Int.random(in: 0..<6, using: &rng) != 0 { op = 12 }
             if thoughts.isEmpty && op >= 2 && op != 11 && op != 12 && op != 18 && op != 22 && op != 23 { op = 0 }
             let target = thoughts.randomElement(using: &rng)
@@ -370,6 +388,19 @@ struct RandomizedOperationTests {
                 } else {
                     description = "delete a link target (none)"
                 }
+            case 27:
+                var drafts = Self.currentDrafts(of: target!)
+                drafts.insert(BlockDraft(kind: .file, file: Self.randomFile(&rng)), at: Int.random(in: 0...drafts.count, using: &rng))
+                store.update(target!, body: target!.body, blocks: drafts, intervalDays: target!.intervalDays, now: now)
+                allowedClocks = [0]
+                description = "add file block"
+            case 28:
+                var drafts = Self.currentDrafts(of: target!)
+                let files = drafts.indices.filter { drafts[$0].kind == .file }
+                if let index = files.randomElement(using: &rng) { drafts.remove(at: index) }
+                store.update(target!, body: target!.body, blocks: drafts, intervalDays: target!.intervalDays, now: now)
+                allowedClocks = [0]
+                description = "remove file block (of \(files.count))"
             case 22:
                 store.deleteAll()
                 description = "deleteAll"

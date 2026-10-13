@@ -43,6 +43,9 @@ final class Thought {
     @Relationship(deleteRule: .cascade, inverse: \ImageAsset.thought)
     var images: [ImageAsset]? = []
 
+    @Relationship(deleteRule: .cascade, inverse: \FileAsset.thought)
+    var files: [FileAsset]? = []
+
     init(body: String, createdAt: Date = .now, nextDueAt: Date, intervalDays: Int? = nil) {
         self.id = UUID()
         self.body = body

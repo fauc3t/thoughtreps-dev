@@ -20,6 +20,34 @@ struct ImageDraft: Identifiable, Equatable {
     }
 }
 
+/// A file the user added in the editor, or a reference to one already stored. The id is the asset's.
+struct FileDraft: Identifiable, Equatable, Sendable {
+    var id = UUID()
+    var filename: String
+    var typeIdentifier: String
+    var byteCount: Int
+    var thumbnailData: Data?
+    /// The bytes of a file not saved yet; nil for a file already in the store.
+    var data: Data?
+
+    init(id: UUID = UUID(), filename: String, typeIdentifier: String, byteCount: Int, thumbnailData: Data?, data: Data?) {
+        self.id = id
+        self.filename = filename
+        self.typeIdentifier = typeIdentifier
+        self.byteCount = byteCount
+        self.thumbnailData = thumbnailData
+        self.data = data
+    }
+
+    /// A reference to a file already in the store.
+    init(existing file: FileAsset) {
+        self.init(
+            id: file.id, filename: file.filename, typeIdentifier: file.typeIdentifier, byteCount: file.byteCount,
+            thumbnailData: file.thumbnailData, data: nil
+        )
+    }
+}
+
 /// Draft of a block being edited, before it is written to the store.
 struct BlockDraft: Identifiable, Equatable {
     var id = UUID()
@@ -33,6 +61,9 @@ struct BlockDraft: Identifiable, Equatable {
     /// Link blocks only: the thought linked to. A draft without one, or linking to its own thought
     /// or to a target an earlier draft already links, is dropped by the store.
     var linkedThoughtID: UUID?
+    /// File blocks only: the file to attach, new or already stored. A draft without one, with bytes over
+    /// `FileAttachment.maxBytes`, or naming a stored file the block doesn't hold, is dropped by the store.
+    var file: FileDraft?
 }
 
 /// How a detail screen was reached. An open requeues the thought; a visit from a link card only counts a view.
@@ -157,6 +188,8 @@ struct ThoughtStore {
         /// Gallery blocks: the images wanted, in display order.
         var images: [ImageDraft] = []
         var linkedThoughtID: UUID?
+        /// File blocks: the file wanted. An existing block keeps the file it has.
+        var file: FileDraft?
         var existing: Block?
     }
 
@@ -211,6 +244,11 @@ struct ThoughtStore {
             uniquingKeysWith: { first, _ in first }
         )
         var claimedLinkTargets = Set<UUID>()
+        var reusableFiles = Dictionary(
+            (thought.blocks ?? []).filter { $0.kind == .file }.map { ($0.id, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        var takenFileIDs = Set((thought.files ?? []).map(\.id))
 
         for draft in drafts where claimedBlockIDs.insert(draft.id).inserted {
             let trimmedTitle = draft.title.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -256,9 +294,20 @@ struct ThoughtStore {
                 plan.blocks.append(PlannedBlock(
                     id: id, kind: .thoughtLink, title: nil, content: "", linkedThoughtID: target, existing: existing
                 ))
+            case .file:
+                if let existing = reusableFiles[draft.id], let kept = existing.file {
+                    reusableFiles[draft.id] = nil
+                    plan.blocks.append(PlannedBlock(
+                        id: existing.id, kind: .file, title: nil, content: "", file: FileDraft(existing: kept), existing: existing
+                    ))
+                } else if let file = draft.file, let data = file.data, data.count <= FileAttachment.maxBytes,
+                          takenFileIDs.insert(file.id).inserted {
+                    let id = existingBlockIDs.contains(draft.id) ? UUID() : draft.id
+                    plan.blocks.append(PlannedBlock(id: id, kind: .file, title: nil, content: "", file: file, existing: nil))
+                }
             }
         }
-        plan.surplusBlocks = Array(reusableMarkdown) + Array(reusableGalleries.values) + Array(reusableLinks.values)
+        plan.surplusBlocks = Array(reusableMarkdown) + Array(reusableGalleries.values) + Array(reusableLinks.values) + Array(reusableFiles.values)
 
         let markdown = plan.blocks.filter { $0.kind == .markdown }
         plan.texts = [body] + markdown.map(\.content)
@@ -310,6 +359,9 @@ struct ThoughtStore {
             for image in block.images ?? [] {
                 remove(image)
             }
+            for file in block.files ?? [] {
+                remove(file)
+            }
             block.thought = nil
             context.delete(block)
         }
@@ -344,6 +396,7 @@ struct ThoughtStore {
                 order += 1
                 context.insert(block)
                 block.thought = thought
+                if let file = planned.file { insertFile(file, into: thought, block: block) }
                 for (position, draft) in planned.images.enumerated() {
                     insertImage(draft, order: position, into: thought, block: block)
                 }
@@ -449,6 +502,23 @@ struct ThoughtStore {
         image.thought = thought
         image.block = block
         return image
+    }
+
+    private func insertFile(_ draft: FileDraft, into thought: Thought, block: Block) {
+        guard let data = draft.data else { return }
+        let file = FileAsset(
+            id: draft.id, data: data, thumbnailData: draft.thumbnailData,
+            filename: FileAttachment.sanitizedFilename(draft.filename), typeIdentifier: draft.typeIdentifier, byteCount: data.count
+        )
+        context.insert(file)
+        file.thought = thought
+        file.block = block
+    }
+
+    private func remove(_ file: FileAsset) {
+        file.thought = nil
+        file.block = nil
+        context.delete(file)
     }
 
     private func remove(_ image: ImageAsset) {
@@ -733,11 +803,17 @@ struct ThoughtStore {
             for image in block.images ?? [] {
                 remove(image)
             }
+            for file in block.files ?? [] {
+                remove(file)
+            }
             block.thought = nil
             context.delete(block)
         }
         for image in thought.images ?? [] {
             remove(image)
+        }
+        for file in thought.files ?? [] {
+            remove(file)
         }
         context.delete(thought)
     }
@@ -857,6 +933,7 @@ struct ThoughtStore {
 
         let stored: [UUID: Thought]
         var imageOwners: [UUID: UUID?] = [:]
+        var fileOwners: [UUID: UUID?] = [:]
         var takenBlockIDs = Set<UUID>()
         do {
             let lookup = ids
@@ -867,6 +944,10 @@ struct ThoughtStore {
             let imageIDs = items.flatMap(\.record.imageIDs)
             for image in try context.fetch(FetchDescriptor<ImageAsset>(predicate: #Predicate { imageIDs.contains($0.id) })) {
                 imageOwners[image.id] = image.thought?.id
+            }
+            let fileIDs = items.flatMap(\.record.fileIDs)
+            for file in try context.fetch(FetchDescriptor<FileAsset>(predicate: #Predicate { fileIDs.contains($0.id) })) {
+                fileOwners[file.id] = file.thought?.id
             }
             let blockIDs = items.flatMap { $0.record.blocks.map(\.id) }
             takenBlockIDs = Set(try context.fetch(FetchDescriptor<Block>(predicate: #Predicate { blockIDs.contains($0.id) })).map(\.id))
@@ -879,12 +960,16 @@ struct ThoughtStore {
         var additions: [ImportedThought] = []
         var replacements: [(thought: Thought, item: ImportedThought, wins: GroupWins)] = []
         var claimedImageIDs = Set<UUID>()
+        var claimedFileIDs = Set<UUID>()
         for item in items {
             let record = item.record
             let imageClash = record.imageIDs.contains { imageID in
                 claimedImageIDs.contains(imageID) || imageOwners[imageID].map { $0 != record.id } ?? false
             }
-            if imageClash {
+            let fileClash = record.fileIDs.contains { fileID in
+                claimedFileIDs.contains(fileID) || fileOwners[fileID].map { $0 != record.id } ?? false
+            }
+            if imageClash || fileClash {
                 tally.rejected += 1
             } else if let current = stored[record.id] {
                 let wins = GroupWins(
@@ -894,13 +979,17 @@ struct ThoughtStore {
                     counters: record.viewCount > current.viewCount || (record.lastViewedAt ?? .distantPast) > (current.lastViewedAt ?? .distantPast)
                 )
                 if wins.any {
-                    if wins.content { claimedImageIDs.formUnion(record.imageIDs) }
+                    if wins.content {
+                        claimedImageIDs.formUnion(record.imageIDs)
+                        claimedFileIDs.formUnion(record.fileIDs)
+                    }
                     replacements.append((current, item, wins))
                 } else {
                     tally.upToDate += 1
                 }
             } else {
                 claimedImageIDs.formUnion(record.imageIDs)
+                claimedFileIDs.formUnion(record.fileIDs)
                 additions.append(item)
             }
         }
@@ -1033,6 +1122,9 @@ struct ThoughtStore {
             for (position, image) in images.enumerated() {
                 insertImported(image.element, from: item, order: position, into: thought, block: block)
             }
+            if let file = source.file.flatMap({ item.files[$0.id] }) {
+                insertFile(file, into: thought, block: block)
+            }
         }
     }
 
@@ -1069,7 +1161,7 @@ struct ThoughtStore {
             return BlockDraft(
                 id: blockID(block.id), kind: resolved.kind, title: block.title ?? "", content: block.content, isBlurred: resolved.isBlurred,
                 images: block.images.enumerated().sorted { ($0.element.order, $0.offset) < ($1.element.order, $1.offset) }.map { draft($0.element) },
-                linkedThoughtID: block.linkedThoughtID
+                linkedThoughtID: block.linkedThoughtID, file: block.file.flatMap { item.files[$0.id] }
             )
         }
         // The index fingerprint is `updatedAt` plus the archive flag. If the app dies mid-replace, `updatedAt`
@@ -1135,7 +1227,7 @@ struct ThoughtStore {
         let lookup = Array(ids)
         do {
             var descriptor = FetchDescriptor<Thought>(predicate: #Predicate { lookup.contains($0.id) })
-            descriptor.relationshipKeyPathsForPrefetching = [\.blocks, \.tags]
+            descriptor.relationshipKeyPathsForPrefetching = [\.blocks, \.tags, \.files]
             let found = try context.fetch(descriptor)
             for thought in found {
                 indexUpsert(thought)

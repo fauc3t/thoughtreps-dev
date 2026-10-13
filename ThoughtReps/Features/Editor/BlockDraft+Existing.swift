@@ -14,7 +14,8 @@ extension BlockDraft {
                 content: $0.content,
                 isBlurred: resolved.isBlurred,
                 images: $0.sortedImages.map { ImageDraft(existing: $0) },
-                linkedThoughtID: $0.linkedThoughtID
+                linkedThoughtID: $0.linkedThoughtID,
+                file: $0.kind == .file ? $0.file.map { FileDraft(existing: $0) } : nil
             )
         }
     }

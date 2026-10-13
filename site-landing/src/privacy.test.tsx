@@ -16,7 +16,7 @@ describe('privacy policy', () => {
       '<link rel="canonical" href="https://thoughtreps.com/privacy" />',
     );
     expect(html).toContain('<h1');
-    expect(html).toContain('October 7, 2026');
+    expect(html).toContain('October 13, 2026');
     expect(html).toContain('href="mailto:hello@thoughtreps.com"');
   });
 

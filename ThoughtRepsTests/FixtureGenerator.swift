@@ -36,6 +36,9 @@ struct FixtureGenerator {
         let photoDraft = try photo(width: 96, height: 64)
         let viewed = store.create(
             body: "# Viewed twice\nWith a picture.\n\(ImageToken.token(for: photoDraft.id))\n\n#swift #café",
+            blocks: [BlockDraft(kind: .file, file: FileDraft(
+                filename: "notes.txt", typeIdentifier: "public.plain-text", byteCount: 12, thumbnailData: nil, data: Data("Fixture file".utf8)
+            ))],
             images: [photoDraft],
             now: t0
         )

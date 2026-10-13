@@ -3,29 +3,41 @@ import SwiftUI
 import UniformTypeIdentifiers
 import os
 
-/// Principal class of the share extension: gathers the shared text/URL and hosts the compose sheet.
+/// Principal class of the share extension: gathers the shared text/URL or file and hosts the compose sheet.
 final class ShareViewController: UIViewController {
     private struct ReadFailure: Error { let reason: String }
     private static let log = Logger(subsystem: "com.thoughtreps.share", category: "share")
 
+    /// The inbox item's id, fixed up front because a shared file is staged under it before the user taps Save.
+    private let itemID = UUID()
+
     override func viewDidLoad() {
         super.viewDidLoad()
         Task { @MainActor in
-            let (initial, fileError) = await loadSharedContent()
-            present(initialText: initial, fileError: fileError)
+            let (initial, fileError, attachment) = await loadSharedContent()
+            present(initialText: initial, fileError: fileError, attachment: attachment)
         }
     }
 
-    private func present(initialText: String, fileError: String?) {
+    private func present(initialText: String, fileError: String?, attachment: InboxItem.Attachment?) {
+        let itemID = itemID
         let compose = ComposeView(
             initialText: initialText,
             fileError: fileError,
+            attachmentName: attachment?.filename,
             onCancel: { [weak self] in
+                try? FileManager.default.removeItem(at: Inbox.stagingURL(for: itemID))
                 self?.extensionContext?.cancelRequest(withError: CocoaError(.userCancelled))
             },
             onSave: { [weak self] text in
-                let item = InboxItem(id: UUID(), body: text, createdAt: Date())
-                try Inbox.write(item, to: try Inbox.directoryURL())
+                let body = text.isEmpty ? (attachment?.filename ?? "") : text
+                let item = InboxItem(id: itemID, body: body, createdAt: Date(), attachment: attachment)
+                let directory = try Inbox.directoryURL()
+                if attachment != nil {
+                    _ = try Inbox.copyAttachment(from: Inbox.stagingURL(for: itemID), id: itemID, to: directory)
+                }
+                try Inbox.write(item, to: directory)
+                try? FileManager.default.removeItem(at: Inbox.stagingURL(for: itemID))
                 self?.extensionContext?.completeRequest(returningItems: nil)
             }
         )
@@ -37,11 +49,13 @@ final class ShareViewController: UIViewController {
         host.didMove(toParent: self)
     }
 
-    private func loadSharedContent() async -> (text: String, fileError: String?) {
+    private func loadSharedContent() async -> (text: String, fileError: String?, attachment: InboxItem.Attachment?) {
         var text: String?
         var url: URL?
         var fileText: String?
         var fileError: String?
+        var attachment: InboxItem.Attachment?
+        var attachmentError: String?
         let providers = (extensionContext?.inputItems as? [NSExtensionItem] ?? []).flatMap { $0.attachments ?? [] }
         for provider in providers {
             let ids = provider.registeredTypeIdentifiers
@@ -64,6 +78,13 @@ final class ShareViewController: UIViewController {
                 }
                 continue
             }
+            if attachment == nil, attachmentError == nil, let attachmentType = SharedContent.attachmentType(in: ids) {
+                switch await copyAttachment(attachmentType, from: provider) {
+                case .success(let copied): attachment = copied
+                case .failure(let failure): attachmentError = failure.reason
+                }
+                continue
+            }
             if url == nil, provider.hasItemConformingToTypeIdentifier(UTType.url.identifier) {
                 let found = await load(UTType.url, from: provider) { value -> URL? in
                     if let url = value as? URL { return url }
@@ -73,8 +94,8 @@ final class ShareViewController: UIViewController {
                 if let found, !found.isFileURL { url = found }
             }
         }
-        if let fileText { return (fileText, nil) }
-        return (SharedContent.merge(text: text, url: url), fileError)
+        if let fileText { return (fileText, nil, attachment) }
+        return (SharedContent.merge(text: text, url: url), fileError ?? attachmentError, attachment)
     }
 
     private static func string(from value: NSSecureCoding?) -> String? {
@@ -115,6 +136,37 @@ final class ShareViewController: UIViewController {
         }
     }
 
+    /// Stages the shared file in the extension's temp folder; Save moves it to the inbox. Failure carries the user-facing reason; logs codes only, never names.
+    private func copyAttachment(_ type: UTType, from provider: NSItemProvider) async -> Result<InboxItem.Attachment, ReadFailure> {
+        let id = itemID
+        return await withCheckedContinuation { continuation in
+            _ = provider.loadFileRepresentation(forTypeIdentifier: type.identifier) { url, error in
+                guard let url else {
+                    let code = (error as NSError?).map { "\($0.domain) \($0.code)" } ?? "unknown"
+                    Self.log.error("Couldn't load shared attachment: \(code)")
+                    continuation.resume(returning: .failure(ReadFailure(reason: "It couldn't be opened.")))
+                    return
+                }
+                do {
+                    let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+                    if SharedContent.exceedsFileCap(type: type, at: url, size: size) {
+                        continuation.resume(returning: .failure(ReadFailure(reason: FileAttachment.tooLargeMessage)))
+                        return
+                    }
+                    let resolved = type == .item ? (UTType(filenameExtension: url.pathExtension) ?? .data) : type
+                    let path = try Inbox.copyAttachment(from: url, id: id, to: Inbox.stagingURL(for: id).deletingLastPathComponent(), name: Inbox.stagingURL(for: id).lastPathComponent)
+                    continuation.resume(returning: .success(InboxItem.Attachment(
+                        filename: FileAttachment.sanitizedFilename(url.lastPathComponent), typeIdentifier: resolved.identifier, path: path
+                    )))
+                } catch {
+                    let nsError = error as NSError
+                    Self.log.error("Couldn't copy shared attachment: \(nsError.domain) \(nsError.code)")
+                    continuation.resume(returning: .failure(ReadFailure(reason: "It couldn't be opened.")))
+                }
+            }
+        }
+    }
+
     private func load<T>(_ type: UTType, from provider: NSItemProvider, convert: (NSSecureCoding) -> T?) async -> T? {
         do {
             return convert(try await provider.loadItem(forTypeIdentifier: type.identifier))
@@ -126,6 +178,7 @@ final class ShareViewController: UIViewController {
 }
 
 struct ComposeView: View {
+    let attachmentName: String?
     let onCancel: () -> Void
     let onSave: (String) throws -> Void
 
@@ -134,21 +187,37 @@ struct ComposeView: View {
     @State private var errorTitle: String
     @FocusState private var focused: Bool
 
-    init(initialText: String, fileError: String? = nil, onCancel: @escaping () -> Void, onSave: @escaping (String) throws -> Void) {
+    init(
+        initialText: String, fileError: String? = nil, attachmentName: String? = nil,
+        onCancel: @escaping () -> Void, onSave: @escaping (String) throws -> Void
+    ) {
+        self.attachmentName = attachmentName
         self.onCancel = onCancel
         self.onSave = onSave
         _text = State(initialValue: initialText)
         _errorMessage = State(initialValue: fileError)
-        _errorTitle = State(initialValue: fileError == nil ? "Couldn't save" : "Couldn't read the file")
+        _errorTitle = State(initialValue: fileError == nil ? "Couldn't save" : "Couldn't use the file")
     }
 
     private var trimmed: String { text.trimmingCharacters(in: .whitespacesAndNewlines) }
 
     var body: some View {
         NavigationStack {
-            TextEditor(text: $text)
-                .focused($focused)
-                .padding(.horizontal)
+            VStack(spacing: 0) {
+                TextEditor(text: $text)
+                    .focused($focused)
+                    .padding(.horizontal)
+                if let attachmentName {
+                    Label(attachmentName, systemImage: "paperclip")
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .padding()
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .accessibilityLabel("Attached file: \(attachmentName)")
+                }
+            }
                 .navigationTitle("New Thought")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
@@ -156,7 +225,7 @@ struct ComposeView: View {
                         Button("Cancel", action: onCancel)
                     }
                     ToolbarItem(placement: .confirmationAction) {
-                        Button("Save", action: save).disabled(trimmed.isEmpty)
+                        Button("Save", action: save).disabled(trimmed.isEmpty && attachmentName == nil)
                     }
                 }
         }

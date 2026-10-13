@@ -170,8 +170,16 @@ struct PersistenceTests {
         #expect(archived.firstImage === gallery.sortedImages.first)
 
         #expect(try context.fetchCount(FetchDescriptor<ThoughtReps.Tag>()) == 3)
-        #expect(try context.fetchCount(FetchDescriptor<Block>()) == 4)
+        #expect(try context.fetchCount(FetchDescriptor<Block>()) == 5)
         #expect(try context.fetchCount(FetchDescriptor<ImageAsset>()) == 3)
+        #expect(try context.fetchCount(FetchDescriptor<FileAsset>()) == 1)
+
+        let attached = try #require(viewed.sortedBlocks.first)
+        #expect(attached.kind == .file)
+        #expect(attached.file?.filename == "notes.txt")
+        #expect(attached.file?.typeIdentifier == "public.plain-text")
+        #expect(attached.file?.byteCount == 12)
+        #expect(attached.file?.data == Data("Fixture file".utf8))
 
         #expect(pinned.sortedBlocks.map(\.kindRaw) == ["markdown", "markdown", "thoughtLink"])
         #expect(pinned.sortedBlocks.map(\.isBlurred) == [true, true, false])

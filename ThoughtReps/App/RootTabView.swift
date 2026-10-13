@@ -29,7 +29,7 @@ struct RootTabView: View {
 
     private func importInbox() {
         guard let inbox = try? Inbox.directoryURL() else { return }
-        inboxImporter.importPending(from: inbox, store: ThoughtStore(context: context))
+        Task { await inboxImporter.importPending(from: inbox, store: ThoughtStore(context: context)) }
     }
 
     private func open(_ url: URL) {
@@ -188,6 +188,7 @@ struct RootTabView: View {
         }
         .task {
             backup.removeStaleTemporaryFiles()
+            QuickLookFiles.removeAll()
             ThoughtStore(context: context).pruneOrphanTags()
             ThoughtStore(context: context).migrateLegacyBlurredBlocks()
             ThoughtStore(context: context).cleanUpPendingImageSaves()

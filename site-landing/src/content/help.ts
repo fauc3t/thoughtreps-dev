@@ -33,6 +33,7 @@ export const HELP_ICONS = {
   trash: 'Delete',
   undo: 'Restore',
   photo: 'Add image',
+  paperclip: 'File',
   block: 'Add block',
   bold: 'Bold',
   italic: 'Italic',
@@ -70,6 +71,7 @@ export const HELP_EXAMPLE_KINDS = [
   'markdown-pair',
   'gallery',
   'blurred-block',
+  'file-card',
   'linked-thought',
   'tag-list',
   'color-sheet',
@@ -140,7 +142,7 @@ export const HELP_CATEGORIES: HelpCategory[] = [
     slug: 'writing',
     title: 'Writing',
     description:
-      'Markdown, images, text blocks you can blur, links between thoughts, tags and saving from other apps.',
+      'Markdown, images, files, text blocks you can blur, links between thoughts, tags and saving from other apps.',
   },
   {
     slug: 'reviewing',
@@ -192,7 +194,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
       {
         heading: 'What you get',
         list: [
-          'Thoughts written in Markdown, with photos, image galleries, extra text blocks you can blur to quiz yourself and links to other thoughts.',
+          'Thoughts written in Markdown, with photos, image galleries, attached files, extra text blocks you can blur to quiz yourself and links to other thoughts.',
           'Tags, with a timeline for each tag.',
           'Pin, snooze and archive, so you choose what stays in front of you.',
           'An optional daily reminder.',
@@ -215,17 +217,17 @@ export const HELP_ARTICLES: HelpArticle[] = [
     category: 'getting-started',
     title: 'Use Thought Reps on iPad',
     description:
-      'Thought Reps runs on iPad with a three-column layout, keyboard shortcuts and drag and drop for images. Each device keeps its own thoughts.',
+      'Thought Reps runs on iPad with a three-column layout, keyboard shortcuts and drag and drop for images and files. Each device keeps its own thoughts.',
     related: [
       'the-timeline',
       'images-and-galleries',
-      'backup-and-restore',
+      'attach-files',
       'move-to-a-new-phone',
     ],
     sections: [
       {
         paragraphs: [
-          'Thought Reps works on iPad as well as iPhone. It turns the wide screen into a three-column layout, adds keyboard shortcuts, and lets you drag images in.',
+          'Thought Reps works on iPad as well as iPhone. It turns the wide screen into a three-column layout, adds keyboard shortcuts, and lets you drag images and files in.',
         ],
       },
       {
@@ -260,9 +262,10 @@ export const HELP_ARTICLES: HelpArticle[] = [
         ],
       },
       {
-        heading: 'Drag in images',
+        heading: 'Drag in images and files',
         paragraphs: [
           'Drag a picture from Files, Photos or Safari into the editor. Drop it on the text to add it at the cursor. Drop it on a gallery to add it to that gallery. It is resized and stripped of location data, the same as a picture from your photo library.',
+          'Any other file you drop becomes a file block, one for each file. See [Attach files to a thought](/help/attach-files).',
           'A web link that is not a picture is ignored. The app never downloads it. See [Add images and galleries](/help/images-and-galleries).',
         ],
       },
@@ -317,6 +320,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
           'Add `#tags` anywhere in the text to file the thought. See [Organize with tags](/help/tags).',
           'Add photos with the {icon:photo} button above the keyboard. See [Add images and galleries](/help/images-and-galleries).',
           'Add a text block and blur it to hide an answer. See [Quiz yourself with blurred blocks](/help/blurred-blocks). Or link to another thought. See [Link thoughts into a mind map](/help/link-thoughts).',
+          'Attach a file, like a PDF. See [Attach files to a thought](/help/attach-files).',
           'Under "Schedule", use "Comes back every" if this thought should return sooner or later than usual.',
         ],
       },
@@ -461,7 +465,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
     category: 'getting-started',
     title: 'Search your thoughts',
     description:
-      'Find any thought, whether it is due, waiting, pinned or archived. Search looks at your text, extra text blocks, gallery titles and tags.',
+      'Find any thought, whether it is due, waiting, pinned or archived. Search looks at your text, extra text blocks, gallery titles, file names and tags.',
     related: [
       'the-timeline',
       'tags',
@@ -493,6 +497,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
           'The text of your thoughts, without the Markdown symbols.',
           'The text of extra text blocks, blurred ones too, so a hidden answer can be found.',
           'The titles of image galleries.',
+          'The names of attached files, but not what is inside them.',
           'Tag names.',
         ],
       },
@@ -621,7 +626,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
           'The {icon:code} button wraps text in backticks.',
           'The {icon:tag} button types a `#` and shows your tags to pick from.',
           'The {icon:photo} button adds an image. See [Add images and galleries](/help/images-and-galleries).',
-          'The {icon:block} button adds a block under your thought. See [Quiz yourself with blurred blocks](/help/blurred-blocks).',
+          'The {icon:block} button adds a block under your thought, like a text block or a file. See [Quiz yourself with blurred blocks](/help/blurred-blocks) and [Attach files to a thought](/help/attach-files).',
         ],
         example: {
           kind: 'format-bar',
@@ -672,8 +677,8 @@ export const HELP_ARTICLES: HelpArticle[] = [
       'Put photos in the middle of a thought, or collect several in a gallery. Learn how to add, view and remove them, and what happens to the file.',
     related: [
       'markdown-formatting',
+      'attach-files',
       'blurred-blocks',
-      'link-thoughts',
       'backup-and-restore',
     ],
     sections: [
@@ -735,6 +740,72 @@ export const HELP_ARTICLES: HelpArticle[] = [
         heading: 'Camera access',
         paragraphs: [
           'The first time you choose "Take Photo", iOS asks if Thought Reps may use the camera. It only uses it to take photos for your thoughts.',
+        ],
+      },
+    ],
+  },
+  {
+    slug: 'attach-files',
+    category: 'writing',
+    title: 'Attach files to a thought',
+    description:
+      'Attach a PDF, a document or any other file to a thought. Learn how to add one, open it, share it on, and what the 5 MB limit means.',
+    related: [
+      'images-and-galleries',
+      'save-from-other-apps',
+      'ipad',
+      'backup-and-restore',
+    ],
+    sections: [
+      {
+        paragraphs: [
+          'A thought can hold a file, like a PDF, a document or a spreadsheet. It shows as a small card under your text. Tap the card to open the file. Each file block holds one file.',
+        ],
+        example: {
+          kind: 'file-card',
+          caption:
+            'A file card shows a preview or an icon, the file name, and its type and size.',
+        },
+      },
+      {
+        heading: 'Add a file',
+        steps: [
+          'In the editor, tap {icon:block} in the row above the keyboard. Or scroll to the "Blocks" section and tap "Add block".',
+          'Choose {icon:paperclip|decorative} "File". The Files picker opens.',
+          'Pick one or more files. Each file gets its own block.',
+        ],
+      },
+      {
+        paragraphs: [
+          'To remove a file, swipe its block left in the editor.',
+        ],
+      },
+      {
+        heading: 'Other ways to add one',
+        list: [
+          'On iPad, drag a file from Files into the editor. A picture you drop becomes an image. Any other file becomes a file block. See [Use Thought Reps on iPad](/help/ipad).',
+          'From another app, tap {icon:share} and choose Thought Reps. A photo becomes an image gallery, and any other file becomes a file block. See [Save from other apps](/help/save-from-other-apps).',
+        ],
+      },
+      {
+        heading: 'Open and share a file',
+        paragraphs: [
+          'Tap the card in a thought. The file opens in the iOS viewer, which shows many types, like PDFs, pictures, text and Office documents. For a PDF or a picture, the card shows a small preview. Other files show an icon for their type.',
+          'The viewer has a share button. Use it to save the file to Files, or to open it in another app. That works for any type of file, even one the viewer cannot show.',
+        ],
+      },
+      {
+        heading: 'The size limit',
+        paragraphs: [
+          'A file can be up to 5 MB. You will see "Files can be up to 5 MB." if it is bigger. Pictures are not held to this limit, because Thought Reps resizes them. See [Add images and galleries](/help/images-and-galleries).',
+        ],
+      },
+      {
+        heading: 'Good to know',
+        list: [
+          'Search finds a file by its name, not by what is inside it. See [Search your thoughts](/help/search-your-thoughts).',
+          'Files stay on your device and are in your backups and export links. See [Back up and restore your thoughts](/help/backup-and-restore).',
+          'Deleting the thought deletes its files.',
         ],
       },
     ],
@@ -992,8 +1063,8 @@ export const HELP_ARTICLES: HelpArticle[] = [
     category: 'writing',
     title: 'Save from other apps',
     description:
-      'Send text, a link or a Markdown file to Thought Reps from Safari, Notes or any app with a share button. It shows up the next time you open the app.',
-    related: ['write-your-first-thought', 'the-timeline', 'tags'],
+      'Send text, a link, a photo or a file to Thought Reps from Safari, Notes or any app with a share button. It shows up the next time you open the app.',
+    related: ['write-your-first-thought', 'attach-files', 'the-timeline', 'tags'],
     sections: [
       {
         paragraphs: [
@@ -1005,12 +1076,14 @@ export const HELP_ARTICLES: HelpArticle[] = [
         list: [
           'Text you have selected, like a quote from an article.',
           'A web link, like the page you are reading in Safari.',
-          'A single text or Markdown file, up to 1 MB.',
+          'A single text or Markdown file, up to 1 MB. Its text becomes the thought.',
+          'A single photo. It is added as an image gallery.',
+          'Any other single file, up to 5 MB. It is attached to the thought as a file block.',
         ],
       },
       {
         paragraphs: [
-          'Photos cannot be shared in. Neither can several files or links at once.',
+          'Several files, or several links, cannot be shared at once. For a file, the "New Thought" screen shows its name with a paperclip. You can type some text to go with it. See [Attach files to a thought](/help/attach-files).',
         ],
       },
       {
@@ -1036,7 +1109,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
       {
         heading: 'If a file cannot be read',
         paragraphs: [
-          'Thought Reps tells you if a shared file is bigger than 1 MB or is not UTF-8 text. Sharing text or a link always works.',
+          'Thought Reps tells you if a shared text file is bigger than 1 MB or is not UTF-8 text, or if another file is bigger than 5 MB. Sharing text or a link always works.',
         ],
       },
       {
@@ -1236,7 +1309,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
       {
         heading: 'Delete',
         paragraphs: [
-          'Delete removes a thought for good, with its images and blocks. In the Archive, swipe left on a thought and tap {icon:trash|decorative} "Delete". Inside a thought, {icon:more} also has "Delete". Either way, it asks you to confirm. You cannot undo a delete. Archive instead if you might want it back.',
+          'Delete removes a thought for good, with its images, files and blocks. In the Archive, swipe left on a thought and tap {icon:trash|decorative} "Delete". Inside a thought, {icon:more} also has "Delete". Either way, it asks you to confirm. You cannot undo a delete. Archive instead if you might want it back.',
         ],
       },
     ],
@@ -1356,7 +1429,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
       {
         heading: 'Your thoughts stay on your phone',
         paragraphs: [
-          'There is no account and nothing to sign in to. Your thoughts, images, tags and settings are stored on your device. The app works without internet.',
+          'There is no account and nothing to sign in to. Your thoughts, images, files, tags and settings are stored on your device. The app works without internet.',
         ],
       },
       {
@@ -1406,12 +1479,12 @@ export const HELP_ARTICLES: HelpArticle[] = [
     category: 'your-data',
     title: 'Back up and restore your thoughts',
     description:
-      'Export every thought, tag and image to a .thoughtreps file you keep, and import it later. Importing merges, keeping the newest change to each thought.',
+      'Export every thought, tag, image and file to a .thoughtreps file you keep, and import it later. Importing merges, keeping the newest change to each thought.',
     related: ['move-to-a-new-phone', 'ipad', 'privacy', 'faq'],
     sections: [
       {
         paragraphs: [
-          'A backup is one file that ends in `.thoughtreps`. It holds all your thoughts, with their tags, tag colors, blocks and images. It also remembers if each one is pinned or archived. It does not hold your app settings, like the default interval and reminder time.',
+          'A backup is one file that ends in `.thoughtreps`. It holds all your thoughts, with their tags, tag colors, blocks, images and attached files. It also remembers if each one is pinned or archived. It does not hold your app settings, like the default interval and reminder time.',
         ],
       },
       {
@@ -1428,7 +1501,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
       },
       {
         paragraphs: [
-          'The file is named like `ThoughtReps-export-2026-10-05.thoughtreps`, with the date you made it. A big library with lots of images can take a while to export, so give it a moment.',
+          'The file is named like `ThoughtReps-export-2026-10-05.thoughtreps`, with the date you made it. A big library with lots of images or files can take a while to export, so give it a moment.',
         ],
       },
       {
@@ -1673,6 +1746,12 @@ export const HELP_ARTICLES: HelpArticle[] = [
         heading: 'Why will a picture from a website not show?',
         paragraphs: [
           'Thought Reps only shows images you add to a thought from your own photos. It never loads pictures from the internet. See [Add images and galleries](/help/images-and-galleries).',
+        ],
+      },
+      {
+        heading: 'Can I attach a PDF or other file to a thought?',
+        paragraphs: [
+          'Yes. In the editor, add a "File" block and pick a file up to 5 MB. Tap it in the thought to open it. See [Attach files to a thought](/help/attach-files).',
         ],
       },
       {

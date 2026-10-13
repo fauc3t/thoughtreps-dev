@@ -426,6 +426,22 @@ function BlurredBlock() {
   );
 }
 
+function FileCard() {
+  return (
+    <div className="flex items-center gap-3 rounded-[14px] border-2 border-ink bg-paper p-3">
+      <span className="grid size-[52px] shrink-0 place-items-center rounded-lg border border-ink/20 bg-hl text-muted">
+        <IconGlyph name="paperclip" className="size-6" />
+      </span>
+      <span className="flex min-w-0 flex-col gap-0.5">
+        <span className="truncate text-[15px] font-semibold">
+          Lease agreement.pdf
+        </span>
+        <span className="text-[12px] text-muted">PDF Document · 1.2 MB</span>
+      </span>
+    </div>
+  );
+}
+
 function LinkedThought() {
   return (
     <div className="flex flex-col gap-2">
@@ -1026,6 +1042,7 @@ const EXAMPLES: Record<
   'markdown-pair': { Mock: MarkdownPair },
   gallery: { Mock: Gallery },
   'blurred-block': { Mock: BlurredBlock, interactive: true },
+  'file-card': { Mock: FileCard },
   'linked-thought': { Mock: LinkedThought },
   'tag-list': { Mock: TagList },
   'color-sheet': { Mock: ColorSheet },
