@@ -96,6 +96,64 @@ enum MarkdownStyler {
         return NSRange(location: region.location, length: end - region.location)
     }
 
+    /// `region` (line-aligned) widened over the quote lines directly above and below it, so a restyle
+    /// sees whole quote blocks and can tell each block's first and last line.
+    static func quoteExpandedRange(in units: [UInt16], region: NSRange) -> NSRange {
+        var start = region.location
+        while start > 0 {
+            let previous = lineStart(units, at: start - 1)
+            guard isQuoteLine(units, previous, start - 1) else { break }
+            start = previous
+        }
+        var end = region.upperBound
+        while end < units.count {
+            let next = lineEnd(units, from: end)
+            let contentEnd = next > end && units[next - 1] == newline ? next - 1 : next
+            guard isQuoteLine(units, end, contentEnd) else { break }
+            end = next
+        }
+        return NSRange(location: start, length: end - start)
+    }
+
+    /// A line that starts a block quote: a `>` after at most three spaces, with something after it.
+    /// Fences aren't considered, so this may over-approximate; callers only use it to widen.
+    private static func isQuoteLine(_ units: [UInt16], _ start: Int, _ end: Int) -> Bool {
+        let marker = skipSpaces(units, start, end, max: 3)
+        return marker < end && units[marker] == ch(">")
+    }
+
+    struct QuoteBlock: Equatable {
+        /// Only the part of the block inside the window.
+        let range: NSRange
+        let continuesBefore: Bool
+        let continuesAfter: Bool
+    }
+
+    /// The quote blocks of `lines` (sorted, non-overlapping) that touch `window`, cut to the window's
+    /// lines, with whether each runs on past it. Binary search, so cost follows what is visible.
+    static func visibleQuoteBlocks(in lines: [NSRange], window: ClosedRange<Int>) -> [QuoteBlock] {
+        var low = 0
+        var high = lines.count
+        while low < high {
+            let mid = (low + high) / 2
+            if lines[mid].upperBound < window.lowerBound { low = mid + 1 } else { high = mid }
+        }
+        var blocks: [QuoteBlock] = []
+        var index = low
+        while index < lines.count, lines[index].location <= window.upperBound {
+            let first = index
+            while index + 1 < lines.count, lines[index + 1].location == lines[index].upperBound,
+                  lines[index + 1].location <= window.upperBound { index += 1 }
+            blocks.append(QuoteBlock(
+                range: NSRange(location: lines[first].location, length: lines[index].upperBound - lines[first].location),
+                continuesBefore: first > 0 && lines[first - 1].upperBound == lines[first].location,
+                continuesAfter: index + 1 < lines.count && lines[index + 1].location == lines[index].upperBound
+            ))
+            index += 1
+        }
+        return blocks
+    }
+
     /// One number per line of `units`: 0 for a line that isn't a list item, otherwise its indentation
     /// and whether the marker is numbered. It differs before and after an edit exactly when the edit
     /// added, removed or re-indented a list item or changed its marker kind.

@@ -18,6 +18,41 @@ struct MarkdownStylerTests {
         (text as NSString).range(of: needle)
     }
 
+    // MARK: Quote blocks
+
+    private func units(_ text: String) -> [UInt16] { Array(text.utf16) }
+
+    @Test func visibleQuoteBlocksMergeAndFlagWhereTheyContinue() {
+        let lines = (0..<10).map { NSRange(location: $0 * 4, length: 4) } + [NSRange(location: 50, length: 3)]
+        #expect(MarkdownStyler.visibleQuoteBlocks(in: lines, window: 9...20) == [
+            .init(range: NSRange(location: 8, length: 16), continuesBefore: true, continuesAfter: true),
+        ])
+        #expect(MarkdownStyler.visibleQuoteBlocks(in: lines, window: 0...100) == [
+            .init(range: NSRange(location: 0, length: 40), continuesBefore: false, continuesAfter: false),
+            .init(range: NSRange(location: 50, length: 3), continuesBefore: false, continuesAfter: false),
+        ])
+        #expect(MarkdownStyler.visibleQuoteBlocks(in: lines, window: 42...48).isEmpty)
+        #expect(MarkdownStyler.visibleQuoteBlocks(in: [], window: 0...10).isEmpty)
+    }
+
+    @Test func quoteRegionWidensOverTheWholeBlock() {
+        let text = "a\n> b\n> c\n>> d\ne\n> f"
+        let ns = text as NSString
+        let middle = ns.lineRange(for: range(text, "> c"))
+        let block = NSRange(location: 2, length: ns.range(of: "e").location - 2)
+        #expect(MarkdownStyler.quoteExpandedRange(in: units(text), region: middle) == block)
+        let plain = ns.lineRange(for: range(text, "a"))
+        #expect(MarkdownStyler.quoteExpandedRange(in: units(text), region: plain) == NSUnionRange(plain, block))
+        let last = ns.lineRange(for: range(text, "e"))
+        #expect(MarkdownStyler.quoteExpandedRange(in: units(text), region: last) == NSUnionRange(block, NSRange(location: last.location, length: ns.length - last.location)))
+    }
+
+    @Test func quoteRegionIgnoresIndentedCodeAndPlainLines() {
+        let text = "x\n    > code\ny"
+        let line = (text as NSString).lineRange(for: range(text, "x"))
+        #expect(MarkdownStyler.quoteExpandedRange(in: units(text), region: line) == line)
+    }
+
     // MARK: Blocks
 
     @Test func headingLevelsCoverTheLineAndFadeTheHashes() {

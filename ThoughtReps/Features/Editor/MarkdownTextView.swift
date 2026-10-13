@@ -82,6 +82,36 @@ struct MarkdownTextView: UIViewRepresentable {
     }
 }
 
+/// A quote's rounded fill with its accent bar, drawn behind the text.
+final class QuoteBackgroundView: UIView {
+    private let bar = UIView()
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        backgroundColor = .tertiarySystemFill
+        layer.cornerRadius = MarkdownStyleApplier.quoteCornerRadius
+        bar.backgroundColor = .tintColor
+        bar.layer.cornerRadius = MarkdownStyleApplier.quoteBarWidth / 2
+        addSubview(bar)
+        isUserInteractionEnabled = false
+        isAccessibilityElement = false
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        let inset = MarkdownStyleApplier.quoteVerticalPadding
+        bar.frame = CGRect(
+            x: MarkdownStyleApplier.quoteBarInset,
+            y: inset,
+            width: MarkdownStyleApplier.quoteBarWidth,
+            height: max(bounds.height - 2 * inset, 0)
+        )
+    }
+}
+
 final class StyledTextView: UITextView {
     var onLayout: (() -> Void)?
     /// Ranges backspace deletes whole: atomic ones from anywhere inside, the others only from their end.
@@ -247,11 +277,14 @@ extension MarkdownTextView {
 
         private var displayed: [DisplayedImage] = []
         private var markers: [DisplayedMarker] = []
+        private var quoteLines: [NSRange] = []
         private var imageCache: [UUID: UIImage] = [:]
         private var overlays: [UIImageView] = []
         private var markerViews: [UIImageView] = []
+        private var quoteViews: [QuoteBackgroundView] = []
         /// Each task's checkbox hit area: its glyph's width plus a margin, over its own line fragment only.
         private var checkboxTargets: [(range: NSRange, frame: CGRect)] = []
+        private static let baseInset: CGFloat = 8
         private var lastWidth: CGFloat = 0
         private var reportedHeight: CGFloat = 0
         private var measuredWidth: CGFloat = 0
@@ -305,7 +338,7 @@ extension MarkdownTextView {
             textView = view
             view.delegate = self
             view.backgroundColor = .clear
-            view.textContainerInset = UIEdgeInsets(top: 8, left: 0, bottom: 8, right: 0)
+            view.textContainerInset = UIEdgeInsets(top: Self.baseInset, left: 0, bottom: Self.baseInset, right: 0)
             view.textContainer.lineFragmentPadding = 0
             view.isScrollEnabled = false
             // Never scrolls, so nothing needs clipping; clipping cuts the caret in half at x = 0.
@@ -597,7 +630,9 @@ extension MarkdownTextView {
                 regions.append(NSIntersectionRange(old, NSRange(location: 0, length: units.count)))
                 regions.append(new)
             }
+            if units.isEmpty { quoteLines = [] }
             for region in Self.merged(regions) { style(region, units: units) }
+            updateVerticalInsets(of: view)
         }
 
         private static func merged(_ regions: [NSRange]) -> [NSRange] {
@@ -638,6 +673,7 @@ extension MarkdownTextView {
 
         private func style(_ region: NSRange, units: [UInt16]) {
             guard let view = textView else { return }
+            let region = MarkdownStyler.quoteExpandedRange(in: units, region: region)
             let wasApplying = isApplying
             isApplying = true
             defer { isApplying = wasApplying }
@@ -648,6 +684,7 @@ extension MarkdownTextView {
             let runs = MarkdownStyler.runs(in: units, range: region)
             displayed.removeAll { NSIntersectionRange($0.range, region).length > 0 }
             markers.removeAll { NSIntersectionRange($0.range, region).length > 0 }
+            quoteLines.removeAll { NSIntersectionRange($0, region).length > 0 }
             let applied = applier.apply(
                 runs: runs,
                 region: region,
@@ -659,10 +696,31 @@ extension MarkdownTextView {
             )
             displayed += applied.images
             markers += applied.markers
+            quoteLines += applied.quoteLines
+            quoteLines.sort { $0.location < $1.location }
             displayed.sort { $0.range.location < $1.range.location }
             markers.sort { $0.range.location < $1.range.location }
             view.typingAttributes = applier.baseAttributes
+            updateVerticalInsets(of: view)
             view.setNeedsLayout()
+        }
+
+        /// Layout drops the space before the document's first paragraph and after its last, so a quote
+        /// at either end gets that padding from the inset instead.
+        private func updateVerticalInsets(of view: UITextView) {
+            let padding = MarkdownStyleApplier.quoteVerticalPadding
+            let length = view.textStorage.length
+            let startsWithQuote = quoteLines.first?.location == 0
+            var endsWithQuote = false
+            if let last = quoteLines.last, length > 0, last.upperBound == length {
+                endsWithQuote = view.textStorage.mutableString.character(at: length - 1) != 0x0A
+            }
+            let top = Self.baseInset + (startsWithQuote ? padding : 0)
+            let bottom = Self.baseInset + (endsWithQuote ? padding : 0)
+            guard view.textContainerInset.top != top || view.textContainerInset.bottom != bottom else { return }
+            view.textContainerInset.top = top
+            view.textContainerInset.bottom = bottom
+            measuredWidth = 0
         }
 
         private func contentWidth(of view: UITextView) -> CGFloat {
@@ -751,6 +809,7 @@ extension MarkdownTextView {
                 item.range = range
                 return item
             }
+            quoteLines = quoteLines.compactMap { shift($0) }
             revealed = Self.shifted(revealed, edit: edit, newLength: newLength)
         }
 
@@ -1057,6 +1116,7 @@ extension MarkdownTextView {
             else {
                 overlays.forEach { $0.isHidden = true }
                 markerViews.forEach { $0.isHidden = true }
+                quoteViews.forEach { $0.isHidden = true }
                 return
             }
             let documentStart = content.documentRange.location
@@ -1075,6 +1135,45 @@ extension MarkdownTextView {
                 }
                 return result
             }
+
+            func lineRects(of range: NSRange) -> (first: CGRect, last: CGRect)? {
+                guard let start = content.location(documentStart, offsetBy: range.location),
+                      let end = content.location(start, offsetBy: range.length),
+                      let textRange = NSTextRange(location: start, end: end)
+                else { return nil }
+                var first: CGRect?
+                var last: CGRect?
+                layout.enumerateTextSegments(in: textRange, type: .standard, options: []) { _, rect, _, _ in
+                    first = first ?? rect
+                    last = rect
+                    return true
+                }
+                guard let first, let last else { return nil }
+                return (first, last)
+            }
+
+            var usedQuotes = 0
+            let padding = MarkdownStyleApplier.quoteVerticalPadding
+            let offscreen: CGFloat = 2000
+            for block in MarkdownStyler.visibleQuoteBlocks(in: quoteLines, window: visibleStart...visibleEnd) {
+                let top = lineRects(of: NSRange(location: block.range.location, length: 1))
+                let bottom = lineRects(of: NSRange(location: block.range.upperBound - 1, length: 1))
+                guard let anchor = top ?? bottom else { continue }
+                let quoteView = quoteBackground(at: usedQuotes, in: view)
+                usedQuotes += 1
+                let minY = top.map { block.continuesBefore ? $0.first.minY - offscreen : $0.first.minY - padding }
+                    ?? anchor.first.minY - offscreen
+                let maxY = bottom.map { block.continuesAfter ? $0.last.maxY + offscreen : $0.last.maxY + padding }
+                    ?? anchor.last.maxY + offscreen
+                quoteView.frame = CGRect(
+                    x: view.textContainerInset.left,
+                    y: minY + view.textContainerInset.top,
+                    width: contentWidth(of: view),
+                    height: maxY - minY
+                )
+                quoteView.isHidden = false
+            }
+            for extra in quoteViews.dropFirst(usedQuotes) { extra.isHidden = true }
 
             var used = 0
             for item in displayed where item.range.upperBound >= visibleStart && item.range.location <= visibleEnd {
@@ -1116,6 +1215,14 @@ extension MarkdownTextView {
             }
             for extra in markerViews.dropFirst(usedMarkers) { extra.isHidden = true }
             refreshAccessibilityActions(in: view, visible: visible)
+        }
+
+        private func quoteBackground(at index: Int, in view: UIView) -> QuoteBackgroundView {
+            if index < quoteViews.count { return quoteViews[index] }
+            let quoteView = QuoteBackgroundView()
+            view.insertSubview(quoteView, at: 0)
+            quoteViews.append(quoteView)
+            return quoteView
         }
 
         private func overlay(at index: Int, in view: UIView, pool: inout [UIImageView], scaled: Bool) -> UIImageView {

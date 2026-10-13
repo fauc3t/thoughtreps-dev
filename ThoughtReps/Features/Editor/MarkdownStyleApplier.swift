@@ -26,6 +26,8 @@ struct DisplayedMarker {
 struct AppliedStyle {
     var images: [DisplayedImage] = []
     var markers: [DisplayedMarker] = []
+    /// The whole lines (with their newline) that carry a block quote, in order.
+    var quoteLines: [NSRange] = []
 }
 
 /// Turns `MarkdownStyler` runs into text attributes. The look follows `Theme.thoughtReps`:
@@ -36,6 +38,14 @@ struct AppliedStyle {
 final class MarkdownStyleApplier {
     static let maxImageHeight: CGFloat = 160
     private static let collapsedFenceHeight: CGFloat = 4
+
+    /// A quote's box, like the renderer's: the bar inset 12 from the left edge, 3 wide, then 12 to the text.
+    static let quoteBarInset: CGFloat = 12
+    static let quoteBarWidth: CGFloat = 3
+    static let quoteTextIndent: CGFloat = 27
+    static let quoteTrailingPadding: CGFloat = 14
+    static let quoteVerticalPadding: CGFloat = 10
+    static let quoteCornerRadius: CGFloat = 10
 
     private struct Look: OptionSet, Hashable {
         let rawValue: UInt32
@@ -122,6 +132,10 @@ final class MarkdownStyleApplier {
                 for i in span { looks[i].setHeading(level) }
             case .syntax:
                 for i in span { looks[i].insert(revealed ? .syntax : .hidden) }
+            case .blockquote:
+                for i in span { looks[i].insert(.quote) }
+                let line = MarkdownStyler.lineAlignedRange(in: units, covering: NSRange(location: run.range.location, length: 0))
+                if applied.quoteLines.last != line { applied.quoteLines.append(line) }
             case .fence:
                 if !revealed {
                     for i in span { looks[i].insert(.hidden) }
@@ -163,6 +177,7 @@ final class MarkdownStyleApplier {
         for entry in hangingIndents {
             applyHangingIndent(entry.prefix, range: entry.range, in: storage, units: units)
         }
+        applyQuoteParagraphs(applied.quoteLines, in: storage)
         for fence in collapsedFences {
             let paragraph = NSMutableParagraphStyle()
             paragraph.minimumLineHeight = Self.collapsedFenceHeight
@@ -263,6 +278,25 @@ final class MarkdownStyleApplier {
         storage.addAttribute(.paragraphStyle, value: paragraph, range: line)
     }
 
+    /// Indents quote text past the bar and pads the block's first and last lines; list items inside
+    /// a quote keep their hanging indent on top of that. Needs whole blocks, which `apply`'s region provides.
+    private func applyQuoteParagraphs(_ lines: [NSRange], in storage: NSTextStorage) {
+        for (index, line) in lines.enumerated() {
+            let existing = storage.attribute(.paragraphStyle, at: line.location, effectiveRange: nil) as? NSParagraphStyle
+            let paragraph = (existing?.mutableCopy() as? NSMutableParagraphStyle) ?? NSMutableParagraphStyle()
+            paragraph.firstLineHeadIndent += Self.quoteTextIndent
+            paragraph.headIndent += Self.quoteTextIndent
+            paragraph.tailIndent = -Self.quoteTrailingPadding
+            if index == 0 || lines[index - 1].upperBound != line.location {
+                paragraph.paragraphSpacingBefore = Self.quoteVerticalPadding
+            }
+            if index == lines.count - 1 || lines[index + 1].location != line.upperBound {
+                paragraph.paragraphSpacing = Self.quoteVerticalPadding
+            }
+            storage.addAttribute(.paragraphStyle, value: paragraph, range: line)
+        }
+    }
+
     private func isAloneOnLine(_ range: NSRange, in units: [UInt16]) -> Bool {
         let before = range.location == 0 || units[range.location - 1] == 0x0A
         let after = range.upperBound >= units.count || units[range.upperBound] == 0x0A
@@ -301,7 +335,7 @@ final class MarkdownStyleApplier {
         if look.contains(.hidden) { return .clear }
         if look.contains(.syntax) { return .secondaryLabel }
         if look.contains(.link) || look.contains(.tag) { return .tintColor }
-        if look.contains(.quote) { return .secondaryLabel }
+        if look.contains(.quote) { return UIColor.label.withAlphaComponent(0.85) }
         return .label
     }
 

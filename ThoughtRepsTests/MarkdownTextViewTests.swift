@@ -530,6 +530,143 @@ struct MarkdownTextViewTests {
         #expect(!isHidden(h, at: 10))
     }
 
+    private func quoteViews(_ h: Harness) -> [QuoteBackgroundView] {
+        h.view.layoutIfNeeded()
+        return h.view.subviews.compactMap { $0 as? QuoteBackgroundView }.filter { !$0.isHidden }
+    }
+
+    @Test func consecutiveQuoteLinesShareOneBackgroundBehindTheText() {
+        let h = makeHarness("a\n> one\n> two\n\n> three\nb")
+        h.view.selectedRange = NSRange(location: 0, length: 0)
+        let boxes = quoteViews(h).sorted { $0.frame.minY < $1.frame.minY }
+        #expect(boxes.count == 2)
+        #expect(boxes[0].frame.height > boxes[1].frame.height)
+        #expect(boxes[0].frame.minX == 0)
+        let two = h.view.caretRect(for: h.view.position(from: h.view.beginningOfDocument, offset: 12)!)
+        #expect(boxes[0].frame.contains(two))
+        #expect(boxes[0].frame.maxY - two.maxY >= MarkdownStyleApplier.quoteVerticalPadding - 1)
+        let one = h.view.caretRect(for: h.view.position(from: h.view.beginningOfDocument, offset: 4)!)
+        #expect(one.minX >= MarkdownStyleApplier.quoteTextIndent - 1)
+        #expect(one.minY - boxes[0].frame.minY >= MarkdownStyleApplier.quoteVerticalPadding - 1)
+        #expect(h.view.subviews.firstIndex(of: boxes[0])! < h.view.subviews.count - 1)
+    }
+
+    @Test func aQuoteAtTheStartOfTheTextStillGetsItsTopPadding() {
+        let h = makeHarness("> one\nb")
+        h.view.selectedRange = NSRange(location: 7, length: 0)
+        let box = quoteViews(h)
+        #expect(box.count == 1)
+        let caret = h.view.caretRect(for: h.view.position(from: h.view.beginningOfDocument, offset: 3)!)
+        #expect(caret.minY - box[0].frame.minY >= MarkdownStyleApplier.quoteVerticalPadding - 1)
+        let plain = makeHarness("one\nb")
+        plain.view.selectedRange = NSRange(location: 4, length: 0)
+        plain.view.layoutIfNeeded()
+        let baseline = plain.view.caretRect(for: plain.view.position(from: plain.view.beginningOfDocument, offset: 1)!)
+        #expect(caret.minY >= baseline.minY + MarkdownStyleApplier.quoteVerticalPadding - 1)
+    }
+
+    @Test func aQuoteAtTheEndOfTheTextGetsBottomPaddingFromTheInset() {
+        let pad = MarkdownStyleApplier.quoteVerticalPadding
+        let h = makeHarness("a\n> one")
+        h.view.selectedRange = NSRange(location: 0, length: 0)
+        #expect(h.view.textContainerInset.top == 8)
+        #expect(h.view.textContainerInset.bottom == 8 + pad)
+        #expect(!h.coordinator.isHeightCacheValid)
+
+        h.view.selectedRange = NSRange(location: 7, length: 0)
+        h.view.insertText("\n")
+        #expect(h.view.textContainerInset.bottom == 8)
+    }
+
+    @Test func deletingAWholeQuoteReturnsTheInsetsToNormal() {
+        let h = makeHarness("> one")
+        h.view.selectedRange = NSRange(location: 5, length: 0)
+        #expect(h.view.textContainerInset.top == 8 + MarkdownStyleApplier.quoteVerticalPadding)
+        #expect(h.view.textContainerInset.bottom == 8 + MarkdownStyleApplier.quoteVerticalPadding)
+        h.view.selectedRange = NSRange(location: 0, length: 5)
+        h.view.deleteBackward()
+        #expect(h.view.textContainerInset.top == 8)
+        #expect(h.view.textContainerInset.bottom == 8)
+        #expect(quoteViews(h).isEmpty)
+
+    }
+
+    @Test func undoingAQuoteDeletionBringsTheQuoteAndInsetsBack() {
+        let h = makeHarness("a\n> one\nb")
+        h.view.selectedRange = NSRange(location: 2, length: 6)
+        h.grouped { h.view.deleteBackward() }
+        #expect(h.view.text == "a\nb")
+        #expect(quoteViews(h).isEmpty)
+        h.view.undoManager?.undo()
+        #expect(h.view.text == "a\n> one\nb")
+        #expect(quoteViews(h).count == 1)
+    }
+
+    @Test func aLongQuoteTallerThanTheWindowKeepsItsBoxOpenAtBothEdges() {
+        let text = "intro\n" + (0..<200).map { "> line \($0)" }.joined(separator: "\n") + "\n\noutro"
+        let h = makeHarness(text)
+        h.view.selectedRange = NSRange(location: 0, length: 0)
+        for _ in 0..<3 {
+            h.view.setNeedsLayout()
+            h.view.layoutIfNeeded()
+        }
+        let boxes = quoteViews(h)
+        #expect(boxes.count == 1)
+        let frame = boxes[0].frame
+        #expect(frame.maxY > 1000)
+        #expect(frame.minY > 0 && frame.minY < 40)
+    }
+
+    @Test func aQuoteLineHoldingAnImageTokenShowsNoThumbnail() {
+        let id = UUID()
+        let h = makeHarness("> ![](img:\(id.uuidString))\nplain", id: id)
+        #expect(h.coordinator.displayedImageCount == 0)
+    }
+
+    @Test func listItemsInAQuoteStackTheirHangingIndentOnTheQuoteIndent() {
+        let h = makeHarness("> - " + String(repeating: "word ", count: 40))
+        h.view.selectedRange = NSRange(location: h.view.text.utf16.count, length: 0)
+        let style = h.view.textStorage.attribute(.paragraphStyle, at: 8, effectiveRange: nil) as? NSParagraphStyle
+        #expect(style?.firstLineHeadIndent == MarkdownStyleApplier.quoteTextIndent)
+        #expect((style?.headIndent ?? 0) > MarkdownStyleApplier.quoteTextIndent + 10)
+    }
+
+    @Test func quoteTextIsIndentedAndLabelColored() {
+        let h = makeHarness("> one\nplain")
+        h.view.selectedRange = NSRange(location: 8, length: 0)
+        let style = h.view.textStorage.attribute(.paragraphStyle, at: 3, effectiveRange: nil) as? NSParagraphStyle
+        #expect(style?.firstLineHeadIndent == MarkdownStyleApplier.quoteTextIndent)
+        #expect(style?.headIndent == MarkdownStyleApplier.quoteTextIndent)
+        #expect(style?.paragraphSpacingBefore == MarkdownStyleApplier.quoteVerticalPadding)
+        #expect(style?.paragraphSpacing == MarkdownStyleApplier.quoteVerticalPadding)
+        #expect(color(h, at: 3) == UIColor.label.withAlphaComponent(0.85))
+        let plain = h.view.textStorage.attribute(.paragraphStyle, at: 8, effectiveRange: nil) as? NSParagraphStyle
+        #expect((plain?.firstLineHeadIndent ?? 0) == 0)
+    }
+
+    @Test func editingQuoteNeighboursRegroupsTheBlock() {
+        let h = makeHarness("> one\ntwo\n> three")
+        h.view.selectedRange = NSRange(location: 18, length: 0)
+        let pad = MarkdownStyleApplier.quoteVerticalPadding
+        let style = { (offset: Int) in h.view.textStorage.attribute(.paragraphStyle, at: offset, effectiveRange: nil) as? NSParagraphStyle }
+        #expect(style(0)?.paragraphSpacing == pad)
+        #expect(quoteViews(h).count == 2)
+
+        h.view.selectedRange = NSRange(location: 6, length: 0)
+        h.view.insertText("> ")
+        #expect((style(0)?.paragraphSpacing ?? 0) == 0)
+        #expect((style(8)?.paragraphSpacing ?? 0) == 0)
+        #expect((style(8)?.paragraphSpacingBefore ?? 0) == 0)
+        #expect(quoteViews(h).count == 1)
+
+        h.view.deleteBackward()
+        h.view.deleteBackward()
+        #expect(h.view.text == "> one\ntwo\n> three")
+        #expect(style(0)?.paragraphSpacing == pad)
+        #expect(style(12)?.paragraphSpacingBefore == pad)
+        #expect(quoteViews(h).count == 2)
+    }
+
     @Test func movingTheSelectionRestylesOnlyTheOldAndNewLines() {
         let lines = (0..<40).map { "line **\($0)** text" }
         let text = lines.joined(separator: "\n")
