@@ -486,6 +486,9 @@ struct FormatBar: View {
     @Binding var selection: TextSelection?
     let intake: ImageIntake
     let onAddBlock: (BlockKind) -> Void
+    @Environment(\.horizontalSizeClass) private var sizeClass
+
+    private var metrics: AccessoryMetrics { AccessoryMetrics(sizeClass) }
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -502,21 +505,21 @@ struct FormatBar: View {
                     ImageSourceButtons(intake: intake)
                 } label: {
                     Image(systemName: "photo")
-                        .frame(minWidth: AccessoryMetrics.tapSize, minHeight: AccessoryMetrics.tapSize)
+                        .frame(minWidth: metrics.tapSize, minHeight: metrics.tapSize)
                 }
                 .accessibilityLabel("Add image")
                 Menu {
                     AddBlockMenuItems(onAdd: onAddBlock)
                 } label: {
                     Image(systemName: "plus.circle")
-                        .frame(minWidth: AccessoryMetrics.tapSize, minHeight: AccessoryMetrics.tapSize)
+                        .frame(minWidth: metrics.tapSize, minHeight: metrics.tapSize)
                 }
                 .accessibilityLabel("Add block")
             }
             .padding(.horizontal, 12)
         }
         .scrollBounceBehavior(.basedOnSize)
-        .font(AccessoryMetrics.isPad ? .title3 : .body)
+        .font(metrics.isRegular ? .title3 : .body)
         // Plain white (black in light mode) icons, not the accent color.
         .tint(.primary)
     }
@@ -524,7 +527,7 @@ struct FormatBar: View {
     private func button(_ label: String, systemImage: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: systemImage)
-                .frame(minWidth: AccessoryMetrics.tapSize, minHeight: AccessoryMetrics.tapSize)
+                .frame(minWidth: metrics.tapSize, minHeight: metrics.tapSize)
         }
         .accessibilityLabel(label)
     }
@@ -561,6 +564,9 @@ struct SuggestionBar: View {
     let suggestions: [TagSuggester.Candidate]
     let tags: [Tag]
     let onSelect: (TagSuggester.Candidate) -> Void
+    @Environment(\.horizontalSizeClass) private var sizeClass
+
+    private var metrics: AccessoryMetrics { AccessoryMetrics(sizeClass) }
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -578,9 +584,9 @@ struct SuggestionBar: View {
         let color = tags.first { $0.name == candidate.key }.map(TagColor.color(for:)) ?? .secondary
         return HStack(spacing: 4) {
             Text("#\(candidate.display)")
-                .font((AccessoryMetrics.isPad ? Font.callout : .caption).weight(.medium))
+                .font((metrics.isRegular ? Font.callout : .caption).weight(.medium))
             Text("\(candidate.count)")
-                .font(AccessoryMetrics.isPad ? .caption : .caption2)
+                .font(metrics.isRegular ? .caption : .caption2)
                 .foregroundStyle(.secondary)
         }
         .lineLimit(1)
@@ -588,7 +594,7 @@ struct SuggestionBar: View {
         .padding(.vertical, 6)
         .background(RoundedRectangle(cornerRadius: 8).fill(color.opacity(0.15)))
         .foregroundStyle(.primary)
-        .frame(minHeight: AccessoryMetrics.tapSize)
+        .frame(minHeight: metrics.tapSize)
         .contentShape(Rectangle())
     }
 }

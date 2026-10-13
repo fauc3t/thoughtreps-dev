@@ -114,6 +114,7 @@ final class QuoteBackgroundView: UIView {
 
 final class StyledTextView: UITextView {
     var onLayout: (() -> Void)?
+    var onWindowChange: (() -> Void)?
     /// Ranges backspace deletes whole: atomic ones from anywhere inside, the others only from their end.
     var deleteUnits: () -> [(range: NSRange, atomic: Bool)] = { [] }
     var onCommitMarkedText: (() -> Void)?
@@ -151,6 +152,11 @@ final class StyledTextView: UITextView {
     override func layoutSubviews() {
         super.layoutSubviews()
         onLayout?()
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        onWindowChange?()
     }
 
     // ⌘↩ saves and Esc cancels the editor from the keyboard, whichever of its text views has focus.
@@ -195,25 +201,38 @@ final class StyledTextView: UITextView {
     }
 }
 
-/// Sizes of the keyboard accessory. The idiom, not the size class, decides: the bar's height is fixed
-/// when it is created, and an iPad window narrowed to compact width keeps the larger bar.
-enum AccessoryMetrics {
-    static var isPad: Bool { UIDevice.current.userInterfaceIdiom == .pad }
-    static var pillHeight: CGFloat { isPad ? 56 : 48 }
-    static var tapSize: CGFloat { isPad ? 52 : 44 }
-    static var maxWidth: CGFloat { isPad ? 640 : .infinity }
+/// Sizes of the keyboard accessory, chosen by horizontal size class like the rest of the app's layout:
+/// regular width gets the larger bar, compact the phone sizes.
+struct AccessoryMetrics: Equatable {
+    static let margin: CGFloat = 8
+
+    let isRegular: Bool
+
+    init(isRegular: Bool) { self.isRegular = isRegular }
+    init(_ sizeClass: UserInterfaceSizeClass?) { self.init(isRegular: sizeClass == .regular) }
+    init(_ sizeClass: UIUserInterfaceSizeClass) { self.init(isRegular: sizeClass == .regular) }
+
+    var pillHeight: CGFloat { isRegular ? 56 : 48 }
+    var tapSize: CGFloat { isRegular ? 52 : 44 }
+    var maxWidth: CGFloat { isRegular ? 640 : .infinity }
+    var barHeight: CGFloat { pillHeight + 2 * Self.margin }
 }
 
 /// Keyboard accessory that floats its SwiftUI content in a glass pill above the keyboard, like
 /// SwiftUI's `.keyboard` toolbar.
 @MainActor
-private final class AccessoryBar: UIInputView {
-    static let margin: CGFloat = 8
+final class AccessoryBar: UIInputView {
+    static let margin = AccessoryMetrics.margin
     private let content: UIView & UIContentView
+    private var rootView: AnyView
+    private(set) var metrics: AccessoryMetrics
+    private(set) var heightConstraint: NSLayoutConstraint?
 
-    init(rootView: AnyView) {
-        content = Self.configuration(rootView).makeContentView()
-        let height = AccessoryMetrics.pillHeight + 2 * Self.margin
+    init(rootView: AnyView, metrics: AccessoryMetrics) {
+        self.rootView = rootView
+        self.metrics = metrics
+        content = Self.configuration(rootView, metrics).makeContentView()
+        let height = metrics.barHeight
         super.init(frame: CGRect(x: 0, y: 0, width: 0, height: height), inputViewStyle: .default)
         allowsSelfSizing = true
         backgroundColor = .clear
@@ -222,6 +241,7 @@ private final class AccessoryBar: UIInputView {
         addSubview(content)
         let heightConstraint = heightAnchor.constraint(equalToConstant: height)
         heightConstraint.priority = .defaultHigh
+        self.heightConstraint = heightConstraint
         NSLayoutConstraint.activate([
             content.leadingAnchor.constraint(equalTo: leadingAnchor),
             content.trailingAnchor.constraint(equalTo: trailingAnchor),
@@ -233,12 +253,25 @@ private final class AccessoryBar: UIInputView {
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
-    func update(_ rootView: AnyView) {
-        content.configuration = Self.configuration(rootView)
+    /// The keyboard hosts the bar in its own window, so the editor's text view decides the size class.
+    /// Returns whether the height changed.
+    @discardableResult
+    func setMetrics(_ new: AccessoryMetrics) -> Bool {
+        guard new != metrics else { return false }
+        metrics = new
+        content.configuration = Self.configuration(rootView, new)
+        guard let heightConstraint, heightConstraint.constant != new.barHeight else { return false }
+        heightConstraint.constant = new.barHeight
+        return true
     }
 
-    private static func configuration(_ rootView: AnyView) -> UIHostingConfiguration<AccessoryPill, EmptyView> {
-        UIHostingConfiguration { AccessoryPill(content: rootView) }
+    func update(_ rootView: AnyView) {
+        self.rootView = rootView
+        content.configuration = Self.configuration(rootView, metrics)
+    }
+
+    private static func configuration(_ rootView: AnyView, _ metrics: AccessoryMetrics) -> UIHostingConfiguration<AccessoryPill, EmptyView> {
+        UIHostingConfiguration { AccessoryPill(content: rootView, metrics: metrics) }
             .margins(.all, 0)
     }
 }
@@ -246,11 +279,13 @@ private final class AccessoryBar: UIInputView {
 /// The accessory's content in a capsule: Liquid Glass on iOS 26, a material before it.
 private struct AccessoryPill: View {
     let content: AnyView
+    let metrics: AccessoryMetrics
 
     var body: some View {
         let pill = content
+            .environment(\.horizontalSizeClass, metrics.isRegular ? .regular : .compact)
             .padding(.horizontal, 4)
-            .frame(maxWidth: AccessoryMetrics.maxWidth, minHeight: AccessoryMetrics.pillHeight, maxHeight: AccessoryMetrics.pillHeight)
+            .frame(maxWidth: metrics.maxWidth, minHeight: metrics.pillHeight, maxHeight: metrics.pillHeight)
             .clipShape(Capsule())
         Group {
             if #available(iOS 26, *) {
@@ -362,9 +397,13 @@ extension MarkdownTextView {
             view.registerForTraitChanges([UITraitPreferredContentSizeCategory.self]) { [weak self] (_: StyledTextView, _) in
                 MainActor.assumeIsolated { self?.contentSizeCategoryChanged() }
             }
-            let bar = AccessoryBar(rootView: accessory)
+            let bar = AccessoryBar(rootView: accessory, metrics: AccessoryMetrics(view.traitCollection.horizontalSizeClass))
             accessoryBar = bar
             view.inputAccessoryView = bar
+            view.onWindowChange = { [weak self] in self?.syncAccessoryMetrics() }
+            view.registerForTraitChanges([UITraitHorizontalSizeClass.self]) { [weak self] (_: StyledTextView, _) in
+                MainActor.assumeIsolated { self?.syncAccessoryMetrics() }
+            }
             if let placeholder = parent.placeholder {
                 let label = UILabel()
                 label.text = placeholder
@@ -375,6 +414,12 @@ extension MarkdownTextView {
                 view.addSubview(label)
                 placeholderLabel = label
             }
+        }
+
+        private func syncAccessoryMetrics() {
+            guard let view = textView, view.window != nil else { return }
+            let heightChanged = accessoryBar?.setMetrics(AccessoryMetrics(view.traitCollection.horizontalSizeClass)) ?? false
+            if heightChanged, view.isFirstResponder { view.reloadInputViews() }
         }
 
         var displayedImageCount: Int { displayed.count }
