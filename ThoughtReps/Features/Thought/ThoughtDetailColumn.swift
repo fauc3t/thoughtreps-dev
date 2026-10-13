@@ -6,24 +6,33 @@ import SwiftData
 struct ThoughtDetailColumn: View {
     @Environment(ThoughtSelection.self) private var selection: ThoughtSelection?
 
+    private var detailPath: Binding<[AppRoute]> {
+        Binding(get: { selection?.detailPath ?? [] }, set: { selection?.detailPath = $0 })
+    }
+
     var body: some View {
-        NavigationStack {
-            if let pick = selection?.current {
-                SelectedThoughtDetail(modelID: pick.modelID)
-                    .id(pick.modelID)
-            } else {
-                ThoughtPlaceholder()
+        NavigationStack(path: detailPath) {
+            Group {
+                if let pick = selection?.current {
+                    ThoughtDetailLoader(modelID: pick.modelID)
+                        .id(pick.modelID)
+                } else {
+                    ThoughtPlaceholder()
+                }
             }
+            .thoughtDestinations()
         }
     }
 }
 
-/// Resolves the selection with a primary-key query rather than a model reference, so a thought that is
-/// deleted while selected turns into the placeholder instead of a dead model.
-private struct SelectedThoughtDetail: View {
+/// Resolves a thought with a primary-key query rather than a model reference, so one that is deleted
+/// while shown turns into a placeholder instead of a dead model.
+struct ThoughtDetailLoader: View {
     @Query private var matches: [Thought]
+    private let openKind: OpenKind
 
-    init(modelID: PersistentIdentifier) {
+    init(modelID: PersistentIdentifier, openKind: OpenKind = .open) {
+        self.openKind = openKind
         var descriptor = FetchDescriptor<Thought>(predicate: #Predicate { $0.persistentModelID == modelID })
         descriptor.fetchLimit = 1
         _matches = Query(descriptor)
@@ -31,7 +40,14 @@ private struct SelectedThoughtDetail: View {
 
     var body: some View {
         if let thought = matches.first {
-            ThoughtDetailView(thought: thought)
+            ThoughtDetailView(thought: thought, openKind: openKind)
+        } else if openKind == .visit {
+            ContentUnavailableView {
+                Label("This thought was deleted", systemImage: "trash")
+                    .font(.archivo(22, weight: .bold, relativeTo: .title2))
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color.paper)
         } else {
             ThoughtPlaceholder()
         }

@@ -106,6 +106,7 @@ enum SampleData {
     static func insert(into context: ModelContext, now: Date) {
         let store = ThoughtStore(context: context, defaultIntervalDays: Scheduler.defaultIntervalDays)
         let calendar = Calendar.current
+        var inserted: [Thought] = []
         for sample in samples {
             let created = Scheduler.adding(days: -sample.createdDaysAgo, to: now, calendar: calendar)
             var body = sample.body
@@ -130,6 +131,7 @@ enum SampleData {
                 now: created
             )
             guard thought.modelContext != nil else { return }
+            inserted.append(thought)
             let nextDueAt = Scheduler.adding(days: sample.dueInDays, to: now, calendar: calendar)
                 .addingTimeInterval(sample.dueInDays == 0 ? -3600 : 0) // "due today" = an hour ago
             let lastViewedAt = sample.views > 0
@@ -147,6 +149,17 @@ enum SampleData {
                 store.archive(thought, now: Scheduler.adding(days: -10, to: now, calendar: calendar))
             }
         }
+        linkSamples(inserted, store: store, now: now)
+    }
+
+    /// Link cards in every state: open, archived and deleted, plus a thought that is linked from others.
+    private static func linkSamples(_ thoughts: [Thought], store: ThoughtStore, now: Date) {
+        guard thoughts.count == samples.count else { return }
+        store.addLink(to: thoughts[6].id, in: thoughts[0], now: now)
+        store.addLink(to: thoughts[11].id, in: thoughts[0], now: now)
+        store.addLink(to: UUID(), in: thoughts[0], now: now)
+        store.addLink(to: thoughts[6].id, in: thoughts[2], now: now)
+        store.addLink(to: thoughts[5].id, in: thoughts[2], now: now)
     }
 
     /// A gradient standing in for a photo.

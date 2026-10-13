@@ -67,35 +67,55 @@ struct LayoutCarryTests {
         #expect(LayoutCarry.fold(contentPath: [.search], selected: nil) == [.search])
     }
 
-    @Test func handoffIsConsumedOnceAndOnlyForItsThought() {
+    @Test func carriedEntryIsConsumedOnceAndOnlyForItsThought() {
         let handoff = ViewHandoff()
         let id = UUID()
-        let now = Date()
-        #expect(!handoff.consume(id, now: now))
-        handoff.offer(id, now: now)
-        #expect(!handoff.consume(UUID(), now: now))
-        #expect(handoff.consume(id, now: now))
-        #expect(!handoff.consume(id, now: now))
+        #expect(!handoff.consume(id))
+        handoff.carry([id])
+        #expect(!handoff.consume(UUID()))
+        #expect(handoff.consume(id))
+        #expect(!handoff.consume(id))
     }
 
-    @Test func expiredOfferIsNotHonored() {
+    @Test func carriedEntriesDoNotExpireSoACoveredThoughtPoppedToLaterRecordsNothing() {
         let handoff = ViewHandoff()
-        let id = UUID()
-        let now = Date()
-        handoff.offer(id, now: now)
-        #expect(!handoff.consume(id, now: now.addingTimeInterval(ViewHandoff.window + 1)))
-        #expect(!handoff.consume(id, now: now))
+        let a = UUID(), b = UUID()
+        handoff.carry([a, b])
+        #expect(handoff.consume(b))
+        #expect(handoff.consume(a))
+        #expect(!handoff.consume(a))
     }
 
-    @Test func newerOfferReplacesOlderWithoutBeingCleared() {
+    @Test func aThoughtOnTheStackTwiceIsCountedTwice() {
         let handoff = ViewHandoff()
-        let first = UUID()
-        let second = UUID()
-        let now = Date()
-        handoff.offer(first, now: now)
-        handoff.offer(second, now: now.addingTimeInterval(0.9))
-        #expect(!handoff.consume(first, now: now.addingTimeInterval(0.95)))
-        #expect(handoff.consume(second, now: now.addingTimeInterval(1.5)))
+        let a = UUID(), b = UUID()
+        handoff.carry([a, b, a])
+        #expect(handoff.consume(a))
+        #expect(handoff.consume(a))
+        #expect(!handoff.consume(a))
+        #expect(handoff.consume(b))
+    }
+
+    @Test func aNewCarryReplacesTheOldOne() {
+        let handoff = ViewHandoff()
+        let first = UUID(), second = UUID()
+        handoff.carry([first])
+        handoff.carry([second])
+        #expect(!handoff.consume(first))
+        #expect(handoff.consume(second))
+    }
+
+    @Test func selectingOrClearingDropsCarriedEntries() {
+        let a = thought("a")
+        let handoff = ViewHandoff()
+        let selection = ThoughtSelection()
+        selection.viewHandoff = handoff
+        handoff.carry([a.id])
+        selection.select(a)
+        #expect(!handoff.consume(a.id))
+        handoff.carry([a.id])
+        selection.clear()
+        #expect(!handoff.consume(a.id))
     }
 
     @Test func handedOffOpenDoesNotRecordAView() {

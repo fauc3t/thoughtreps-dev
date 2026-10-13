@@ -4,6 +4,7 @@ import SwiftData
 /// Full view of one thought. Opening it counts as a view (unless archived).
 struct ThoughtDetailView: View {
     let thought: Thought
+    var openKind: OpenKind = .open
 
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
@@ -19,6 +20,8 @@ struct ThoughtDetailView: View {
     @State private var tappedTag: Tag?
     @State private var viewingImage: ImageViewerStart?
     @State private var captureToken = UUID()
+    @State private var linkTargets: [UUID: Thought] = [:]
+    @State private var linkedFrom: (thoughts: [Thought], total: Int) = ([], 0)
 
     private var store: ThoughtStore {
         ThoughtStore(context: context, defaultIntervalDays: defaultIntervalDays)
@@ -43,12 +46,13 @@ struct ThoughtDetailView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     ThoughtRenderer(markdown: parts?.rest ?? thought.body, images: thought.images ?? []) { viewingImage = ImageViewerStart(id: $0) }
                     ForEach(thought.sortedBlocks) { block in
-                        BlockView(block: block, images: thought.images ?? []) { viewingImage = ImageViewerStart(id: $0) }
+                        BlockView(block: block, images: thought.images ?? [], onOpenImage: { viewingImage = ImageViewerStart(id: $0) }, linkTargets: linkTargets)
                     }
                 }
                 .environment(\.openURL, OpenURLAction(handler: openLink))
                 Divider().padding(.top, 8)
                 footer
+                LinkedFromSection(thoughts: linkedFrom.thoughts.filter { $0.modelContext != nil && !$0.isDeleted }, total: linkedFrom.total)
             }
             .padding(20)
             .frame(maxWidth: ReadableWidth.column, alignment: .leading)
@@ -79,9 +83,11 @@ struct ThoughtDetailView: View {
         }
         .onAppear {
             recordView()
+            refreshLinks()
             // The interval bar takes the bottom edge. In the split view the + sits in the list column, clear of it.
             if selection == nil { captureContext?.hideButton(token: captureToken) }
         }
+        .onChange(of: linkIDs) { refreshLinks() }
         .onDisappear {
             captureContext?.showButton(token: captureToken)
             // Delete only once the pop has finished, so this view never renders a deleted model.
@@ -301,13 +307,18 @@ struct ThoughtDetailView: View {
 
     private func recordView() {
         guard !hasRecordedView else { return }
-        let handedOff = viewHandoff?.consume(thought.id, now: .now) == true
-        guard ViewHandoff.recordsView(hasRecordedView: hasRecordedView, isArchived: thought.isArchived, handedOff: handedOff) else {
-            hasRecordedView = hasRecordedView || handedOff
-            return
-        }
-        hasRecordedView = true
-        store.markViewed(thought, now: .now)
+        let handedOff = viewHandoff?.consume(thought.id) == true
+        let recorded = store.recordOpen(thought, kind: openKind, hasRecordedView: hasRecordedView, handedOff: handedOff, now: .now)
+        hasRecordedView = recorded || handedOff
+    }
+
+    private var linkIDs: [UUID] {
+        thought.sortedBlocks.compactMap { $0.kind == .thoughtLink ? $0.linkedThoughtID : nil }
+    }
+
+    private func refreshLinks() {
+        linkTargets = ThoughtCounts.targets(of: linkIDs, in: context)
+        linkedFrom = ThoughtCounts.linkedFrom(thought.id, in: context)
     }
 
     private func openLink(_ url: URL) -> OpenURLAction.Result {
@@ -322,9 +333,10 @@ struct ThoughtDetailView: View {
         return .handled
     }
 
-    /// Pops this thought off the stack, or clears the split view's detail column.
+    /// Pops this thought off the stack, or clears the split view's detail column. A visited thought is
+    /// always a push, so it pops and leaves the selection alone.
     private func leave() {
-        if let selection { selection.clear() } else { dismiss() }
+        if openKind == .open, let selection { selection.clear() } else { dismiss() }
     }
 
     private func deleteThought() {

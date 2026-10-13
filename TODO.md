@@ -2,7 +2,7 @@
 
 - transfer-web/index.html:14 — add the Smart App Banner (`apple-itunes-app`) once the App Store ID exists; must be added at runtime from `main.tsx` because `app-argument` needs the `#fragment`
 - After the launch email (and TestFlight invites), delete all WaitlistTable rows and the [Waitlist] notification emails; the privacy policy promises it.
-- Linked thoughts, steps 2-3 (in 1.0; model/store/backup are done, no UI yet): link card rendering and walking, "Linked from", then the editor add-block entry and picker; then the help article and mockup. See `designs/Thought Reps — Linked Thoughts Spec.md` sections 5, 10, 11.
+- Linked thoughts, step 3 onward (in 1.0; model, store, backup, link cards, walking and "Linked from" are done): the editor add-block entry and picker, then the help article and mockup (users can't create links until the picker ships). Also device-check iPad split visits and fold/unfold with a visit on the stack. See `designs/Thought Reps — Linked Thoughts Spec.md` sections 5, 10, 11.
 
 ## Backlog
 

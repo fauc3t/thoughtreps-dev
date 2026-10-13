@@ -35,6 +35,11 @@ struct BlockDraft: Identifiable, Equatable {
     var linkedThoughtID: UUID?
 }
 
+/// How a detail screen was reached. An open requeues the thought; a visit from a link card only counts a view.
+enum OpenKind {
+    case open, visit
+}
+
 /// All writes go through here so tag syncing and scheduling rules are applied in one place.
 /// Every time-dependent method takes `now` from the caller, so tests control the clock.
 @MainActor
@@ -571,6 +576,20 @@ struct ThoughtStore {
     }
 
     // MARK: Schedule actions
+
+    /// Records the view for a detail screen that just appeared, unless the open is archived, already
+    /// recorded or carried across a layout switch. True if it wrote one.
+    @discardableResult
+    func recordOpen(_ thought: Thought, kind: OpenKind, hasRecordedView: Bool, handedOff: Bool, now: Date) -> Bool {
+        guard ViewHandoff.recordsView(hasRecordedView: hasRecordedView, isArchived: thought.isArchived, handedOff: handedOff) else {
+            return false
+        }
+        switch kind {
+        case .open: markViewed(thought, now: now)
+        case .visit: recordVisit(thought, now: now)
+        }
+        return true
+    }
 
     @discardableResult
     func markViewed(_ thought: Thought, now: Date) -> Bool {

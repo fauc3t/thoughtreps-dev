@@ -66,7 +66,7 @@ Out of scope for 1.0:
   - **Timeline:** the visited thought shows on the timeline until the next refresh, as any open thought does. Going back to the timeline refreshes it.
 - **Learn mode:** a Learn thought opened from a link still shows **Again** / **Got it** if it's due. Rating is an explicit action, so it applies as usual.
 - **Everything else works as normal from a visit:** editing, snooze, pin, archive and delete. Each of these is an explicit write.
-- **Fold carry:** `LayoutCarry` already maps `AppRoute` values, so linked routes need no extra mapping. The remounted visit must not count twice, so `ViewHandoff` covers `recordVisit` exactly as it covers `markViewed`. Add tests that a `.linkedThought` route carries and isn't counted twice.
+- **Fold carry:** `LayoutCarry` already maps `AppRoute` values, so linked routes need no extra mapping. The remounted visit must not count twice, so `ViewHandoff` covers `recordVisit` exactly as it covers `markViewed`: it holds a non-expiring per-id count of every carried stack entry (`LayoutCarry.carriedIDs`), each remount consuming one, cleared on select, clear or the next carry. Tests cover that a `.linkedThought` route carries and isn't counted twice.
 
 ## 5. The picker
 
@@ -131,7 +131,7 @@ Decided 2026-10-13: edit `SchemaV1` in place, no migration. No external build ha
 Each step lands as its own push through the usual pipeline (dev agent, then reviewer, then docs):
 
 1. **Model, store, backup and integrity:** `BlockKind`, the `Block` field, `ThoughtStore` add, remove and reorder, the `BlockRecord` and validation, the `IntegrityChecker` and randomized ops, and the fixture regenerated.
-2. **Rendering and walking:** the link card, the batched resolution, the `.linkedThought` route and visit mode, "Linked from", and the split detail stack.
+2. **Rendering and walking (done):** the link card, the batched resolution, the `.linkedThought` route and visit mode, "Linked from", and the split detail stack.
 3. **Editor and picker:** the add-block menu entry, the search sheet, removing deleted links.
 4. **Docs:** the help article, its mockup and CLAUDE.md.
 

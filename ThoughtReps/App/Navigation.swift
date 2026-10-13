@@ -4,6 +4,8 @@ import SwiftUI
 /// carried between the compact and split layouts.
 enum AppRoute: Hashable {
     case thought(Thought)
+    /// A thought reached by following a link card: counts as a view but never requeues.
+    case linkedThought(Thought)
     case tag(Tag)
     case untagged
     case search
@@ -12,44 +14,72 @@ enum AppRoute: Hashable {
 /// What survives a switch between the compact tabs and the split view (a fold or unfold).
 enum LayoutCarry {
     /// Compact -> split: the last thought on the stack becomes the detail column's selection and the
-    /// other pushed screens become the content column's stack.
-    static func unfold(compactPath: [AppRoute]) -> (thought: Thought?, contentPath: [AppRoute]) {
+    /// other pushed screens become the content column's stack. Linked-thought pushes above that thought
+    /// stay pushes, on the detail column's stack (`detailPath`): selecting a visited thought would be a
+    /// different kind of open. Ones below it belonged to an earlier thought and are dropped.
+    static func unfold(compactPath: [AppRoute]) -> (thought: Thought?, contentPath: [AppRoute], detailPath: [AppRoute]) {
         var thought: Thought?
         var rest: [AppRoute] = []
+        var detail: [AppRoute] = []
         for route in compactPath {
-            if case .thought(let pushed) = route {
-                if pushed.modelContext != nil, !pushed.isDeleted { thought = pushed }
-            } else {
+            switch route {
+            case .thought(let pushed):
+                if isLive(pushed) {
+                    thought = pushed
+                    detail = []
+                }
+            case .linkedThought(let visited):
+                if thought != nil, isLive(visited) { detail.append(route) }
+            default:
                 rest.append(route)
             }
         }
-        return (thought, rest)
+        return (thought, rest, detail)
     }
 
-    /// Split -> compact: the selected thought is pushed on top of the content column's screens.
-    static func fold(contentPath: [AppRoute], selected: Thought?) -> [AppRoute] {
+    /// Split -> compact: the selected thought is pushed on top of the content column's screens, then
+    /// the detail column's pushed linked thoughts.
+    static func fold(contentPath: [AppRoute], selected: Thought?, detailPath: [AppRoute] = []) -> [AppRoute] {
         guard let selected else { return contentPath }
-        return contentPath + [.thought(selected)]
+        let visits = detailPath.filter { route in
+            if case .linkedThought(let visited) = route { isLive(visited) } else { false }
+        }
+        return contentPath + [.thought(selected)] + visits
+    }
+
+    /// Every thought entry of a carried stack: the selection and each live visit above it.
+    static func carriedIDs(selected: Thought, detailPath: [AppRoute]) -> [UUID] {
+        [selected.id] + detailPath.compactMap { route in
+            if case .linkedThought(let visited) = route, isLive(visited) { visited.id } else { nil }
+        }
+    }
+
+    private static func isLive(_ thought: Thought) -> Bool {
+        thought.modelContext != nil && !thought.isDeleted
     }
 }
 
-/// A one-shot note that the next detail screen for this thought is the same open, moved across a
-/// layout switch, so it must not be recorded as another view. An offer nobody takes expires, so it
-/// can't swallow a genuine open later.
+/// The thoughts a fold or unfold carried across, as a count per id (a stack can hold the same thought
+/// twice). Every remounted detail for a carried thought, including covered ones that appear later when
+/// the stack pops, consumes one entry instead of recording another view. Nothing expires: a genuine new
+/// open (`ThoughtSelection.select`/`clear`) or the next carry clears it.
 @MainActor
 @Observable
 final class ViewHandoff {
-    static let window: TimeInterval = 1
+    private var carried: [UUID: Int] = [:]
 
-    private var offered: (id: UUID, at: Date)?
+    /// Replaces any earlier carry with these thoughts, one per stack entry.
+    func carry(_ ids: [UUID]) {
+        carried = ids.reduce(into: [:]) { $0[$1, default: 0] += 1 }
+    }
 
-    func offer(_ id: UUID, now: Date) { offered = (id, now) }
+    func clear() { carried = [:] }
 
-    /// True once for an offered id, if taken within the window.
-    func consume(_ id: UUID, now: Date) -> Bool {
-        guard let offered, offered.id == id else { return false }
-        self.offered = nil
-        return now.timeIntervalSince(offered.at) <= Self.window
+    /// True while a carried entry for this id is left, and uses it up.
+    func consume(_ id: UUID) -> Bool {
+        guard let count = carried[id], count > 0 else { return false }
+        carried[id] = count == 1 ? nil : count - 1
+        return true
     }
 
     /// Whether opening a detail screen records a view; a handed-off open never does.
@@ -64,6 +94,7 @@ extension View {
         navigationDestination(for: AppRoute.self) { route in
             switch route {
             case .thought(let thought): ThoughtDetailView(thought: thought)
+            case .linkedThought(let thought): ThoughtDetailLoader(modelID: thought.persistentModelID, openKind: .visit)
             case .tag(let tag): TagTimelineView(tag: tag)
             case .untagged: ThoughtTimelineView(scope: .untagged)
             case .search: SearchView()

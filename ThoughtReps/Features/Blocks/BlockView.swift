@@ -6,6 +6,8 @@ struct BlockView: View {
     /// The thought's own images, which inline tokens in a markdown block resolve against.
     let images: [ImageAsset]
     let onOpenImage: (UUID) -> Void
+    /// The thought's link targets by id, resolved once for the whole thought. Ids missing from it are deleted.
+    var linkTargets: [UUID: Thought] = [:]
 
     var body: some View {
         switch block.kind {
@@ -20,8 +22,7 @@ struct BlockView: View {
         case .gallery:
             GalleryBlockView(title: block.title, images: block.sortedImages, onOpenImage: onOpenImage)
         case .thoughtLink:
-            // Link cards render in a later change; nothing to show yet.
-            EmptyView()
+            LinkedThoughtCard(target: block.linkedThoughtID.flatMap { linkTargets[$0] })
         }
     }
 }

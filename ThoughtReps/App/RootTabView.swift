@@ -79,14 +79,16 @@ struct RootTabView: View {
                 let carried = LayoutCarry.unfold(compactPath: compactPaths[tab] ?? [])
                 splitPaths[tab] = carried.contentPath
                 if let thought = carried.thought {
-                    viewHandoff.offer(thought.id, now: .now)
                     thoughtSelection.select(thought)
+                    thoughtSelection.detailPath = carried.detailPath
+                    viewHandoff.carry(LayoutCarry.carriedIDs(selected: thought, detailPath: carried.detailPath))
                 }
             } else {
                 let thought = selectedThought()
-                compactPaths[tab] = LayoutCarry.fold(contentPath: splitPaths[tab] ?? [], selected: thought)
-                if let thought { viewHandoff.offer(thought.id, now: .now) }
+                let detailPath = thoughtSelection.detailPath
+                compactPaths[tab] = LayoutCarry.fold(contentPath: splitPaths[tab] ?? [], selected: thought, detailPath: detailPath)
                 thoughtSelection.clear()
+                if let thought { viewHandoff.carry(LayoutCarry.carriedIDs(selected: thought, detailPath: detailPath)) }
             }
         }
     }
@@ -141,6 +143,7 @@ struct RootTabView: View {
         }
         .environment(captureContext)
         .environment(viewHandoff)
+        .onAppear { thoughtSelection.viewHandoff = viewHandoff }
         .onChange(of: usesSplitView) { _, usesSplit in
             carryAcrossLayouts(toSplit: usesSplit)
         }
