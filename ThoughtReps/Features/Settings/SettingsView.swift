@@ -189,6 +189,7 @@ struct SettingsView: View {
                 }
             }
             .onChange(of: reminderMinutes) { reschedule() }
+            .onChange(of: defaultIntervalDays) { AppSettings.recordDefaultIntervalChange(now: .now) }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

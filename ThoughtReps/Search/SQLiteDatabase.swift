@@ -15,6 +15,8 @@ enum SQLiteValue {
     case text(String)
     case double(Double)
     case int(Int64)
+    case blob(Data)
+    case null
 }
 
 struct SQLiteRow {
@@ -26,9 +28,15 @@ struct SQLiteRow {
 
     func double(_ column: Int32) -> Double { sqlite3_column_double(statement, column) }
     func int(_ column: Int32) -> Int64 { sqlite3_column_int64(statement, column) }
+
+    func data(_ column: Int32) -> Data? {
+        guard sqlite3_column_type(statement, column) != SQLITE_NULL else { return nil }
+        guard let bytes = sqlite3_column_blob(statement, column) else { return Data() }
+        return Data(bytes: bytes, count: Int(sqlite3_column_bytes(statement, column)))
+    }
 }
 
-/// A thin wrapper over one SQLite connection. Not thread-safe: the owner (`SearchIndex`) is an
+/// A thin wrapper over one SQLite connection. Not thread-safe: the owner (`SearchIndex`, `SyncState`) is an
 /// actor, and the connection is closed when this object is released.
 final class SQLiteDatabase {
     private var handle: OpaquePointer?
@@ -64,6 +72,9 @@ final class SQLiteDatabase {
             case .text(let text): code = sqlite3_bind_text(statement, position, text, -1, Self.transient)
             case .double(let number): code = sqlite3_bind_double(statement, position, number)
             case .int(let number): code = sqlite3_bind_int64(statement, position, number)
+            case .blob(let data):
+                code = data.withUnsafeBytes { sqlite3_bind_blob(statement, position, $0.baseAddress, Int32($0.count), Self.transient) }
+            case .null: code = sqlite3_bind_null(statement, position)
             }
             guard code == SQLITE_OK else { throw lastError(code) }
         }
@@ -76,6 +87,9 @@ final class SQLiteDatabase {
     }
 
     var lastInsertedRowID: Int64 { sqlite3_last_insert_rowid(handle) }
+
+    /// Rows changed by the most recent statement.
+    var changes: Int { Int(sqlite3_changes(handle)) }
 
     func transaction(_ body: () throws -> Void) throws {
         try execute("BEGIN IMMEDIATE")

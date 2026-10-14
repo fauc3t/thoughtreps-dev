@@ -84,6 +84,8 @@ struct ThoughtStore {
     var ratingPrompt = RatingPrompt()
     /// Kept in step after every write that changes searchable text or archive state; see `SearchIndex`.
     var searchIndex: SearchIndex = .shared
+    /// Told which thoughts and tags to push after every write; a no-op while sync is off. See `SyncState`.
+    var syncState: SyncState = .shared
 
     // MARK: Create & edit
 
@@ -113,6 +115,7 @@ struct ThoughtStore {
         removeStaleInlineImages(of: plan)
         if persist(requiring: tagsSynced) {
             indexUpsert(thought)
+            syncEnqueueContent(of: [thought.id])
         }
         return thought
     }
@@ -123,7 +126,10 @@ struct ThoughtStore {
         _ thought: Thought, body: String, blocks: [BlockDraft], images: [ImageDraft] = [], intervalDays: Int?, now: Date
     ) -> Bool {
         // Whatever step failed, the index gets the thought as it now is.
-        defer { reindex(ids: [thought.id]) }
+        defer {
+            reindex(ids: [thought.id])
+            syncEnqueueContent(of: [thought.id])
+        }
         return performUpdate(thought, body: body, blocks: blocks, images: images, intervalDays: intervalDays, now: now)
     }
 
@@ -468,10 +474,13 @@ struct ThoughtStore {
             return false
         }
         guard !found.isEmpty else { return true }
+        var owners = Set<UUID>()
         for block in found {
             block.kindRaw = BlockKind.markdown.rawValue
             block.isBlurred = true
+            if let id = block.thought?.id { owners.insert(id) }
         }
+        defer { syncState.enqueue(owners.map(SyncEntity.thought)) }
         return persist()
     }
 
@@ -484,8 +493,9 @@ struct ThoughtStore {
         for image in orphans {
             remove(image)
         }
-        if !orphans.isEmpty, !persist() {
-            return false
+        if !orphans.isEmpty {
+            defer { syncEnqueue(thought) }
+            if !persist() { return false }
         }
         pendingImageSaves.remove(thought.id)
         return true
@@ -614,7 +624,10 @@ struct ThoughtStore {
         guard targetID != thought.id, !blocks.contains(where: { $0.linkedThoughtID == targetID }) else { return false }
         if pendingImageSaves.ids.contains(thought.id), !removeTokenlessInlineImages(of: thought) { return false }
         let order = (blocks.map(\.order).max() ?? -1) + 1
-        defer { reindex(ids: [thought.id]) }
+        defer {
+            reindex(ids: [thought.id])
+            syncEnqueueContent(of: [thought.id])
+        }
         thought.updatedAt = now
         guard persist() else { return false }
         let block = Block(kind: .thoughtLink, content: "", order: order, linkedThoughtID: targetID)
@@ -631,7 +644,10 @@ struct ThoughtStore {
             return true
         }
         if pendingImageSaves.ids.contains(thought.id), !removeTokenlessInlineImages(of: thought) { return false }
-        defer { reindex(ids: [thought.id]) }
+        defer {
+            reindex(ids: [thought.id])
+            syncEnqueueContent(of: [thought.id])
+        }
         thought.updatedAt = now
         guard persist() else { return false }
         for image in link.images ?? [] {
@@ -669,6 +685,7 @@ struct ThoughtStore {
             nextDueAt: thought.nextDueAt,
             now: now
         )
+        defer { syncEnqueue(thought) }
         let dueBefore = thought.nextDueAt
         thought.applyView(defaultIntervalDays: defaultIntervalDays, now: now)
         if thought.nextDueAt != dueBefore { thought.scheduleChangedAt = now }
@@ -680,6 +697,7 @@ struct ThoughtStore {
     /// A visit through a link: a view for the stats only. The schedule, its clock and the rating prompt stay.
     @discardableResult
     func recordVisit(_ thought: Thought, now: Date) -> Bool {
+        defer { syncEnqueue(thought) }
         thought.viewCount += 1
         thought.lastViewedAt = now
         return persist()
@@ -687,6 +705,7 @@ struct ThoughtStore {
 
     @discardableResult
     func snooze(_ thought: Thought, days: Int, now: Date) -> Bool {
+        defer { syncEnqueue(thought) }
         thought.applySnooze(days: days, now: now)
         thought.scheduleChangedAt = now
         return persist()
@@ -694,6 +713,7 @@ struct ThoughtStore {
 
     @discardableResult
     func setInterval(_ thought: Thought, days: Int?, now: Date) -> Bool {
+        defer { syncEnqueue(thought) }
         thought.intervalDays = days
         if thought.intervalMode != .learn { reanchor(thought) }
         thought.scheduleChangedAt = now
@@ -705,6 +725,7 @@ struct ThoughtStore {
     @discardableResult
     func setLearnMode(_ thought: Thought, _ enabled: Bool, now: Date) -> Bool {
         guard (thought.intervalMode == .learn) != enabled else { return true }
+        defer { syncEnqueue(thought) }
         thought.learnIntervalDays = nil
         if enabled {
             thought.intervalMode = .learn
@@ -722,6 +743,7 @@ struct ThoughtStore {
     @discardableResult
     func review(_ thought: Thought, gotIt: Bool, now: Date) -> Bool {
         guard thought.intervalMode == .learn, !thought.isPinned, !thought.isArchived, thought.isDue(now: now) else { return false }
+        defer { syncEnqueue(thought) }
         let result = Scheduler.afterReview(
             gotIt: gotIt,
             lastGapDays: thought.learnIntervalDays,
@@ -752,6 +774,7 @@ struct ThoughtStore {
             normalized = valid
         }
         guard tag.colorHex != normalized else { return true }
+        defer { syncState.enqueue([.tag(tag.name)]) }
         tag.colorHex = normalized
         tag.updatedAt = now
         return persist()
@@ -761,6 +784,7 @@ struct ThoughtStore {
     func setPinned(_ thought: Thought, _ pinned: Bool, now: Date) -> Bool {
         let wanted = pinned && !thought.isArchived
         guard thought.isPinned != wanted else { return true }
+        defer { syncEnqueue(thought) }
         thought.isPinned = wanted
         thought.stateChangedAt = now
         return persist()
@@ -772,7 +796,10 @@ struct ThoughtStore {
         thought.isPinned = false
         thought.archivedAt = now
         thought.stateChangedAt = now
-        defer { indexFingerprint(of: thought) }
+        defer {
+            indexFingerprint(of: thought)
+            syncEnqueue(thought)
+        }
         return persist()
     }
 
@@ -783,7 +810,10 @@ struct ThoughtStore {
         thought.nextDueAt = Scheduler.restoredDue(now: now)
         thought.stateChangedAt = now
         thought.scheduleChangedAt = now
-        defer { indexFingerprint(of: thought) }
+        defer {
+            indexFingerprint(of: thought)
+            syncEnqueue(thought)
+        }
         return persist()
     }
 
@@ -792,7 +822,10 @@ struct ThoughtStore {
         let id = thought.id
         deleteWithChildren(thought)
         context.insert(Tombstone(id: id, kind: .thought, deletedAt: now))
-        defer { reindex(ids: [id]) }
+        defer {
+            reindex(ids: [id])
+            syncState.enqueue([.thought(id)])
+        }
         return persist()
     }
 
@@ -846,6 +879,7 @@ struct ThoughtStore {
         }
         guard persist() else { return false }
         searchIndex.submit(.removeAll)
+        syncState.disable()
         return true
     }
 
@@ -855,6 +889,7 @@ struct ThoughtStore {
     func overrideSchedule(
         _ thought: Thought, nextDueAt: Date, lastViewedAt: Date?, viewCount: Int, learnIntervalDays: Int? = nil, now: Date
     ) -> Bool {
+        defer { syncEnqueue(thought) }
         thought.scheduleChangedAt = now
         thought.nextDueAt = nextDueAt
         thought.lastViewedAt = lastViewedAt
@@ -912,7 +947,11 @@ struct ThoughtStore {
     /// color of tags that don't exist yet and the color of ones that do.
     @discardableResult
     func importThoughts(_ batch: [ImportedThought], tags tagInfo: [TagRecord], tally: inout ImportTally) -> Bool {
-        defer { reindex(ids: Set(batch.map(\.record.id))) }
+        let ids = Set(batch.map(\.record.id))
+        defer {
+            reindex(ids: ids)
+            syncEnqueueContent(of: ids)
+        }
         return performImport(batch, tags: tagInfo, tally: &tally)
     }
 
@@ -1050,11 +1089,14 @@ struct ThoughtStore {
         let incoming = Dictionary(info.map { ($0.name, $0) }, uniquingKeysWith: { first, second in
             second.updatedClock > first.updatedClock ? second : first
         })
+        var recolored: [SyncEntity] = []
         for tag in stored {
             guard let record = incoming[tag.name], record.updatedClock > tag.updatedAt else { continue }
             tag.colorHex = record.colorHex.flatMap(TagColor.normalizedHex)
             tag.updatedAt = record.updatedClock
+            recolored.append(.tag(tag.name))
         }
+        defer { syncState.enqueue(recolored) }
         return !context.hasChanges || persist()
     }
 
@@ -1239,6 +1281,33 @@ struct ThoughtStore {
         } catch {
             Self.logger.error("Search reindex fetch failed: \(error)")
         }
+    }
+
+    // MARK: Sync outbox
+
+    // Any new writer that changes a clock or a field a sync record carries must enqueue the thought
+    // (or, for a color, the tag); extra entries are harmless, a missing one is not.
+
+    private func syncEnqueue(_ thought: Thought) {
+        syncState.enqueue([.thought(thought.id)])
+    }
+
+    /// Enqueues the thoughts and the tags they carry, which may be new. Tags come from a fresh fetch for
+    /// the reason `reindex` does; a failed fetch still enqueues the thoughts.
+    private func syncEnqueueContent(of ids: Set<UUID>) {
+        guard syncState.isEnabled else { return }
+        var entities = ids.map(SyncEntity.thought)
+        let lookup = Array(ids)
+        do {
+            var descriptor = FetchDescriptor<Thought>(predicate: #Predicate { lookup.contains($0.id) })
+            descriptor.relationshipKeyPathsForPrefetching = [\.tags]
+            for thought in try context.fetch(descriptor) {
+                entities += (thought.tags ?? []).map { .tag($0.name) }
+            }
+        } catch {
+            Self.logger.error("Sync tag fetch failed: \(error)")
+        }
+        syncState.enqueue(entities)
     }
 
     private static let logger = Logger(subsystem: "com.thoughtreps", category: "store")

@@ -207,6 +207,8 @@ struct RootTabView: View {
             await SearchIndexStatus.shared.reconcile(container: context.container)
             #if DEBUG
             await SearchIndexChecker.logViolations(in: context)
+            await SyncState.shared.enableForDebugging()
+            await SyncReconcileRunner.reconcile(container: context.container)
             #endif
         }
     }

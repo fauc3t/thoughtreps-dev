@@ -183,6 +183,27 @@ struct RandomizedOperationTests {
         Bool.random(using: &rng) ? nil : Int.random(in: 1...Scheduler.maxIntervalDays, using: &rng)
     }
 
+    /// The sync fingerprints of everything the store holds, to see what a step changed.
+    struct SyncSnapshot {
+        var thoughts: [UUID: String] = [:]
+        var tags: [String: String] = [:]
+    }
+
+    /// Tags no thought carries are left out: an orphan (say, from a failed import) needn't be pushed, and is pruned at launch.
+    static func syncSnapshot(_ context: ModelContext) throws -> SyncSnapshot {
+        var snapshot = SyncSnapshot()
+        var used = Set<String>()
+        for thought in try context.fetch(FetchDescriptor<Thought>()) {
+            snapshot.thoughts[thought.id] = SyncPayload.thoughtContent(ThoughtContentRecord(thought)).fingerprint
+                + SyncPayload.thoughtMeta(ThoughtMetaRecord(thought)).fingerprint
+            used.formUnion((thought.tags ?? []).map(\.name))
+        }
+        for tag in try context.fetch(FetchDescriptor<ThoughtReps.Tag>()) where used.contains(tag.name) {
+            snapshot.tags[tag.name] = "\(SyncFingerprint.tag(updatedAt: tag.updatedAt)) \(tag.displayName) \(tag.colorHex ?? "-")"
+        }
+        return snapshot
+    }
+
     @Test(arguments: seeds)
     func invariantsHoldAfterEveryOperation(seed: UInt64) async throws {
         let container = try ModelContainer.thoughtReps(inMemory: true)
@@ -212,6 +233,10 @@ struct RandomizedOperationTests {
         store.ratingPrompt = RatingPrompt(defaults: defaults)
         let index = SearchIndex(location: .inMemory)
         store.searchIndex = index
+        let syncState = SyncState(location: .inMemory)
+        try await syncState.configure(vaultID: "randomized")
+        store.syncState = syncState
+        var syncSnapshot = try Self.syncSnapshot(context)
         var rng = SeededGenerator(seed: seed)
         var now = Date(timeIntervalSince1970: 1_790_000_000)
         var deletedIDs = Set<UUID>()
@@ -426,6 +451,26 @@ struct RandomizedOperationTests {
                 store.cleanUpPendingImageSaves()
             }
 
+            let currentSnapshot = try Self.syncSnapshot(context)
+            if op == 22 && !syncState.isEnabled {
+                try await syncState.configure(vaultID: "randomized")
+                #expect(try await syncState.outboxCount() == 0, "seed \(seed) step \(step) deleteAll left outbox entries")
+            } else {
+                let queued = Set(try await syncState.outbox(limit: Int.max).map(\.entity))
+                for (id, fingerprint) in currentSnapshot.thoughts where syncSnapshot.thoughts[id] != fingerprint {
+                    #expect(queued.contains(.thought(id)), "seed \(seed) step \(step) op \(description) changed thought \(id) without queueing it")
+                }
+                for id in syncSnapshot.thoughts.keys where currentSnapshot.thoughts[id] == nil {
+                    #expect(queued.contains(.thought(id)), "seed \(seed) step \(step) op \(description) removed thought \(id) without queueing it")
+                }
+                for (name, fingerprint) in currentSnapshot.tags where syncSnapshot.tags[name] != fingerprint {
+                    #expect(queued.contains(.tag(name)), "seed \(seed) step \(step) op \(description) changed tag \(name) without queueing it")
+                }
+            }
+            syncSnapshot = currentSnapshot
+            // Drained every step, so each step must queue what it changed by itself.
+            try await markEverythingSynced(context: context, state: syncState, defaults: defaults)
+
             var violations = try IntegrityChecker.check(context)
             let marked = store.pendingImageSaves.ids
             // Only token-less inline images of marked thoughts are tolerated.
@@ -450,5 +495,19 @@ struct RandomizedOperationTests {
         #expect(store.pendingImageSaves.isEmpty)
         #expect(try IntegrityChecker.check(context).isEmpty, "seed \(seed) after final cleanup")
         #expect(try await SearchIndexChecker.check(context, index: index).isEmpty, "seed \(seed) index after final cleanup")
+
+        let fresh = SyncState(location: .inMemory)
+        try await fresh.configure(vaultID: "reconciled")
+        let storeContainer = container
+        let settings = SettingsRecord.current(defaults: defaults)
+        let first = try await Task.detached {
+            try await SyncReconciler(modelContainer: storeContainer).reconcile(state: fresh, settings: settings)
+        }.value
+        #expect(first.thoughts == syncSnapshot.thoughts.count, "seed \(seed) first sync queues every thought")
+        try await markEverythingSynced(context: context, state: fresh, defaults: defaults)
+        let second = try await Task.detached {
+            try await SyncReconciler(modelContainer: storeContainer).reconcile(state: fresh, settings: settings)
+        }.value
+        #expect(second.total == 0, "seed \(seed) nothing to sync once everything is synced")
     }
 }
