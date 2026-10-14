@@ -2,7 +2,7 @@
 // each a crop of one raw/ capture (set by ThoughtRepsUITests/ScreenshotTests.swift) in a Pop card with a hard shadow:
 //   raw            the capture's name in raw/
 //   top, bottom    the raw rows shown (raw px; 330-2600 is a thought's content without the nav buttons and tab bar)
-//   pad            blank raw px added below the crop, in `bg` (default the Ink paper, white)
+//   pad, padTop    blank raw px added below and above the crop, in `bg` (default the Ink paper, white)
 //   x, y, s, rot   the card's left and top on the 1320x2868 canvas, its scale (raw px to canvas px) and its tilt in degrees
 // A card whose bottom runs past the canvas shows only the top of the screen. `<mark>` highlights a word; `<loop></loop>`
 // draws the loop mark. Lines of a headline are separated by <br>. Loaded by shot.html, preview.html and gen.mjs.
@@ -56,14 +56,14 @@ const SHOTS = [
     name: '07-interval', headline: 'Pick when you<br>see it <mark>again</mark>.',
     support: 'Bring it back in 1, 3, 7 or 30 days, or set your own.',
     cards: [
-      { raw: '05-interval', top: 330, bottom: 2340, x: 70, y: 740, s: 0.7 },
-      { raw: '05-interval', top: 2360, bottom: 2620, x: 66, y: 2080, s: 0.9, rot: -3 },
+      { raw: '05-interval', top: 330, bottom: 2340, x: 144, y: 780, s: 0.74 },
+      { raw: '05-interval', top: 2360, bottom: 2620, x: 72, y: 2220, s: 0.85 },
     ],
   },
   {
     name: '08-search', headline: 'Find any thought<br>in a <mark>second</mark>.',
     support: 'Search every note and journal entry, active or archived.',
-    cards: [{ raw: '07-search', top: 170, bottom: 2868, x: 62, y: 740, s: 0.88, rot: -2 }],
+    cards: [{ raw: '07-search', top: 160, bottom: 2868, padTop: 60, x: 62, y: 740, s: 0.88, rot: -2 }],
   },
   {
     name: '09-tags', headline: 'Sort with <mark>#tags</mark>.',

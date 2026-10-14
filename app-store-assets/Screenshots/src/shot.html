@@ -15,12 +15,12 @@
   h1 mark { background: linear-gradient(transparent 58%, var(--accent) 58% 90%, transparent 90%); color: inherit; padding: 0 0.04em; }
   h1 .loop { display: inline-block; width: 0.5em; height: 0.5em; margin-left: 0.04em; vertical-align: 0.05em; color: var(--ink); }
   p.support { margin: 44px 0 0; font: 500 54px / 1.3 var(--pop-text); color: var(--muted); max-width: 1120px; }
-  /* --s scales raw px to canvas px; --top/--bottom pick the raw rows shown; --pad adds blank raw px below. */
+  /* --s scales raw px to canvas px; --top/--bottom pick the raw rows shown; --pad and --padTop add blank raw px below and above. */
   .card { position: absolute; box-sizing: content-box; overflow: hidden; background: var(--bg, #ffffff);
     border: 10px solid var(--ink); border-radius: 64px; box-shadow: 34px 34px 0 var(--ink);
-    width: calc(1320px * var(--s)); height: calc((var(--bottom) - var(--top) + var(--pad)) * 1px * var(--s));
+    width: calc(1320px * var(--s)); height: calc((var(--bottom) - var(--top) + var(--pad) + var(--padTop)) * 1px * var(--s));
     transform: rotate(var(--rot)); transform-origin: 50% 50%; }
-  .card .clip { position: absolute; left: 0; top: 0; right: 0; height: calc((var(--bottom) - var(--top)) * 1px * var(--s)); overflow: hidden; }
+  .card .clip { position: absolute; left: 0; top: calc(var(--padTop) * 1px * var(--s)); right: 0; height: calc((var(--bottom) - var(--top)) * 1px * var(--s)); overflow: hidden; }
   .card img { position: absolute; left: 0; top: calc(var(--top) * -1px * var(--s)); width: calc(1320px * var(--s)); display: block; }
 </style>
 <div id="stage">
@@ -55,7 +55,7 @@
     const decoded = shot.cards.map((c) => {
       const card = document.createElement('div');
       card.className = 'card';
-      card.style.cssText = `left: ${c.x}px; top: ${c.y}px; --s: ${c.s}; --top: ${c.top}; --bottom: ${c.bottom}; --pad: ${c.pad ?? 0};`
+      card.style.cssText = `left: ${c.x}px; top: ${c.y}px; --s: ${c.s}; --top: ${c.top}; --bottom: ${c.bottom}; --pad: ${c.pad ?? 0}; --padTop: ${c.padTop ?? 0};`
         + ` --rot: ${c.rot ?? 0}deg; --bg: ${c.bg ?? '#ffffff'}`;
       const clip = Object.assign(document.createElement('div'), { className: 'clip' });
       const img = Object.assign(document.createElement('img'), { alt: '', src: `../raw/${c.raw}.png` });
