@@ -15,19 +15,12 @@ struct AddBlockMenuItems: View {
     }
 }
 
-extension Array where Element == BlockDraft {
-    /// Appends a new block of `kind` and returns its id.
-    @discardableResult
-    mutating func addBlock(_ kind: BlockKind) -> UUID {
-        let draft = BlockDraft(kind: kind)
-        append(draft)
-        return draft.id
-    }
-}
-
-/// Editing row for one attached block in the editor.
+/// Editing row for one block in the editor. A Markdown block reads as more paragraphs of the body;
+/// the other kinds are cards between paragraphs. Label, blur and delete live in a "…" menu.
 struct BlockDraftEditor: View {
-    static let markdownMinHeight: CGFloat = 100
+    static let markdownMinHeight: CGFloat = 30
+    /// The width beside a Markdown block's text kept for its "…" button; the body keeps the same, so paragraphs line up.
+    static let gutter: CGFloat = 28
 
     @Binding var draft: BlockDraft
     /// The cursor in this block's Markdown text.
@@ -42,8 +35,8 @@ struct BlockDraftEditor: View {
     let storedImages: [UUID: ImageAsset]
     /// New inline images added to the thought, for thumbnails of tokens in this block's text.
     let inlineDrafts: [ImageDraft]
-    /// True while this block was just added: a text block's Markdown field then takes focus
-    /// (not its optional label). A gallery has nothing to focus.
+    /// True while this block was just added: a text block's Markdown field then takes focus.
+    /// A card has nothing to focus.
     var wantsFocus = false
     /// Whether taking focus now would not override something the user focused meanwhile.
     var canTakeFocus: () -> Bool = { true }
@@ -53,13 +46,21 @@ struct BlockDraftEditor: View {
     var onProcessingChange: (UUID, Bool) -> Void = { _, _ in }
     /// The thought a link block points to, or `nil` when it no longer exists. Unused by other kinds.
     var linkTarget: Thought?
-    /// Removes this block; a link row offers it as a button.
+    /// This unnamed block's place among those of its kind, so VoiceOver can tell them apart; nil when there is one.
+    var ordinal: Int?
+    /// A card the next backspace removes, drawn with a highlight.
+    var isSelectedCard = false
+    /// Removes this block, from the "…" menu.
     var onRemove: () -> Void = {}
+    /// Asks the owner to edit this block's label (a gallery's title).
+    var onEditTitle: () -> Void = {}
+    /// Called when backspace is pressed at the start of this block's text; nil leaves backspace alone.
+    var onBackspaceAtStart: (() -> Void)?
     /// Called with this block's id when processed images are ready.
     let onAddImages: (UUID, [ImageDraft]) -> Void
 
     @State private var intake = ImageIntake()
-    @State private var contentHeight = BlockDraftEditor.markdownMinHeight
+    @State private var contentHeight = BlockDraftEditor.markdownMinHeight + 8
 
     /// Setting focus as a freshly inserted row appears is unreliable, so it waits for the scroll and tries twice.
     private func focusWhenReady() async {
@@ -73,42 +74,108 @@ struct BlockDraftEditor: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label(draft.kind.label, systemImage: draft.kind.systemImage)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-            switch draft.kind {
-            case .markdown:
-                markdown
-            case .gallery:
-                TextField("Title (optional)", text: $draft.title)
-                    .font(.subheadline.weight(.semibold))
-                gallery
-            case .thoughtLink:
-                link
-            case .file:
-                file
+        Group {
+            if draft.kind == .markdown {
+                markdownRow
+            } else {
+                card
             }
         }
-        .padding(.vertical, 4)
         .task(id: wantsFocus) { await focusWhenReady() }
     }
 
+    private var markdownRow: some View {
+        HStack(alignment: .top, spacing: 0) {
+            markdown
+                .padding(.horizontal, draft.isBlurred ? 8 : 0)
+                .background(RoundedRectangle(cornerRadius: 8).fill(draft.isBlurred ? Color.accentColor.opacity(0.12) : .clear))
+                .padding(.horizontal, draft.isBlurred ? -8 : 0)
+            optionsMenu
+        }
+    }
+
+    private var card: some View {
+        HStack(alignment: .top, spacing: 8) {
+            VStack(alignment: .leading, spacing: 8) {
+                if draft.kind == .gallery, !draft.title.isEmpty {
+                    Text(draft.title)
+                        .font(.subheadline.weight(.semibold))
+                }
+                switch draft.kind {
+                case .gallery: gallery
+                case .thoughtLink: link
+                case .file: file
+                case .markdown: EmptyView()
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            optionsMenu
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 12).fill(Color(.secondarySystemGroupedBackground)))
+        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.accentColor, lineWidth: isSelectedCard ? 2 : 0))
+        .padding(.vertical, 6)
+        .accessibilityAddTraits(isSelectedCard ? .isSelected : [])
+    }
+
+    private var optionsMenu: some View {
+        Menu {
+            switch draft.kind {
+            case .markdown:
+                Button(action: onEditTitle) {
+                    Label(draft.title.isEmpty ? "Add label" : "Edit label", systemImage: "pencil")
+                }
+                Toggle("Blur until tapped", isOn: $draft.isBlurred)
+            case .gallery:
+                Button(action: onEditTitle) {
+                    Label(draft.title.isEmpty ? "Add title" : "Edit title", systemImage: "pencil")
+                }
+            case .thoughtLink, .file:
+                EmptyView()
+            }
+            Button(role: .destructive, action: onRemove) {
+                Label("Delete", systemImage: "trash")
+            }
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: Self.gutter, height: 32)
+                .contentShape(Rectangle())
+        }
+        .accessibilityLabel(optionsLabel)
+    }
+
+    private var optionsLabel: String {
+        switch draft.kind {
+        case .markdown: "\(markdownName) options"
+        case .gallery: draft.title.isEmpty ? "\(numbered("Gallery")) options" : "Options for \(draft.title)"
+        case .thoughtLink: "\(numbered("Link")) options"
+        case .file: draft.file.map { "Options for \($0.filename)" } ?? "File options"
+        }
+    }
+
     private var markdown: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            TextField("Label (optional), e.g. Answer", text: $draft.title)
-                .font(.subheadline.weight(.semibold))
+        VStack(alignment: .leading, spacing: 0) {
+            if !draft.title.isEmpty {
+                Text(draft.title)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .padding(.top, 8)
+                    .accessibilityAddTraits(.isHeader)
+            }
             MarkdownTextView(
                 text: $draft.content,
                 selection: $selection,
                 isFocused: isFocused,
-                accessibilityLabel: draft.title.isEmpty ? "Text block" : draft.title,
+                accessibilityLabel: markdownAccessibilityLabel,
                 imageData: imageData,
                 accessory: accessory,
                 undoResetToken: 0,
                 height: $contentHeight,
                 minHeight: Self.markdownMinHeight,
-                placeholder: "Markdown text"
+                placeholder: "Markdown text",
+                onBackspaceAtStart: onBackspaceAtStart
             )
             .frame(height: contentHeight)
             let thumbnails = inlineThumbnails(in: draft.content, drafts: inlineDrafts, stored: storedImages)
@@ -117,65 +184,57 @@ struct BlockDraftEditor: View {
                     draft.content = ImageToken.removing(id, from: draft.content)
                     selection = nil
                 }
+                .padding(.vertical, 4)
             }
-            Toggle("Blur until tapped", isOn: $draft.isBlurred)
         }
+    }
+
+    private var markdownAccessibilityLabel: String {
+        draft.isBlurred ? "\(markdownName), blurred until tapped" : markdownName
+    }
+
+    private var markdownName: String {
+        draft.title.isEmpty ? numbered("Text block", fallback: 1) : draft.title
+    }
+
+    private func numbered(_ name: String, fallback: Int? = nil) -> String {
+        (ordinal ?? fallback).map { "\(name) \($0)" } ?? name
     }
 
     private var link: some View {
         let model = LinkedThoughtCardModel(target: linkTarget)
         let tags = model.state == .deleted ? [] : (linkTarget?.sortedTags ?? [])
-        return HStack(alignment: .top, spacing: 8) {
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 6) {
-                    Text(model.title)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(model.state == .deleted ? .secondary : .primary)
-                        .lineLimit(1)
-                    if model.state == .archived {
-                        Text("Archived").font(.caption).foregroundStyle(.secondary)
-                    }
-                }
-                if !model.preview.isEmpty {
-                    Text(model.preview).font(.footnote).foregroundStyle(.secondary).lineLimit(2)
-                }
-                if !tags.isEmpty {
-                    Text(tags.map { "#\($0.displayName)" }.joined(separator: " "))
-                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+        return VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 6) {
+                Text(model.title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(model.state == .deleted ? .secondary : .primary)
+                    .lineLimit(1)
+                if model.state == .archived {
+                    Text("Archived").font(.caption).foregroundStyle(.secondary)
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(model.accessibilityLabel)
-            .accessibilityValue(model.preview)
-            Button(role: .destructive, action: onRemove) {
-                Image(systemName: "xmark.circle.fill")
-                    .foregroundStyle(.secondary)
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
+            if !model.preview.isEmpty {
+                Text(model.preview).font(.footnote).foregroundStyle(.secondary).lineLimit(2)
             }
-            .buttonStyle(.borderless)
-            .accessibilityLabel(model.state == .deleted ? "Remove deleted link" : "Remove link to \(model.title)")
+            if !tags.isEmpty {
+                Text(tags.map { "#\($0.displayName)" }.joined(separator: " "))
+                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(model.accessibilityLabel)
+        .accessibilityValue(model.preview)
     }
 
     @ViewBuilder
     private var file: some View {
         if let file = draft.file {
             let model = FileCardModel(file)
-            HStack(alignment: .center, spacing: 8) {
-                FileCardContent(model: model)
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel(model.accessibilityLabel)
-                Button(role: .destructive, action: onRemove) {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.secondary)
-                        .frame(width: 44, height: 44)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.borderless)
-                .accessibilityLabel("Remove \(model.filename)")
-            }
+            FileCardContent(model: model)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(model.accessibilityLabel)
         }
     }
 

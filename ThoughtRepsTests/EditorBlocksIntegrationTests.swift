@@ -97,6 +97,40 @@ struct EditorBlocks {
         #expect((font?.pointSize ?? 99) < 1, "syntax of a block that isn't being edited is hidden")
     }
 
+    @Test func returnInATextBlockAddsANewlineAndKeepsTheCaret() async throws {
+        let cases: [(content: String, caret: Int, blurred: Bool, returns: Int)] = [
+            ("hello world", 5, false, 1), ("hello", 5, false, 1), ("one\ntwo", 7, false, 1),
+            ("one\ntwo", 7, false, 2), ("one\ntwo", 3, false, 1), ("secret", 3, true, 1),
+        ]
+        for (content, caret, blurred, returns) in cases {
+            let (container, thought) = try makeThought(blocks: [BlockDraft(content: content, isBlurred: blurred)])
+            let (window, _) = host(EditorView(mode: .edit(thought)).modelContainer(container))
+            defer { window.isHidden = true }
+            try await waitUntil { textViews(in: window).count == 2 }
+            let block = try #require(textViews(in: window).first { $0.text == content }, "\(content)")
+            try await waitUntil { block.becomeFirstResponder() }
+            #expect(block.isFirstResponder, "\(content)")
+            var lastHeight: CGFloat = 0
+            var steady = 0
+            try await waitUntil {
+                steady = block.frame.height == lastHeight ? steady + 1 : 0
+                lastHeight = block.frame.height
+                return steady >= 5
+            }
+            block.selectedRange = NSRange(location: caret, length: 0)
+            var expected = content as NSString
+            for turn in 1...returns {
+                let before = block.frame.height
+                block.insertText("\n")
+                expected = expected.replacingCharacters(in: NSRange(location: caret + turn - 1, length: 0), with: "\n") as NSString
+                try await waitUntil { block.text == expected as String && block.frame.height > before }
+                #expect(block.text == expected as String, "\(content.debugDescription)@\(caret) return \(turn)")
+                #expect(block.selectedRange == NSRange(location: caret + turn, length: 0), "\(content.debugDescription)@\(caret) return \(turn): caret \(block.selectedRange)")
+                #expect(block.frame.height > before, "\(content.debugDescription)@\(caret) return \(turn): height \(before) -> \(block.frame.height)")
+            }
+        }
+    }
+
     @Test func emptyTextBlockShowsItsPlaceholder() async throws {
         let (container, thought) = try makeThought(blocks: [BlockDraft(content: "x")])
         let (window, _) = host(EditorView(mode: .edit(thought)).modelContainer(container))

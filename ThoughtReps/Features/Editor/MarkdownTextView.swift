@@ -23,8 +23,10 @@ struct MarkdownTextView: UIViewRepresentable {
     @Binding var height: CGFloat
     /// The least height; a text block uses less than the body.
     var minHeight = MarkdownTextView.minHeight
-    /// Grey text shown while the field is empty.
+    /// Grey text shown while the field is empty and not being edited.
     var placeholder: String?
+    /// Called instead of deleting when backspace is pressed with the caret at the very start.
+    var onBackspaceAtStart: (() -> Void)?
 
     static let minHeight: CGFloat = 220
 
@@ -118,6 +120,7 @@ final class StyledTextView: UITextView {
     /// Ranges backspace deletes whole: atomic ones from anywhere inside, the others only from their end.
     var deleteUnits: () -> [(range: NSRange, atomic: Bool)] = { [] }
     var onCommitMarkedText: (() -> Void)?
+    var onBackspaceAtStart: (() -> Void)?
     var isCheckboxAt: ((CGPoint) -> Bool)?
     weak var checkboxTap: UITapGestureRecognizer?
 
@@ -140,6 +143,10 @@ final class StyledTextView: UITextView {
     // after a numbered prefix it deletes the prefix, leaving the indentation.
     override func deleteBackward() {
         let caret = selectedRange
+        if caret == NSRange(location: 0, length: 0), markedTextRange == nil, let onBackspaceAtStart {
+            onBackspaceAtStart()
+            return
+        }
         if caret.length == 0,
            let unit = deleteUnits().first(where: {
                $0.atomic ? ($0.range.location < caret.location && caret.location <= $0.range.upperBound) : caret.location == $0.range.upperBound
@@ -324,6 +331,9 @@ extension MarkdownTextView {
         private var reportedHeight: CGFloat = 0
         private var measuredWidth: CGFloat = 0
         private var measuredUsage: CGFloat = 0
+        private var measuredEndedWithNewline = false
+        /// Set by an edit that adds or removes a line break; the height is then measured again once layout has caught up.
+        private var lineBreakEdited = false
         private var measuredHeight: CGFloat = 0
         private var needsCaretScroll = false
         private weak var observedScrollView: UIScrollView?
@@ -385,6 +395,7 @@ extension MarkdownTextView {
             view.accessibilityLabel = parent.accessibilityLabel
             view.onLayout = { [weak self] in self?.viewDidLayout() }
             view.onCommitMarkedText = { [weak self] in self?.restyleDirty() }
+            view.onBackspaceAtStart = { [weak self] in self?.parent.onBackspaceAtStart?() }
             view.deleteUnits = { [weak self] in self?.deleteUnits ?? [] }
             view.isCheckboxAt = { [weak self] point in self?.checkboxTarget(at: point) != nil }
             let tap = UITapGestureRecognizer(target: self, action: #selector(checkboxTapped(_:)))
@@ -491,15 +502,22 @@ extension MarkdownTextView {
             if !parent.isFocused { parent.isFocused = true }
             wasFocused = true
             requestCaretScroll()
+            textView.setNeedsLayout()
         }
 
         func textViewDidEndEditing(_ textView: UITextView) {
             if parent.isFocused { parent.isFocused = false }
             wasFocused = false
             needsCaretScroll = false
+            textView.setNeedsLayout()
         }
 
         func textView(_ textView: UITextView, shouldChangeTextIn range: NSRange, replacementText replacement: String) -> Bool {
+            let removed = textView.textStorage.mutableString
+            if replacement.utf16.contains(where: Self.isLineBreak)
+                || (range.upperBound <= removed.length && (range.location..<range.upperBound).contains { Self.isLineBreak(removed.character(at: $0)) }) {
+                lineBreakEdited = true
+            }
             if isExpanding || isApplying { return true }
             if textView.markedTextRange == nil, let expanded = expandedOverUnits(range, replacement: replacement), expanded != range {
                 replaceExpanded(expanded, with: replacement, in: textView)
@@ -514,6 +532,7 @@ extension MarkdownTextView {
             let wasAnnounced = inChange
             inChange = false
             guard !isApplying else { return }
+            if !wasAnnounced { lineBreakEdited = true }
             publish(textView)
             requestCaretScroll()
             guard textView.markedTextRange == nil else {
@@ -521,6 +540,19 @@ extension MarkdownTextView {
                 return
             }
             restyleDirty(wasAnnounced: wasAnnounced)
+            remeasureAfterLineBreakEdit()
+        }
+
+        private static func isLineBreak(_ unit: unichar) -> Bool {
+            unit == 0x0A || unit == 0x0D || unit == 0x2028 || unit == 0x2029
+        }
+
+        /// A line break moves the bottom without the laid-out bottom having to change, so the cached height is dropped.
+        private func remeasureAfterLineBreakEdit() {
+            guard lineBreakEdited else { return }
+            lineBreakEdited = false
+            measuredWidth = 0
+            textView?.setNeedsLayout()
         }
 
         /// Restyles what edits since the last restyle touched. A change that was never announced through
@@ -610,6 +642,7 @@ extension MarkdownTextView {
             let inserted = NSRange(location: range.location, length: replacement.utf16.count)
             let oldSelection = view.selectedRange
             let removedText = String(decoding: oldUnits[range.location..<range.upperBound], as: UTF16.self)
+            if replacement.utf16.contains(where: Self.isLineBreak) || removedText.utf16.contains(where: Self.isLineBreak) { lineBreakEdited = true }
             let touchedLines = MarkdownStyler.lineAlignedRange(in: oldUnits, covering: range)
             let touchedUnits = Array(oldUnits[touchedLines.location..<touchedLines.upperBound])
             let fenceChanged = MarkdownStyler.hasFenceMarker(touchedUnits)
@@ -636,6 +669,7 @@ extension MarkdownTextView {
             restyle(edited: inserted, fenceChanged: fenceChanged, listBefore: listBefore, units: units)
             isApplying = false
             if notify { publish(view) }
+            remeasureAfterLineBreakEdit()
             if view.isFirstResponder { requestCaretScroll() }
         }
 
@@ -1013,7 +1047,7 @@ extension MarkdownTextView {
             }
             reportHeight(of: view)
             if let label = placeholderLabel {
-                label.isHidden = view.textStorage.length > 0
+                label.isHidden = view.textStorage.length > 0 || view.isFirstResponder
                 label.frame = CGRect(
                     x: view.textContainerInset.left,
                     y: view.textContainerInset.top,
@@ -1061,13 +1095,26 @@ extension MarkdownTextView {
                 _ = layout.textLayoutFragment(for: location)
             }
             let usage = layout.usageBoundsForTextContainer.maxY
-            if width == measuredWidth, abs(usage - measuredUsage) < 0.5 { return max(measuredHeight, usage + insets) }
+            // A trailing newline adds an empty last line that the usage bounds leave out.
+            let length = view.textStorage.length
+            let endsWithNewline = length > 0
+                && Self.isLineBreak(view.textStorage.mutableString.character(at: length - 1))
+            if width == measuredWidth, abs(usage - measuredUsage) < 0.5, endsWithNewline == measuredEndedWithNewline {
+                return max(measuredHeight, usage + insets)
+            }
             #if DEBUG
             fullMeasureCount += 1
             #endif
+            // Laying out the last fragment is what makes the bottom current; `sizeThatFits` can still see the lines from before an edit.
+            var bottom = usage
+            layout.enumerateTextLayoutFragments(from: layout.documentRange.endLocation, options: [.reverse, .ensuresLayout]) { fragment in
+                bottom = max(bottom, fragment.layoutFragmentFrame.maxY)
+                return false
+            }
             measuredWidth = width
             measuredUsage = usage
-            measuredHeight = view.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude)).height
+            measuredEndedWithNewline = endsWithNewline
+            measuredHeight = max(view.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude)).height, bottom + insets)
             return max(measuredHeight, usage + insets)
         }
 

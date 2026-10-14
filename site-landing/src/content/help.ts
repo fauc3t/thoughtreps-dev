@@ -626,7 +626,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
           'The {icon:code} button wraps text in backticks.',
           'The {icon:tag} button types a `#` and shows your tags to pick from.',
           'The {icon:photo} button adds an image. See [Add images and galleries](/help/images-and-galleries).',
-          'The {icon:block} button adds a block under your thought, like a text block or a file. See [Quiz yourself with blurred blocks](/help/blurred-blocks) and [Attach files to a thought](/help/attach-files).',
+          'The {icon:block} button adds a block right after the one you are in, like a text block or a file. See [Quiz yourself with blurred blocks](/help/blurred-blocks) and [Attach files to a thought](/help/attach-files).',
         ],
         example: {
           kind: 'format-bar',
@@ -697,7 +697,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
       },
       {
         paragraphs: [
-          'That line is the image. Cut and paste it to move the picture. Delete it to remove the picture. You can also tap {icon:clear} on its thumbnail under the text box. Text blocks you add under a thought take images the same way.',
+          'That line is the image. Cut and paste it to move the picture. Delete it to remove the picture. You can also tap {icon:clear} on its thumbnail under the text box. Text blocks you add to a thought take images the same way.',
         ],
       },
       {
@@ -706,9 +706,9 @@ export const HELP_ARTICLES: HelpArticle[] = [
           'A gallery is a row of pictures that scrolls sideways under your thought.',
         ],
         steps: [
-          'In the editor, tap {icon:block} in the row above the keyboard. Or scroll to the "Blocks" section and tap "Add block".',
-          'Choose "Image gallery". The editor scrolls to the new block.',
-          'Type a title if you like. Then tap the {icon:plus} tile to add one or more images.',
+          'In the editor, tap {icon:block} in the row above the keyboard. Or tap "Add block" at the end of the thought. The new block goes right after the one you are in.',
+          'Choose "Image gallery".',
+          'Tap the {icon:plus} tile to add one or more images. For a title, tap {icon:more} on the gallery and choose "Add title".',
         ],
         example: {
           kind: 'gallery',
@@ -718,7 +718,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
       },
       {
         paragraphs: [
-          'A gallery needs at least one image. If you leave one empty, it is not saved.',
+          'A gallery needs at least one image. If you leave one empty, it is not saved. To remove a gallery, tap {icon:more} on it and choose "Delete", or swipe it left.',
         ],
       },
       {
@@ -770,14 +770,14 @@ export const HELP_ARTICLES: HelpArticle[] = [
       {
         heading: 'Add a file',
         steps: [
-          'In the editor, tap {icon:block} in the row above the keyboard. Or scroll to the "Blocks" section and tap "Add block".',
+          'In the editor, tap {icon:block} in the row above the keyboard. Or tap "Add block" at the end of the thought. The new block goes right after the one you are in.',
           'Choose {icon:paperclip|decorative} "File". The Files picker opens.',
           'Pick one or more files. Each file gets its own block.',
         ],
       },
       {
         paragraphs: [
-          'To remove a file, swipe its block left in the editor.',
+          'To remove a file, tap {icon:more} on its card and choose "Delete", or swipe it left in the editor.',
         ],
       },
       {
@@ -837,16 +837,16 @@ export const HELP_ARTICLES: HelpArticle[] = [
       {
         heading: 'Add a text block',
         steps: [
-          'In the editor, tap {icon:block} in the row above the keyboard. Or scroll to the "Blocks" section and tap "Add block".',
-          'Choose "Text". The editor scrolls to the new block and puts the cursor in its "Markdown text" box.',
+          'In the editor, tap {icon:block} in the row above the keyboard. Or tap "Add block" at the end of the thought. The new block goes right after the one you are in.',
+          'Choose "Text". The cursor lands in the new text, which looks like another paragraph.',
           'Type the text. Markdown, #tags and images work here just like in the main text.',
-          'Type a label if you like, such as "Answer".',
-          'Turn on "Blur until tapped" to hide it.',
+          'For a label, tap {icon:more} on the block and choose "Add label". Then type something like "Answer" in the alert.',
+          'To hide it, tap {icon:more} and turn on "Blur until tapped". A blurred block has a light tint in the editor.',
         ],
       },
       {
         paragraphs: [
-          'You can add as many blocks as you like. A text block with no text is dropped when you save. To remove a block, swipe it left in the editor. The main text always stays first, and you cannot remove or blur it.',
+          'You can add as many blocks as you like. A text block with no text is dropped when you save. A new block goes right after the block you are in, and the cursor moves to a fresh line below it. To remove a block, tap {icon:more} on it and choose "Delete", or swipe it left. You can also press delete at the start of a block that follows a card. The first press selects the card, and the second removes it. The main text always stays first, and you cannot remove or blur it.',
         ],
       },
       {
@@ -900,15 +900,15 @@ export const HELP_ARTICLES: HelpArticle[] = [
       {
         heading: 'Add a link',
         steps: [
-          'In the editor, tap {icon:block} in the row above the keyboard. Or scroll to the "Blocks" section and tap "Add block".',
+          'In the editor, tap {icon:block} in the row above the keyboard. Or tap "Add block" at the end of the thought. The new block goes right after the one you are in.',
           'Choose "Linked thought". A list of your thoughts opens.',
           'Search by title or text, or pick one from the list. With no search, it shows the 20 thoughts you changed most recently.',
-          'Tap the thought you want. The link appears in the editor as a "Linked thought" row.',
+          'Tap the thought you want. The link appears in the editor as a card, right after the block you were in.',
         ],
       },
       {
         paragraphs: [
-          'To remove a link, tap {icon:clear} on its row. The other thought is not touched. If nothing matches your search, you see "No thoughts match". If search is still getting ready, you see "Search is catching up. Showing recent thoughts for now."',
+          'To remove a link, tap {icon:more} on its card and choose "Delete", or swipe it left. The other thought is not touched. If nothing matches your search, you see "No thoughts match". If search is still getting ready, you see "Search is catching up. Showing recent thoughts for now."',
           'The list leaves out the thought you are editing, thoughts you already linked, and archived thoughts. A thought can link to another one only once.',
         ],
       },

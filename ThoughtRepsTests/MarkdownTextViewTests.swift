@@ -1126,8 +1126,11 @@ struct MarkdownTextViewTests {
         try await settle(h)
         try await settle(h)
         scroll.contentSize = CGSize(width: 390, height: h.model.height)
+        h.view.frame.size.height = h.model.height
         h.view.setNeedsLayout()
         h.view.layoutIfNeeded()
+        try await settle(h)
+        h.coordinator.scrollCaretIntoView()
         let moved = scroll.convert(h.view.caretRect(for: h.view.selectedTextRange!.end), from: h.view)
         #expect(scroll.contentOffset.y > 0)
         #expect(moved.maxY <= scroll.contentOffset.y + scroll.bounds.height + 1)

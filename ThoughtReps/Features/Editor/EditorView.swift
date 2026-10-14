@@ -46,6 +46,14 @@ struct EditorView: View {
     @State private var openedLearn = false
     @State private var isPickingLink = false
     @State private var linkTargets: [UUID: Thought] = [:]
+    /// Whether any Markdown field has been focused yet; until then new blocks go at the end.
+    @State private var hasFocusedField = false
+    /// The card the next backspace at the start of the text after it removes.
+    @State private var selectedCardID: UUID?
+    /// The block whose label or title the alert edits; kept after the alert closes so Save can still read it.
+    @State private var titleTargetID: UUID?
+    @State private var isEditingTitle = false
+    @State private var titleDraft = ""
 
     private var isNew: Bool {
         if case .new = mode { return true }
@@ -98,9 +106,9 @@ struct EditorView: View {
     private func selectionBinding(for field: EditorField) -> Binding<TextSelection?> {
         switch field {
         case .body:
-            $selection
+            Binding(get: { selection }, set: { selection = $0; selectedCardID = nil })
         case let .block(id):
-            Binding(get: { blockSelections[id] }, set: { blockSelections[id] = $0 })
+            Binding(get: { blockSelections[id] }, set: { blockSelections[id] = $0; selectedCardID = nil })
         }
     }
 
@@ -145,15 +153,113 @@ struct EditorView: View {
         return Dictionary((thought.images ?? []).map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
     }
 
-    /// Adds a block; `pendingNewBlockID` then drives scrolling to it and focusing its Markdown field.
+    /// Adds a block after the active text; `pendingNewBlockID` then drives scrolling to the text after it and focusing that field.
     private func addBlock(_ kind: BlockKind) {
         if kind == .thoughtLink {
             isPickingLink = true
         } else if kind == .file {
             fileIntake.isImporting = true
         } else {
-            pendingNewBlockID = drafts.addBlock(kind)
+            insert([BlockDraft(kind: kind)])
         }
+    }
+
+    /// What new blocks go after: the card selected for deletion, else the field last focused, else nothing yet.
+    private var insertionAnchor: EditorDocument.Anchor? {
+        if let selectedCardID, drafts.contains(where: { $0.id == selectedCardID }) { return .card(selectedCardID) }
+        guard hasFocusedField else { return nil }
+        if case let .block(id) = activeField, !drafts.contains(where: { $0.id == id }) { return nil }
+        return .field(activeField)
+    }
+
+    private func apply(_ document: EditorDocument) {
+        text = document.body
+        drafts = document.drafts
+        selectedCardID = nil
+    }
+
+    private func setCursor(_ position: EditorDocument.Position) {
+        let current = textBinding(for: position.field).wrappedValue
+        selectionBinding(for: position.field).wrappedValue = TextSelection(
+            insertionPoint: String.Index(utf16Offset: min(position.offset, current.utf16.count), in: current)
+        )
+    }
+
+    private func place(_ position: EditorDocument.Position) {
+        setCursor(position)
+        focus = position.field
+    }
+
+    private func insert(_ blocks: [BlockDraft]) {
+        var document = EditorDocument(body: text, drafts: drafts)
+        let target = document.insert(blocks, after: insertionAnchor)
+        apply(document)
+        setCursor(EditorDocument.Position(field: target, offset: 0))
+        if case let .block(id) = target {
+            focus = nil
+            pendingNewBlockID = id
+        } else {
+            focus = .body
+        }
+    }
+
+    private func removeBlock(_ id: UUID) {
+        drafts.removeAll { $0.id == id }
+        selectedCardID = nil
+    }
+
+    private func backspaceAtStart(of id: UUID) {
+        var document = EditorDocument(body: text, drafts: drafts)
+        switch document.backspaceAtStart(of: id, selectedCard: selectedCardID) {
+        case .none:
+            break
+        case let .selectCard(card):
+            selectedCardID = card
+            UIAccessibility.post(notification: .announcement, argument: "\(cardName(card)) selected. Delete again to remove.")
+        case let .moved(position):
+            apply(document)
+            place(position)
+        }
+    }
+
+    private func cardName(_ id: UUID) -> String {
+        guard let draft = drafts.first(where: { $0.id == id }) else { return "Block" }
+        if draft.kind == .file, let file = draft.file { return file.filename }
+        if draft.kind == .gallery, !draft.title.isEmpty { return draft.title }
+        return draft.kind.label
+    }
+
+    /// Whether VoiceOver has no name for the block but its kind.
+    private func isUnnamed(_ draft: BlockDraft) -> Bool {
+        switch draft.kind {
+        case .markdown, .gallery: draft.title.isEmpty
+        case .thoughtLink: true
+        case .file: false
+        }
+    }
+
+    /// 1-based place of an unnamed block among those of its kind, to tell them apart by ear. Text blocks
+    /// are always numbered; other kinds only when there are several.
+    private func ordinal(of id: UUID) -> Int? {
+        guard let draft = drafts.first(where: { $0.id == id }), isUnnamed(draft) else { return nil }
+        let same = drafts.filter { $0.kind == draft.kind && isUnnamed($0) }
+        guard draft.kind == .markdown || same.count > 1 else { return nil }
+        return (same.firstIndex { $0.id == id } ?? 0) + 1
+    }
+
+    private func beginEditingTitle(of id: UUID) {
+        titleDraft = drafts.first { $0.id == id }?.title ?? ""
+        titleTargetID = id
+        isEditingTitle = true
+    }
+
+    private func commitTitle() {
+        guard let id = titleTargetID, let index = drafts.firstIndex(where: { $0.id == id }) else { return }
+        drafts[index].title = titleDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var titleEditKind: BlockKind? {
+        titleTargetID.flatMap { id in drafts.first { $0.id == id }?.kind }
     }
 
     private var linkedIDs: Set<UUID> {
@@ -168,9 +274,7 @@ struct EditorView: View {
     }
 
     private func addLink(to id: UUID) {
-        let draft = BlockDraft(kind: .thoughtLink, linkedThoughtID: id)
-        drafts.append(draft)
-        pendingNewBlockID = draft.id
+        insert([BlockDraft(kind: .thoughtLink, linkedThoughtID: id)])
     }
 
     private func refreshLinkTargets() {
@@ -206,11 +310,9 @@ struct EditorView: View {
         EditorField.insertImageTokens(added.map(\.id), into: textBinding(for: field), selection: selectionBinding(for: field))
     }
 
-    /// Each file becomes a block of its own, at the end.
+    /// Each file becomes a block of its own, in order at the same spot.
     private func addFiles(_ added: [FileDraft]) {
-        let blocks = added.map { BlockDraft(kind: .file, file: $0) }
-        drafts.append(contentsOf: blocks)
-        pendingNewBlockID = blocks.last?.id
+        insert(added.map { BlockDraft(kind: .file, file: $0) })
     }
 
     /// Looks the block up by id because it may have moved or been deleted while the image processed.
@@ -235,7 +337,11 @@ struct EditorView: View {
             onFocusRequestDone: { if pendingNewBlockID == id { pendingNewBlockID = nil } },
             onProcessingChange: setBlockProcessing,
             linkTarget: draft.wrappedValue.linkedThoughtID.flatMap { linkTargets[$0] },
-            onRemove: { drafts.removeAll { $0.id == id } }
+            ordinal: ordinal(of: id),
+            isSelectedCard: selectedCardID == id,
+            onRemove: { removeBlock(id) },
+            onEditTitle: { beginEditingTitle(of: id) },
+            onBackspaceAtStart: { backspaceAtStart(of: id) }
         ) { addGalleryImages(to: $0, $1) }
     }
 
@@ -266,10 +372,32 @@ struct EditorView: View {
                         imageData: thumbnailData(for:),
                         accessory: accessory(for: .body),
                         undoResetToken: bodyLoadToken,
-                        height: $bodyHeight
+                        height: $bodyHeight,
+                        minHeight: drafts.isEmpty ? MarkdownTextView.minHeight : BlockDraftEditor.markdownMinHeight
                     )
                     .frame(height: bodyHeight)
-                    .bodyRow()
+                    .bodyRow(trailing: 16 + BlockDraftEditor.gutter)
+                    let thumbnails = inlineThumbnails(in: text, drafts: inlineDrafts, stored: storedImages)
+                    if !thumbnails.isEmpty {
+                        InlineImageStrip(thumbnails: thumbnails, remove: removeInlineImage)
+                            .bodyRow(vertical: 4)
+                    }
+
+                    ForEach($drafts) { blockRow($0).bodyRow() }
+                    .onDelete { offsets in
+                        for id in offsets.map({ drafts[$0].id }) { removeBlock(id) }
+                    }
+                    .onMove { drafts.move(fromOffsets: $0, toOffset: $1) }
+
+                    Menu {
+                        AddBlockMenuItems { addBlock($0) }
+                    } label: {
+                        Label("Add block", systemImage: "plus")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                    .bodyRow(vertical: 6)
+
                     if intake.isProcessing {
                         ImageProcessingIndicator(intake: intake)
                             .bodyRow(vertical: 6)
@@ -284,33 +412,12 @@ struct EditorView: View {
                         .accessibilityElement(children: .combine)
                         .bodyRow(vertical: 6)
                     }
-                    let thumbnails = inlineThumbnails(in: text, drafts: inlineDrafts, stored: storedImages)
-                    if !thumbnails.isEmpty {
-                        InlineImageStrip(thumbnails: thumbnails, remove: removeInlineImage)
-                            .bodyRow(vertical: 4)
-                    }
                     Text(tagsFooter)
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .accessibilityElement(children: .ignore)
                         .accessibilityLabel(tagsFooter)
                         .bodyRow(vertical: 6)
-                }
-
-                Section {
-                    ForEach($drafts) { blockRow($0) }
-                    .onDelete { drafts.remove(atOffsets: $0) }
-                    .onMove { drafts.move(fromOffsets: $0, toOffset: $1) }
-
-                    Menu {
-                        AddBlockMenuItems { addBlock($0) }
-                    } label: {
-                        Label("Add block", systemImage: "plus.circle")
-                    }
-                } header: {
-                    Text("Blocks")
-                } footer: {
-                    Text("Add more text, a gallery, a linked thought or a file. Turn on blur to hide an answer until you tap it.")
                 }
 
                 Section {
@@ -372,15 +479,29 @@ struct EditorView: View {
             }
             .onChange(of: linkedIDs) { refreshLinkTargets() }
             .onChange(of: text) { old, new in
+                selectedCardID = nil
                 continueList(in: .body, from: old, to: new)
             }
             .onChange(of: drafts.map(\.content)) { old, new in
+                selectedCardID = nil
                 guard let index = EditorField.changedIndex(from: old, to: new) else { return }
                 continueList(in: .block(drafts[index].id), from: old[index], to: new[index])
             }
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { formWidth = $0 }
             .onChange(of: focus) { _, new in
-                if let new { activeField = new }
+                if let new {
+                    activeField = new
+                    hasFocusedField = true
+                    selectedCardID = nil
+                }
+            }
+            .alert(
+                titleEditKind == .gallery ? "Gallery title" : "Block label",
+                isPresented: $isEditingTitle
+            ) {
+                TextField(titleEditKind == .gallery ? "Title (optional)" : "Label (optional), e.g. Answer", text: $titleDraft)
+                Button("Save", action: commitTitle)
+                Button("Cancel", role: .cancel) {}
             }
             .task(id: pendingNewBlockID) {
                 guard let id = pendingNewBlockID else { return }
@@ -431,7 +552,7 @@ struct EditorView: View {
             .first { $0.activationState == .foregroundActive } ?? UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
         let width = formWidth > 0 ? formWidth : (scene?.screen.bounds.width ?? 390)
         let rowWidth = ReadableWidth.sideMargin(for: width) > 0 ? ReadableWidth.column : width - 32
-        return MarkdownTextView.estimatedHeight(for: text, width: rowWidth - 32)
+        return MarkdownTextView.estimatedHeight(for: text, width: rowWidth - 32 - BlockDraftEditor.gutter)
     }
 
     private func load() {
@@ -494,8 +615,8 @@ struct EditorView: View {
 private extension View {
     /// A row of the body section: no card background or separator, with the same 16 pt insets as a
     /// card row, so the text lines up with the other sections' content and isn't clipped at the row's edge.
-    func bodyRow(vertical: CGFloat = 0) -> some View {
-        listRowInsets(EdgeInsets(top: vertical, leading: 16, bottom: vertical, trailing: 16))
+    func bodyRow(vertical: CGFloat = 0, trailing: CGFloat = 16) -> some View {
+        listRowInsets(EdgeInsets(top: vertical, leading: 16, bottom: vertical, trailing: trailing))
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
     }
