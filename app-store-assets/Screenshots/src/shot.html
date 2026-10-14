@@ -56,7 +56,7 @@
       const card = document.createElement('div');
       card.className = 'card';
       card.style.cssText = `left: ${c.x}px; top: ${c.y}px; --s: ${c.s}; --top: ${c.top}; --bottom: ${c.bottom}; --pad: ${c.pad ?? 0}; --padTop: ${c.padTop ?? 0};`
-        + ` --rot: ${c.rot ?? 0}deg; --bg: ${c.bg ?? '#ffffff'}`;
+        + ` --rot: ${c.rot ?? 0}deg; --bg: ${c.bg ?? '#ffffff'}` + (c.shadow === false ? '; box-shadow: none' : '');
       const clip = Object.assign(document.createElement('div'), { className: 'clip' });
       const img = Object.assign(document.createElement('img'), { alt: '', src: `../raw/${c.raw}.png` });
       clip.append(img);

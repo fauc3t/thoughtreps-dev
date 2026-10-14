@@ -4,6 +4,7 @@
 //   top, bottom    the raw rows shown (raw px; 330-2600 is a thought's content without the nav buttons and tab bar)
 //   pad, padTop    blank raw px added below and above the crop, in `bg` (default the Ink paper, white)
 //   x, y, s, rot   the card's left and top on the 1320x2868 canvas, its scale (raw px to canvas px) and its tilt in degrees
+//   shadow         false drops the hard shadow (a close-up popping out of the card behind it)
 // A card whose bottom runs past the canvas shows only the top of the screen. `<mark>` highlights a word; `<loop></loop>`
 // draws the loop mark. Lines of a headline are separated by <br>. Loaded by shot.html, preview.html and gen.mjs.
 // The frame is the Pop theme (colors, Futura, Avenir Next); the captures inside are the Ink theme, except the themes shot.
@@ -56,8 +57,8 @@ const SHOTS = [
     name: '07-interval', headline: 'Pick when you<br>see it <mark>again</mark>.',
     support: 'Bring it back in 1, 3, 7 or 30 days, or set your own.',
     cards: [
-      { raw: '05-interval', top: 330, bottom: 2340, x: 144, y: 780, s: 0.74 },
-      { raw: '05-interval', top: 2360, bottom: 2620, x: 72, y: 2220, s: 0.85 },
+      { raw: '05-interval', top: 330, bottom: 2340, pad: 340, x: 144, y: 780, s: 0.74 },
+      { raw: '05-interval', top: 2360, bottom: 2620, x: 72, y: 2220, s: 0.85, shadow: false },
     ],
   },
   {
