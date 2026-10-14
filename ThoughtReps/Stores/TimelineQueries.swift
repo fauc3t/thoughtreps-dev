@@ -78,7 +78,8 @@ extension ThoughtCounts {
 /// a thought requeues it, which would move its row while you're still on the list. So the order seen at
 /// the snapshot is kept until the next one; thoughts that join later go after, in their loaded order.
 /// Only the default timeline (pinned, due, viewed since the snapshot) is frozen: it is bounded, while
-/// "show all" lists every thought and is shown as loaded.
+/// "show all" lists every thought and is shown as loaded. Pinned thoughts are ordered by pin time
+/// (`pinnedSorted`), not `nextDueAt`, in both modes, so opening one never moves it.
 enum TimelineOrder {
     /// Ranks plus the snapshot they were taken for.
     struct Frozen {
@@ -113,5 +114,14 @@ enum TimelineOrder {
             if rankA != rankB { return rankA < rankB }
             return a.offset < b.offset
         }.map(\.element)
+    }
+
+    /// Pinned thoughts by when they were pinned, oldest first. `stateChangedAt` isn't touched by opening.
+    static func pinnedSorted(_ thoughts: [Thought]) -> [Thought] {
+        thoughts.sorted { a, b in
+            if a.stateChangedAt != b.stateChangedAt { return a.stateChangedAt < b.stateChangedAt }
+            if a.createdAt != b.createdAt { return a.createdAt < b.createdAt }
+            return a.id.uuidString < b.id.uuidString
+        }
     }
 }

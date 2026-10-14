@@ -419,7 +419,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
       {
         heading: 'What is on the Timeline',
         list: [
-          'A "Pinned" section at the top, with every pinned thought.',
+          'A "Pinned" section at the top, with every pinned thought. They stay in the order you pinned them.',
           'A "Due" section below it, with thoughts whose wait is over, oldest first.',
         ],
       },
@@ -1258,7 +1258,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
       {
         heading: 'Pin a thought',
         paragraphs: [
-          'A pinned thought stays in the "Pinned" section at the top of your Timeline all the time, due or not. It is good for things you want to see every day, like a set of weekly review questions.',
+          'A pinned thought stays in the "Pinned" section at the top of your Timeline all the time, due or not. It is good for things you want to see every day, like a set of weekly review questions. They stay in the order you pinned them, and opening one never moves it.',
         ],
         list: [
           'Swipe right on a card on the Timeline.',

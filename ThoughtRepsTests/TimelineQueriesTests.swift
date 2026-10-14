@@ -156,4 +156,56 @@ struct TimelineQueriesTests {
         let refreshed = TimelineOrder.refreshed(frozen, with: [second, first], snapshot: snapshot)
         #expect(TimelineOrder.sorted([second, first], by: refreshed.ranks).map(\.body) == ["first", "second"])
     }
+
+    @Test func pinnedOrderFollowsPinTimeThenCreationThenID() throws {
+        let early = thought("early", due: -100, pinned: true)
+        let late = thought("late", due: -300, pinned: true)
+        let tieB = thought("tie b", due: 0, pinned: true)
+        let tieA = thought("tie a", due: 0, pinned: true)
+        early.stateChangedAt = snapshot.addingTimeInterval(10)
+        late.stateChangedAt = snapshot.addingTimeInterval(20)
+        tieA.stateChangedAt = snapshot.addingTimeInterval(30)
+        tieB.stateChangedAt = snapshot.addingTimeInterval(30)
+        tieB.createdAt = snapshot.addingTimeInterval(-5)
+        #expect(TimelineOrder.pinnedSorted([tieA, late, tieB, early]).map(\.body) == ["early", "late", "tie b", "tie a"])
+        tieA.createdAt = tieB.createdAt
+        let byID = [tieA, tieB].sorted { $0.id.uuidString < $1.id.uuidString }
+        #expect(TimelineOrder.pinnedSorted([tieA, tieB]).map(\.id) == byID.map(\.id))
+    }
+
+    @Test func openingAPinnedThoughtDoesNotMoveItAfterAFreshSort() throws {
+        var store = ThoughtStore(context: context, defaultIntervalDays: 7, saveErrors: SaveErrorCenter())
+        store.ratingPrompt = .throwaway()
+        let first = thought("first", due: -300)
+        let second = thought("second", due: -200)
+        let third = thought("third", due: -100)
+        for (offset, thought) in [first, second, third].enumerated() {
+            store.setPinned(thought, true, now: snapshot.addingTimeInterval(Double(offset)))
+        }
+        store.markViewed(first, now: snapshot.addingTimeInterval(100))
+        #expect(first.nextDueAt > second.nextDueAt)
+        let pinned = try context.fetch(FetchDescriptor<Thought>(
+            predicate: ThoughtCounts.timeline(.all, showAll: true, snapshot: snapshot),
+            sortBy: [SortDescriptor(\.nextDueAt)]
+        )).filter(\.isPinned)
+        #expect(TimelineOrder.pinnedSorted(pinned).map(\.body) == ["first", "second", "third"])
+    }
+
+    @Test func mixedRowsKeepFrozenDueOrderForUnpinnedAndPinOrderForPinned() throws {
+        var store = ThoughtStore(context: context, defaultIntervalDays: 7, saveErrors: SaveErrorCenter())
+        store.ratingPrompt = .throwaway()
+        let due1 = thought("due 1", due: -400)
+        let pin1 = thought("pin 1", due: -300)
+        let due2 = thought("due 2", due: -200)
+        let pin2 = thought("pin 2", due: -100)
+        store.setPinned(pin1, true, now: snapshot.addingTimeInterval(1))
+        store.setPinned(pin2, true, now: snapshot.addingTimeInterval(2))
+        let ranks = TimelineOrder.ranks([due1, pin1, due2, pin2])
+        store.markViewed(due1, now: snapshot.addingTimeInterval(100))
+        store.markViewed(pin1, now: snapshot.addingTimeInterval(100))
+        let reloaded = [due2, pin2, due1, pin1]
+        let rows = TimelineOrder.sorted(reloaded, by: ranks)
+        #expect(rows.filter { !$0.isPinned }.map(\.body) == ["due 1", "due 2"])
+        #expect(TimelineOrder.pinnedSorted(rows.filter(\.isPinned)).map(\.body) == ["pin 1", "pin 2"])
+    }
 }

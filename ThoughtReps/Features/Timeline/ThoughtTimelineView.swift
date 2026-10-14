@@ -187,7 +187,7 @@ private struct TimelineList: View {
     var body: some View {
         let _ = saveToken
         let rows = showAll ? Array(shown) : TimelineOrder.sorted(shown, by: order.ranks)
-        let pinned = rows.filter(\.isPinned)
+        let pinned = TimelineOrder.pinnedSorted(rows.filter(\.isPinned))
         let listed = rows.filter { !$0.isPinned }
         List {
             if !pinned.isEmpty {
