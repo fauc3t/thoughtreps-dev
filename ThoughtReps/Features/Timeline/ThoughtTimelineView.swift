@@ -245,7 +245,8 @@ private struct TimelineList: View {
             }
             .tint(ThemeManager.shared.current.swipe.pin)
         }
-        .swipeActions(edge: .trailing) {
+        // A full swipe would fire Archive, the first button; pinned thoughts are kept on purpose.
+        .swipeActions(edge: .trailing, allowsFullSwipe: !thought.isPinned) {
             Button {
                 store.archive(thought, now: .now)
             } label: {

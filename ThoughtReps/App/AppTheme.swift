@@ -216,11 +216,12 @@ enum AppTheme: String, CaseIterable, Identifiable {
                            muted: ("5A5246", "BDB29E"), hl: ("FFD36B", "4A3F22"), accent: ("F2542D", "FF7A59"),
                            border: ("141210", "FFF6E3"))
 
-    /// Pin, unpin and restore share `pin`. `delete` is set explicitly because a destructive
+    /// Pin, unpin and restore share `pin`. Ink's is blue: its dark accent is near white under the
+    /// white label, and a grey would look like Archive beside it. `delete` is set explicitly because a destructive
     /// swipe button doesn't reliably come up red under the app's tint.
     var swipe: SwipeTints {
         switch self {
-        case .ink: SwipeTints(pin: palette.accent, tomorrow: .orange, archive: .gray, delete: .red)
+        case .ink: SwipeTints(pin: Color(hex: "2F5BD3") ?? .gray, tomorrow: .orange, archive: .gray, delete: .red)
         case .library: SwipeTints(pin: "8B3A1F", tomorrow: "A0642A", archive: "7A6A55", delete: "A3271C")
         case .midnight: SwipeTints(pin: "8A6810", tomorrow: "3B4F86", archive: "4B5675", delete: "A33A3A")
         case .garden: SwipeTints(pin: "2F6B3F", tomorrow: "56722E", archive: "66735F", delete: "A63A2E")

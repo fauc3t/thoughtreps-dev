@@ -44,6 +44,8 @@ struct InkStyleTests {
                 #expect(ratio >= 4.5, "\(theme.name) \(name) contrast \(ratio)")
             }
         }
+        let inkPin = 1.05 / (Self.luminance(AppTheme.ink.swipe.pin) + 0.05)
+        #expect(inkPin >= 4.5, "Ink pin contrast \(inkPin)")
     }
 
     @Test func colorsResolve() {
