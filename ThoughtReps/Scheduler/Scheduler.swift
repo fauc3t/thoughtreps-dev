@@ -8,6 +8,8 @@ enum Scheduler {
     static let defaultIntervalDays = 7
     static let maxIntervalDays = 365
     static let learnGrowthFactor = 1.7
+    /// The gap after the first "Got it" (and after one following an "Again").
+    static let learnFirstGapDays = 3
 
     /// The schedule fields that a view or snooze changes.
     struct State: Equatable {
@@ -79,10 +81,10 @@ enum Scheduler {
         return next
     }
 
-    /// The gap after "Got it": the base interval the first time, then the last gap times
+    /// The gap after "Got it": `learnFirstGapDays` the first time, then the last gap times
     /// `learnGrowthFactor` (at least one day longer), capped at `maxIntervalDays`.
-    static func learnGapAfterGotIt(lastGapDays: Int?, baseIntervalDays: Int) -> Int {
-        guard let lastGapDays else { return clamp(baseIntervalDays) }
+    static func learnGapAfterGotIt(lastGapDays: Int?) -> Int {
+        guard let lastGapDays else { return learnFirstGapDays }
         let grown = Int((Double(lastGapDays) * learnGrowthFactor).rounded())
         return clamp(max(grown, lastGapDays + 1))
     }
@@ -92,12 +94,11 @@ enum Scheduler {
     static func afterReview(
         gotIt: Bool,
         lastGapDays: Int?,
-        baseIntervalDays: Int,
         now: Date,
         calendar: Calendar = .current
     ) -> (nextDueAt: Date, learnIntervalDays: Int?) {
         if gotIt {
-            let gap = learnGapAfterGotIt(lastGapDays: lastGapDays, baseIntervalDays: baseIntervalDays)
+            let gap = learnGapAfterGotIt(lastGapDays: lastGapDays)
             return (adding(days: gap, to: now, calendar: calendar), gap)
         }
         return (adding(days: 1, to: now, calendar: calendar), nil)

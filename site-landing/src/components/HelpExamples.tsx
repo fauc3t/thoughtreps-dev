@@ -726,7 +726,7 @@ function LearnBar() {
         </span>
         <span className={`${button} bg-ink text-paper`}>
           <span className="text-[13px] font-semibold">Got it</span>
-          <span className="text-[11px] opacity-70">In 12 days</span>
+          <span className="text-[11px] opacity-70">In 9 days</span>
         </span>
       </div>
     </div>

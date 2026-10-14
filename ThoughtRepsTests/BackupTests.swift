@@ -295,13 +295,13 @@ struct BackupTests {
         let learner = sourceStore.create(body: "# Learner", learn: true, now: now)
         let day1 = Scheduler.adding(days: 1, to: now, calendar: .current)
         sourceStore.review(learner, gotIt: true, now: day1)
-        sourceStore.review(learner, gotIt: true, now: Scheduler.adding(days: 7, to: day1, calendar: .current))
-        #expect(learner.learnIntervalDays == 12)
+        sourceStore.review(learner, gotIt: true, now: Scheduler.adding(days: 3, to: day1, calendar: .current))
+        #expect(learner.learnIntervalDays == 5)
         let file = try export(from: source)
         defer { try? FileManager.default.removeItem(at: file.deletingLastPathComponent()) }
         try await importFile(file)
         let copy = try #require(try thought(learner.id, in: destination))
-        #expect(copy.intervalMode == .learn && copy.learnIntervalDays == 12)
+        #expect(copy.intervalMode == .learn && copy.learnIntervalDays == 5)
         #expect(copy.nextDueAt == learner.nextDueAt)
         #expect(try IntegrityChecker.check(destination.mainContext).isEmpty)
 

@@ -191,7 +191,6 @@ struct ThoughtDetailView: View {
         let gap = Scheduler.afterReview(
             gotIt: gotIt,
             lastGapDays: thought.learnIntervalDays,
-            baseIntervalDays: thought.effectiveIntervalDays(defaultDays: defaultIntervalDays),
             now: now
         ).learnIntervalDays ?? 1
         let preview = gap == 1 ? "Tomorrow" : "In \(gap) days"

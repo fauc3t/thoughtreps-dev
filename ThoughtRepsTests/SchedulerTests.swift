@@ -82,29 +82,26 @@ struct SchedulerTests {
         #expect(after.intervalDays == 3)
     }
 
-    @Test func gotItGapsGrowFromBaseAndCap() {
+    @Test func gotItGapsGrowFromThreeDaysAndCap() {
         var gap: Int?
         var gaps: [Int] = []
-        for _ in 0..<9 {
-            gap = Scheduler.learnGapAfterGotIt(lastGapDays: gap, baseIntervalDays: 7)
+        for _ in 0..<11 {
+            gap = Scheduler.learnGapAfterGotIt(lastGapDays: gap)
             gaps.append(gap!)
         }
-        #expect(gaps == [7, 12, 20, 34, 58, 99, 168, 286, 365])
-        #expect(Scheduler.learnGapAfterGotIt(lastGapDays: 365, baseIntervalDays: 7) == 365)
+        #expect(gaps == [3, 5, 9, 15, 26, 44, 75, 128, 218, 365, 365])
     }
 
     @Test func gotItGrowsByAtLeastOneDay() {
-        #expect(Scheduler.learnGapAfterGotIt(lastGapDays: 1, baseIntervalDays: 1) == 2)
-        #expect(Scheduler.learnGapAfterGotIt(lastGapDays: nil, baseIntervalDays: 0) == 1)
-        #expect(Scheduler.learnGapAfterGotIt(lastGapDays: nil, baseIntervalDays: 900) == 365)
+        #expect(Scheduler.learnGapAfterGotIt(lastGapDays: 1) == 2)
     }
 
     @Test func reviewSchedulesFromNow() {
         let now = date(2026, 10, 4, 15)
-        let got = Scheduler.afterReview(gotIt: true, lastGapDays: 12, baseIntervalDays: 7, now: now, calendar: calendar)
+        let got = Scheduler.afterReview(gotIt: true, lastGapDays: 12, now: now, calendar: calendar)
         #expect(got.learnIntervalDays == 20)
         #expect(got.nextDueAt == date(2026, 10, 24, 15))
-        let again = Scheduler.afterReview(gotIt: false, lastGapDays: 12, baseIntervalDays: 7, now: now, calendar: calendar)
+        let again = Scheduler.afterReview(gotIt: false, lastGapDays: 12, now: now, calendar: calendar)
         #expect(again.learnIntervalDays == nil)
         #expect(again.nextDueAt == date(2026, 10, 5, 15))
     }

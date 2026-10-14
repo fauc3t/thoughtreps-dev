@@ -354,6 +354,17 @@ struct EditorView: View {
         selection = nil
     }
 
+    /// When a Learn thought comes back: its due day if it was already learning, else tomorrow
+    /// (turning Learn on or creating with it starts at `Scheduler.learnStartDue`).
+    private var learnBackLabel: String {
+        let now = Date.now
+        var due = Scheduler.learnStartDue(now: now)
+        if case .edit(let thought) = mode, openedLearn { due = thought.nextDueAt }
+        var phrase = RelativeDay.phrase(for: due, now: now)
+        if phrase.hasPrefix("on ") { phrase.removeFirst(3) }
+        return phrase.prefix(1).uppercased() + phrase.dropFirst()
+    }
+
     private var intervalSummary: String {
         guard let intervalDays else { return "Default (\(defaultIntervalDays) days)" }
         return IntervalDuration(days: intervalDays).label
@@ -421,18 +432,22 @@ struct EditorView: View {
                 }
 
                 Section {
-                    LabeledContent(learn ? "First wait" : "Comes back every") {
-                        Menu {
-                            Picker("Interval", selection: $intervalDays) {
-                                Text("Default (\(defaultIntervalDays) days)").tag(Int?.none)
-                                ForEach(IntervalOption.choices(including: intervalDays), id: \.self) { days in
-                                    Text(IntervalDuration(days: days).label).tag(Int?.some(days))
+                    if learn {
+                        LabeledContent("Back", value: learnBackLabel)
+                    } else {
+                        LabeledContent("Comes back every") {
+                            Menu {
+                                Picker("Interval", selection: $intervalDays) {
+                                    Text("Default (\(defaultIntervalDays) days)").tag(Int?.none)
+                                    ForEach(IntervalOption.choices(including: intervalDays), id: \.self) { days in
+                                        Text(IntervalDuration(days: days).label).tag(Int?.some(days))
+                                    }
                                 }
+                                .pickerStyle(.inline)
+                                Button("Custom…") { isPickingInterval = true }
+                            } label: {
+                                Text(intervalSummary)
                             }
-                            .pickerStyle(.inline)
-                            Button("Custom…") { isPickingInterval = true }
-                        } label: {
-                            Text(intervalSummary)
                         }
                     }
                     Toggle("Learn mode", isOn: $learn)
@@ -441,7 +456,7 @@ struct EditorView: View {
                 } header: {
                     Text("Schedule")
                 } footer: {
-                    Text(learn ? "In Learn mode, this is the first wait. Each Got it makes the next one longer." : "Learn mode asks you to rate the thought when it comes back instead of counting an open as a view.")
+                    Text(learn ? "When it comes back, rate it with Again or Got it. Each Got it makes the wait longer." : "Learn mode asks you to rate the thought when it comes back instead of counting an open as a view.")
                 }
             }
             .readableContentMargins()

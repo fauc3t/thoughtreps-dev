@@ -189,11 +189,11 @@ struct ThoughtStoreTests {
         #expect(thought.nextDueAt == days(1, from: now))
         let t1 = days(1, from: now)
         #expect(store.review(thought, gotIt: true, now: t1))
-        #expect(thought.learnIntervalDays == 7 && thought.nextDueAt == days(7, from: t1))
-        let t2 = days(7, from: t1)
+        #expect(thought.learnIntervalDays == 3 && thought.nextDueAt == days(3, from: t1))
+        let t2 = days(3, from: t1)
         #expect(store.review(thought, gotIt: true, now: t2))
-        #expect(thought.learnIntervalDays == 12 && thought.nextDueAt == days(12, from: t2))
-        let t3 = days(12, from: t2)
+        #expect(thought.learnIntervalDays == 5 && thought.nextDueAt == days(5, from: t2))
+        let t3 = days(5, from: t2)
         #expect(store.review(thought, gotIt: false, now: t3))
         #expect(thought.learnIntervalDays == nil && thought.nextDueAt == days(1, from: t3))
         #expect(thought.viewCount == 0 && thought.lastViewedAt == nil && thought.updatedAt == now)
@@ -201,10 +201,10 @@ struct ThoughtStoreTests {
         #expect(try IntegrityChecker.check(container.mainContext).isEmpty)
     }
 
-    @Test func reviewUsesThoughtsFixedIntervalAsBase() {
-        let thought = store.create(body: "Hello", intervalDays: 3, learn: true, now: now)
+    @Test func firstGotItIgnoresTheThoughtsFixedInterval() {
+        let thought = store.create(body: "Hello", intervalDays: 30, learn: true, now: now)
         store.review(thought, gotIt: true, now: days(1, from: now))
-        #expect(thought.learnIntervalDays == 3)
+        #expect(thought.learnIntervalDays == Scheduler.learnFirstGapDays)
     }
 
     @Test func reviewIgnoresNonLearnThoughts() {
@@ -220,7 +220,7 @@ struct ThoughtStoreTests {
         #expect(store.review(thought, gotIt: true, now: due))
         let after = thought.nextDueAt
         #expect(!store.review(thought, gotIt: true, now: due))
-        #expect(thought.nextDueAt == after && thought.learnIntervalDays == 7)
+        #expect(thought.nextDueAt == after && thought.learnIntervalDays == 3)
 
         let pinned = store.create(body: "P", learn: true, now: now)
         store.setPinned(pinned, true, now: now)

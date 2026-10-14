@@ -725,7 +725,6 @@ struct ThoughtStore {
         let result = Scheduler.afterReview(
             gotIt: gotIt,
             lastGapDays: thought.learnIntervalDays,
-            baseIntervalDays: thought.effectiveIntervalDays(defaultDays: defaultIntervalDays),
             now: now
         )
         thought.nextDueAt = result.nextDueAt

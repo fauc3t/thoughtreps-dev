@@ -1225,8 +1225,8 @@ export const HELP_ARTICLES: HelpArticle[] = [
           'When a Learn thought is due, the bar at the bottom shows two buttons instead of the interval choices. Each one shows when the thought will return.',
         ],
         list: [
-          '"Got it" means you remembered. The first time, the wait is the thought\'s interval, 7 days by default. After that, each "Got it" makes the wait about 1.7 times longer, up to 365 days. It goes 7, 12, 20, 34, 58, 99, 168, 286 and then 365 days.',
-          '"Again" means you did not. The thought comes back tomorrow, and the waits start over from the interval.',
+          '"Got it" means you remembered. The first time, the wait is 3 days. After that, each "Got it" makes the wait about 1.7 times longer, up to 365 days. It goes 3, 5, 9, 15, 26, 44, 75, 128, 218 and then 365 days.',
+          '"Again" means you did not. The thought comes back tomorrow, and the waits start over from 3 days.',
         ],
       },
       {
@@ -1235,7 +1235,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
           'Opening a Learn thought does not requeue it. Only the buttons do. If you close it without choosing, it stays due.',
           'When a Learn thought is waiting, the bar shows when it is back, like "Back tomorrow" or "Back Oct 23".',
           'A pinned Learn thought shows "Pinned · not reviewed" and has no buttons. Unpin it to review it.',
-          'In the editor, the interval is called "First wait". Changing it does not move the due date.',
+          'In the editor, a Learn thought shows "Back" with the day it returns, in place of the interval. Its interval is kept for when you turn Learn mode off.',
           'Learn thoughts have a small "LEARN" mark on their card on the Timeline.',
           "Your backups keep Learn mode and each thought's current wait.",
         ],
