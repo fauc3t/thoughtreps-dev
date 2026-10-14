@@ -90,6 +90,48 @@ struct EditorDocumentTests {
         #expect(textBlock.insert([added], after: .field(.body)) == .block(added.id))
     }
 
+    @Test func repeatedCardsWithFocusOnTheTrailingEmptyBlockLeaveOneEmptyBlock() {
+        let first = card()
+        var document = EditorDocument(body: "b", drafts: [])
+        var target = document.insert([first], after: .field(.body))
+        let empty = document.drafts[document.drafts.count - 1]
+        #expect(target == .block(empty.id))
+        let second = card(.file)
+        target = document.insert([second], after: .field(.block(empty.id)))
+        let third = card(.thoughtLink)
+        target = document.insert([third], after: .field(.block(empty.id)))
+        #expect(document.drafts.map(\.id) == [first.id, second.id, third.id, empty.id])
+        #expect(target == .block(empty.id))
+    }
+
+    @Test func aWhitespaceOnlyAnchorCountsAsEmpty() {
+        let blank = text(" \n ")
+        var document = EditorDocument(body: "b", drafts: [blank])
+        let gallery = card()
+        #expect(document.insert([gallery], after: .field(.block(blank.id))) == .block(blank.id))
+        #expect(document.drafts.map(\.id) == [gallery.id, blank.id])
+    }
+
+    @Test func labeledAndBlurredEmptyAnchorsKeepTheirBehavior() {
+        for anchor in [text("", title: "Answer"), text("", blurred: true)] {
+            var document = EditorDocument(body: "b", drafts: [anchor])
+            let gallery = card()
+            let target = document.insert([gallery], after: .field(.block(anchor.id)))
+            #expect(document.drafts.count == 3)
+            #expect(document.drafts[0].id == anchor.id)
+            #expect(document.drafts[1].id == gallery.id)
+            #expect(target == .block(document.drafts[2].id))
+        }
+    }
+
+    @Test func aSingleTextBlockStillGoesAfterAnEmptyAnchor() {
+        let empty = text("")
+        var document = EditorDocument(body: "b", drafts: [empty])
+        let added = text("")
+        #expect(document.insert([added], after: .field(.block(empty.id))) == .block(added.id))
+        #expect(document.drafts.map(\.id) == [empty.id, added.id])
+    }
+
     @Test func aSelectedCardTakesTheNewBlockRightAfterIt() {
         let first = card()
         let second = card(.file)

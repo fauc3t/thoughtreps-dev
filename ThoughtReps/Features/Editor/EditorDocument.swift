@@ -79,12 +79,17 @@ struct EditorDocument: Equatable {
         return Position(field: field, offset: first.utf16.count + separator.utf16.count)
     }
 
+    private func isEmptyUnlabeledText(_ draft: BlockDraft) -> Bool {
+        draft.kind == .markdown && draft.title.isEmpty && !draft.isBlurred && draft.content.allSatisfy(\.isWhitespace)
+    }
+
     // MARK: Insert
 
     /// Inserts `blocks` directly after `anchor` (the whole text or card, never inside it), or at the end
     /// without one. Returns the field to type in next: the new Markdown block, otherwise the Markdown
-    /// block that follows the inserted ones, otherwise a new empty one added after them. The exception is
-    /// an empty body, which keeps the focus rather than gaining a block below.
+    /// block that follows the inserted ones, otherwise a new empty one added after them. Two exceptions
+    /// keep the focus instead of gaining a block below: an empty body, and an empty unlabeled, unblurred
+    /// Text block, which the cards go before so empty blocks don't pile up.
     @discardableResult
     mutating func insert(_ blocks: [BlockDraft], after anchor: Anchor?) -> EditorField {
         guard !blocks.isEmpty else {
@@ -92,6 +97,11 @@ struct EditorDocument: Equatable {
             return .body
         }
         var index = drafts.count
+        if case let .field(.block(id)) = anchor, let at = drafts.firstIndex(where: { $0.id == id }),
+           isEmptyUnlabeledText(drafts[at]), !(blocks.count == 1 && blocks[0].kind == .markdown) {
+            drafts.insert(contentsOf: blocks, at: at)
+            return .block(id)
+        }
         switch anchor {
         case .field(.body):
             index = 0

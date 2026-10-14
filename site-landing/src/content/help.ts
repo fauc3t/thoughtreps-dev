@@ -846,7 +846,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
       },
       {
         paragraphs: [
-          'You can add as many blocks as you like. A text block with no text is dropped when you save. A new block goes right after the block you are in, and the cursor moves to a fresh line below it. To remove a block, tap {icon:more} on it and choose "Delete", or swipe it left. You can also press delete at the start of a block that follows a card. The first press selects the card, and the second removes it. The main text always stays first, and you cannot remove or blur it.',
+          'You can add as many blocks as you like. A text block with no text is dropped when you save. A new block goes right after the block you are in, and the cursor moves to a fresh line below it. If you add a gallery, linked thought or file while you are in an empty text block with no label, it goes above that block, and the cursor stays in it. To remove a block, tap {icon:more} on it and choose "Delete", or swipe it left. You can also press delete at the start of a block that follows a card. The first press selects the card, and the second removes it. The main text always stays first, and you cannot remove or blur it.',
         ],
       },
       {
