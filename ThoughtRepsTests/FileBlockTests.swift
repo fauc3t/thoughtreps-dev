@@ -303,6 +303,8 @@ struct FileBlockTests {
         #expect(model.symbolName == "doc.richtext")
         #expect(model.subtitle.contains(ByteCountFormatter.string(fromByteCount: 3, countStyle: .file)))
         #expect(model.accessibilityLabel.hasPrefix("File: slides.pdf"))
+        // Only the first letter is raised, so the acronym keeps its case.
+        #expect(model.typeDescription == "PDF document")
         #expect(FileCardModel(FileDraft(filename: "x", typeIdentifier: "nonsense", byteCount: 1, thumbnailData: nil, data: nil)).symbolName == "doc")
     }
 

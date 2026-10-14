@@ -436,7 +436,7 @@ function FileCard() {
         <span className="truncate text-[15px] font-semibold">
           Lease agreement.pdf
         </span>
-        <span className="text-[12px] text-muted">PDF Document · 1.2 MB</span>
+        <span className="text-[12px] text-muted">PDF document · 1.2 MB</span>
       </span>
     </div>
   );

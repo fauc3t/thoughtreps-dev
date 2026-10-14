@@ -27,7 +27,12 @@ struct FileCardModel: Equatable {
 
     private var type: UTType? { UTType(typeIdentifier) }
 
-    var typeDescription: String { type?.localizedDescription?.localizedCapitalized ?? "File" }
+    /// The type's own description with only its first letter raised, so "PDF document" stays as is
+    /// (`localizedCapitalized` would make it "Pdf Document").
+    var typeDescription: String {
+        guard let description = type?.localizedDescription, let first = description.first else { return "File" }
+        return first.uppercased() + description.dropFirst()
+    }
 
     var sizeText: String { ByteCountFormatter.string(fromByteCount: Int64(byteCount), countStyle: .file) }
 
