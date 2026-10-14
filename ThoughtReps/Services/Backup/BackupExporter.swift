@@ -269,6 +269,7 @@ extension ThoughtRecord {
             intervalDays: thought.intervalDays, intervalModeRaw: thought.intervalModeRaw,
             learnIntervalDays: thought.learnIntervalDays,
             isPinned: thought.isPinned, isArchived: thought.isArchived, archivedAt: thought.archivedAt,
+            conflictOfID: thought.conflictOfID,
             tags: thought.sortedTags.map(\.name),
             blocks: thought.sortedBlocks.compactMap { block in
                 // A file block with no bytes isn't exported, since an importer would refuse it.

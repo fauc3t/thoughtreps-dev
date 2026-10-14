@@ -163,6 +163,10 @@ enum IntegrityChecker {
         for thought in thoughts {
             let id = thought.id.uuidString
 
+            if thought.conflictOfID == thought.id {
+                add("Thought \(id) is a conflict copy of itself", id)
+            }
+
             let expectedTags = Set(TagParser.parse(all: thought.markdownTexts).map(\.key))
             let actualTags = (thought.tags ?? []).map(\.name)
             if Set(actualTags) != expectedTags || actualTags.count != expectedTags.count {

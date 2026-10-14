@@ -284,6 +284,84 @@ struct ChangeClockTests {
         try checkClean()
     }
 
+    @Test func conflictOfIDRoundTripsThroughAnExportFile() async throws {
+        let (source, sourceStore) = try makeSource()
+        let original = UUID()
+        let copy = sourceStore.create(body: "# Copy", now: t0)
+        copy.conflictOfID = original
+        sourceStore.create(body: "# Plain", now: t0)
+        try source.mainContext.save()
+
+        try await importFile(try exportFile(source))
+        let stored = try container.mainContext.fetch(FetchDescriptor<Thought>())
+        #expect(stored.first { $0.id == copy.id }?.conflictOfID == original)
+        #expect(stored.filter { $0.conflictOfID == nil }.count == 1)
+        try checkClean()
+    }
+
+    @Test func conflictOfIDMergesWithTheStateGroup() throws {
+        let original = UUID()
+        let thought = store.create(body: "# A", now: t0)
+        var incoming = recordOf(thought)
+        incoming.conflictOfID = original
+        incoming.stateChangedAt = at(100)
+        #expect(importRecord(incoming).replaced == 1)
+        #expect(thought.conflictOfID == original && thought.stateChangedAt == at(100))
+
+        var older = recordOf(thought)
+        older.conflictOfID = nil
+        older.stateChangedAt = at(50)
+        #expect(importRecord(older).upToDate == 1)
+        #expect(thought.conflictOfID == original)
+
+        var newer = recordOf(thought)
+        newer.conflictOfID = nil
+        newer.stateChangedAt = at(200)
+        #expect(importRecord(newer).replaced == 1)
+        #expect(thought.conflictOfID == nil)
+        try checkClean()
+    }
+
+    @Test func aConflictOfIDEqualToTheThoughtsOwnIDIsDropped() throws {
+        let id = UUID()
+        var record = recordOf(store.create(body: "# Seed", now: t0))
+        record.id = id
+        record.conflictOfID = id
+        #expect(importRecord(record).added == 1)
+        let stored = try #require(try container.mainContext.fetch(FetchDescriptor<Thought>(predicate: #Predicate { $0.id == id })).first)
+        #expect(stored.conflictOfID == nil)
+
+        var update = record
+        update.conflictOfID = id
+        update.stateChangedAt = at(500)
+        _ = importRecord(update)
+        #expect(stored.conflictOfID == nil)
+        try checkClean()
+    }
+
+    @Test func recordsWithoutConflictOfIDDecodeAndImportAsNil() throws {
+        let id = UUID()
+        let json = """
+        {"id":"\(id.uuidString)","body":"# Old","createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-02T00:00:00Z",\
+        "nextDueAt":"2026-01-08T00:00:00Z","viewCount":0,"intervalModeRaw":"fixed","isPinned":false,"isArchived":false,\
+        "tags":[],"blocks":[],"images":[]}
+        """
+        let decoded = try BackupFormat.decoder().decode(ThoughtRecord.self, from: Data(json.utf8))
+        #expect(decoded.conflictOfID == nil)
+        #expect(importRecord(decoded).added == 1)
+        let stored = try #require(try container.mainContext.fetch(FetchDescriptor<Thought>()).first)
+        #expect(stored.conflictOfID == nil)
+        try checkClean()
+    }
+
+    @Test func theCheckerFlagsASelfReferencingConflictCopy() throws {
+        let thought = store.create(body: "# A", now: t0)
+        thought.conflictOfID = thought.id
+        #expect(try IntegrityChecker.check(container.mainContext).contains { $0.description.contains("conflict copy of itself") })
+        thought.conflictOfID = UUID()
+        try checkClean()
+    }
+
     @Test func aPinLaterHereKeepsTheNewerSideOfEachGroup() throws {
         let thought = store.create(body: "# A", now: t0)
         var incoming = recordOf(thought)

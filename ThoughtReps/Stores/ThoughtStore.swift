@@ -899,9 +899,10 @@ struct ThoughtStore {
     /// Merges a batch read from an export, by thought id: unknown ids are added, and a stored thought
     /// is merged group by group. Content (body, blocks, images, tags) comes from the side with the newer
     /// `updatedAt`, schedule fields from the newer `scheduleChangedAt`, and state fields (pinned,
-    /// archived) from the newer `stateChangedAt`; each clock follows the winning side. A thought where
-    /// the file wins no group is left alone, so importing the same file twice changes nothing. Adding
-    /// a thought removes its tombstone, if any. A tag's color comes from the newer `Tag.updatedAt`.
+    /// archived, conflictOfID) from the newer `stateChangedAt`; each clock follows the winning side. A
+    /// thought where the file wins no group is left alone, so importing the same file twice changes
+    /// nothing. Adding a thought removes its tombstone, if any. A tag's color comes from the newer
+    /// `Tag.updatedAt`.
     ///
     /// Added thoughts land in one save. A content merge goes through `update` (so it follows the
     /// `persist()` note: new tags are saved first, children are saved in steps) and then writes the
@@ -1201,6 +1202,7 @@ struct ThoughtStore {
         thought.isPinned = record.isPinned
         thought.isArchived = record.isArchived
         thought.archivedAt = record.archivedAt
+        thought.conflictOfID = record.conflictOfID == thought.id ? nil : record.conflictOfID
         thought.stateChangedAt = record.stateClock
     }
 

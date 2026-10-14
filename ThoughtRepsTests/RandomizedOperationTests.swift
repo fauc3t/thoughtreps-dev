@@ -173,6 +173,7 @@ struct RandomizedOperationTests {
             intervalDays: randomInterval(&rng), intervalModeRaw: (learning ? IntervalMode.learn : IntervalMode.fixed).rawValue,
             learnIntervalDays: learning && Bool.random(using: &rng) ? Int.random(in: 1...Scheduler.maxIntervalDays, using: &rng) : nil,
             isPinned: !archived && Bool.random(using: &rng), isArchived: archived, archivedAt: archived ? updatedAt : nil,
+            conflictOfID: Int.random(in: 0..<4, using: &rng) == 0 ? (Bool.random(using: &rng) ? (existing?.id ?? id ?? UUID()) : UUID()) : nil,
             tags: [], blocks: blocks, images: inline
         )
         return ImportedThought(record: imported, images: images, files: files)

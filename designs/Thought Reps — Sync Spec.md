@@ -1,6 +1,8 @@
 # Thought Reps — Device Sync Spec (iPhone ↔ iPad, AWS)
 
-Status: draft, 2026-10-10. Not built. Open decisions are listed at the end; the biggest one, account vs. no account, is still being weighed (section 2).
+Status: ready to build, updated 2026-10-14 (first draft 2026-10-10). Not built. Phase 0 and phase 1 can start now; the account decision (section 2) gates only phase 4. Open decisions are listed at the end.
+
+Changes on 2026-10-14: iPad has shipped (section 0); 3-way merge is in v1, with conflict copies as the fallback, marked by a new `Thought.conflictOfID` field (sections 8 and 8a); key storage on the device (section 5); clarified how the push condition and `headSeq` work (section 7); Android notes (section 13); new phasing.
 
 This builds on what's already in the repo:
 
@@ -14,14 +16,9 @@ Principles:
 - **End-to-end encrypted.** We never hold the key (unless a user later opts into server escrow, section 6), so we can't read thoughts.
 - **Apple-only first** (iPhone + iPad), with the choices below made so non-Apple devices can come later without a migration (section 13).
 
-## 0. Prerequisite: a real iPad app
+## 0. Prerequisite: a real iPad app (done)
 
-Right now `project.yml` sets `TARGETED_DEVICE_FAMILY: "1"`, so the app is iPhone only.
-
-- **Change:** set it to `"1,2"` for the app and the share extension. Use a `NavigationSplitView` layout on regular width (tags or timeline in the sidebar, the thought in the detail pane). Add keyboard shortcuts and check the editor and image picker on iPad.
-- **App Store:** once iPad is supported, iPad screenshots are required (13"). The screenshot pipeline needs an iPad simulator and layout.
-- **One-way door:** Apple likely won't let a later build drop iPad support once it has shipped, so only ship it when you're committed.
-- **Order:** this can ship before sync. On its own it's useful and low-risk.
+The iPad app is built and in 1.0: the three-column `SplitRootView` on regular width, keyboard shortcuts, drag-and-drop images. Nothing left here for sync.
 
 ## 1. Shape of the system
 
@@ -57,6 +54,18 @@ Two options. Both keep the main app account-free and both are end-to-end encrypt
 
 **An account doesn't change who holds the key.** Signing in proves who you are; it doesn't give a new device K. With B the key still travels by iCloud Keychain, QR or recovery code (section 5).
 
+```
+Sign in with Apple ─┐
+Sign in with Google ├─► Account (our userId) ─► Vault (encrypted data)
+Email link (later) ─┘     + subscription           ▲
+                          + email                  │ readable only with K,
+                                                   │ held on devices, never by us
+```
+
+- **Many sign-in methods, one account.** Each method is an `ID#<provider>#<sub>` row pointing at the same `userId`. The account answers "who are you and have you paid"; the key answers "can you read it."
+- **What B adds besides escrow:** a way to reach the user (lapse warnings, support); the subscription survives a lost key cleanly (the account owns both, so resetting the vault is trivial); a signed-in device without the key can be told "you have synced data but no key; reset it?"; a natural place to link Google later.
+- **If A is chosen,** add an optional email stored on the vault for lapse warnings only. Moving a subscription to a new vault after a lost key then goes through `originalTransactionId` from a restored purchase.
+
 The rest of this spec is written for **B**, with notes where A differs. Under A, drop the account rows and auth routes; the vault id plus device membership is the identity.
 
 ## 3. Devices and membership
@@ -91,6 +100,20 @@ In order of preference:
    - The key goes from screen to camera and never touches the server.
 3. **Recovery code.** K shown as a code to write down, on a "Sync key" screen. Joining with it uses `K_auth` (section 6).
 
+**A device can join by QR without signing in.** The native Sign in with Apple sheet always uses the Apple Account the device is signed into, with no way to pick another. On a device with a different Apple ID (a shared family iPad, a work phone), signing in would create a second, empty account. So the QR invite alone is enough to join: it proves vault membership, the device attests with App Attest, and it gets the vault's entitlement. Linking a second Apple ID (as section 13 does for Google) or the web sign-in flow (`ASWebAuthenticationSession`, any Apple ID) stay possible but aren't the main path.
+
+iCloud Keychain is a convenience, not a dependency: sync works with QR and the recovery code alone. It can be off for many reasons (turned off in Settings, not signed into iCloud, a different or managed Apple ID, the toggle switched off), so both fallbacks ship in v1. When iCloud Keychain is off, setup makes writing down the recovery code a required step.
+
+### Key storage on the device
+
+- **Synced item** (iCloud Keychain on): `kSecAttrSynchronizable = true`, holding K and the `vaultId` together, so a new device can find its vault without asking.
+- **Local item** (iCloud Keychain off, or after joining by QR or code): `kSecAttrSynchronizable = false`, `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`.
+  - "AfterFirstUnlock" lets `BGAppRefreshTask` read the key while the phone is locked; "WhenUnlocked" would quietly break background pulls.
+  - "ThisDeviceOnly" keeps it out of backups and device-to-device migration. A new phone set up without iCloud Keychain gets the key by QR or code, and setup says so.
+- **Reinstall:** Keychain items survive deleting the app. A key with no matching `sync.sqlite` state is treated as stale: ask before using it.
+- **Turning sync off or leaving the vault** deletes the key from that device (and the synced item only if the user leaves the vault on every device).
+- No Secure Enclave wrapping; the Keychain's hardware-backed protection is enough.
+
 ## 6. Recovery
 
 - **Recovery code + iCloud Keychain in v1.** If every device is lost, signing into a new iPhone or iPad with the same Apple ID restores the Keychain, so the key and the vault come back. If the Apple ID is lost too, the written code still works.
@@ -122,8 +145,10 @@ In order of preference:
 **Push is one transaction:**
 
 - `TransactWriteItems` (at most 100 actions and 4 MB, so batches of up to 99 records, also limited by bytes).
-- The first action moves `HEAD` forward on the condition `headSeq = :expected` (and adjusts the live-record count).
-- Each record is a put with `seq = expected + i` and the condition `attribute_not_exists(seq) OR seq = :baseSeq`.
+- The first action moves `HEAD` forward on the condition `headSeq = :expected` (and adjusts the live-record count). `:expected` is the push Lambda's own read of `HEAD` just before the transaction, not the device's cursor; if another push lands in between, the Lambda re-reads and retries. A device never needs the vault's latest seq to push.
+- Each record is a put with `seq = expected + i` and the condition `attribute_not_exists(seq) OR seq = :baseSeq`, where `baseSeq` is the seq of the version the device last synced for that record.
+
+**`headSeq` in short:** one counter per vault, shared by all its devices and moved only by the server. Each device keeps its own cursor (highest seq pulled) in `sync.sqlite`. A seq says what changed since; it never decides who wins a merge (the clocks do, section 8).
 
 That gives two guarantees:
 
@@ -136,8 +161,8 @@ When two devices push at the same moment, one of them simply retries.
 
 | Record | Contents | Merge (on the client; the server can't read it) |
 |---|---|---|
-| `thought.content` | body, blocks, image refs (id, blob name, size, order), `createdAt`, `updatedAt` | **Last writer wins on `updatedAt`.** If both sides changed since the last synced base, make a **conflict copy** ("Conflict copy" note at the top, tags kept) instead of losing text. |
-| `thought.meta` | `nextDueAt`, interval, mode, `learnIntervalDays` (+ `scheduleChangedAt`); pin, archive (+ `stateChangedAt`); `viewCount`, `lastViewedAt` | Each group wins on its own clock; counters take the max. This is the `GroupWins` logic `importThoughts` already has. |
+| `thought.content` | body, blocks, image refs (id, blob name, size, order), `createdAt`, `updatedAt` | If only one side changed since the last synced base, take it. If both did, **3-way merge** against the base (section 8a). If the changes overlap, the later `updatedAt` stays as the thought and the other side becomes a **conflict copy** (section 8a). Text is never lost. |
+| `thought.meta` | `nextDueAt`, interval, mode, `learnIntervalDays` (+ `scheduleChangedAt`); pin, archive, `conflictOfID` (+ `stateChangedAt`); `viewCount`, `lastViewedAt` | Each group wins on its own clock; counters take the max. This is the `GroupWins` logic `importThoughts` already has. Never conflicts: opening a thought on both devices, or pinning on one while requeuing on the other, just merges. |
 | `tag` | name, color, `updatedAt` | Last writer wins on `updatedAt` (the same as `mergeTagColors`). |
 | `settings` | `defaultIntervalDays` | Last writer wins. |
 | deletion | `deleted: true` + `deletedAt` on both thought records | Deleted, unless content was edited *after* `deletedAt`. In that case it comes back, which avoids losing an offline edit. |
@@ -148,7 +173,33 @@ When two devices push at the same moment, one of them simply retries.
   - Rating and reminder prompt state.
   - Reminders stay per device on purpose. Otherwise iPhone and iPad would both buzz. The new-device default is off.
 - **Clock skew:** the clocks are device wall-clock times. When applying remote records, the store remembers the highest clock it has seen. Local writes then use `max(now, highestSeen + 1 ms)`, a lite hybrid logical clock. That's internal to `ThoughtStore`, and the Scheduler functions stay pure.
-- **3-way text merge later:** the sync database keeps the last synced content, so it's possible without a format change.
+## 8a. Merging content, and conflict copies
+
+### When the merge runs
+
+Only when a pulled `thought.content` record lands on a thought this device has also changed and not yet pushed (it's in the outbox). The same path handles a 409 on push: pull, then merge.
+
+1. **No unpushed local change:** apply the remote version as is. This is the common case.
+2. **Unpushed local change:** take three versions: **base** (last synced content, in `sync.sqlite`), **local** (the store now), **remote** (just pulled).
+3. **Merge blocks by id first:** blocks added, removed or reordered on either side. A block removed on one side and edited on the other is an overlap.
+4. **Then merge text line by line inside each markdown block** (diff3, built on Swift's `CollectionDifference`). Image tokens (`![](img:<uuid>)`) are whole lines. Link, file and gallery blocks merge at the block level only; a gallery's image list merges as a set with the remote order winning.
+5. **Clean merge:** write the result through `applyRemote` with a new content clock (section 8, clock skew). The base becomes the remote version; the outbox entry stays, so the merged result is pushed with `baseSeq` = the remote seq.
+6. **Overlap anywhere:** no partial merge. The later `updatedAt` stays as the thought, and the other side's full content becomes a conflict copy.
+
+Only the device that lost the race merges; the other device receives the merged result as a plain remote change. So the merge doesn't need to be deterministic across devices, only correct. The merge is a pure function (`ContentMerge.merge(base:local:remote:) -> .merged(Content) | .conflict`) in `Sync/`, tested on its own.
+
+### Conflict copies
+
+- **Field:** `Thought.conflictOfID: UUID?` (default nil), pointing at the original. A plain id like `Block.linkedThoughtID`: no relationship, may dangle, never points at itself. It's state, so it's in the state group (`stateChangedAt`) and the meta record, and both devices see it. Added to `SchemaV1` before the freeze (phase 0), so sync needs no migration.
+- **The copy:** a new thought with the losing side's blocks and tags (images referenced, not re-uploaded: blob names de-duplicate). Due now. Its own outgoing links come with it; links *to* the original stay on the original.
+- **Timeline:** a "Needs a look" section above Pinned lists thoughts with `conflictOfID` set, each showing the original as a card. A fetch with a predicate on `conflictOfID != nil`, never an in-memory filter.
+- **Resolve sheet, three choices:**
+  - **Keep this version:** the copy's content replaces the original's (a content write on the original), and the copy is deleted.
+  - **Keep the original:** the copy is deleted.
+  - **Keep both:** `conflictOfID` is cleared; the copy becomes a normal thought.
+- **Original deleted meanwhile** (dangling id): the sheet offers only "Keep" (clears the field) or "Delete".
+- **Backup format:** `conflictOfID` goes in the thought record and merges with the state group on import. Added before any build has shipped, so no `formatVersion` bump.
+- **Integrity:** `IntegrityChecker` gains "`conflictOfID` never equals the thought's own id." Reminders don't count copies differently; they're ordinary due thoughts.
 
 ## 9. Client (`ThoughtReps/Sync/`)
 
@@ -160,7 +211,7 @@ When two devices push at the same moment, one of them simply retries.
   - If the file is lost, the only cost is a full resync. Merges are clock-based, so reapplying everything is idempotent.
 - **Outbox, same pattern as search:** every `ThoughtStore` writer that changes content, schedule, state, tags or deletes submits `sync.enqueue(ids)`, alongside its reindex.
 - **`SyncReconciler`:** at launch, compares each thought's clock fingerprint to `sync.sqlite` and repairs drift. This mirrors `SearchReconciler`.
-- **Applying remote changes goes through `ThoughtStore`:** a new `applyRemote(...)` that shares `performImport`'s per-group merge, so search reindexing, `persist()` rollback rules and the IntegrityChecker all still apply.
+- **Applying remote changes goes through `ThoughtStore`:** a new `applyRemote(...)` that shares `performImport`'s per-group merge, so search reindexing, `persist()` rollback rules and the IntegrityChecker all still apply. Content that collides with an unpushed local change goes through the 3-way merge first (section 8a).
 - **The tombstone table is now actually read.** Server tombstones older than 180 days are pruned. A device offline longer than that gets a 410 and does a full resync: pull everything, push whatever the server doesn't have.
 
 ### When sync runs
@@ -269,7 +320,12 @@ Apple-only v1 builds one of each piece; these choices keep the rest additive.
   2. Sync password, like Obsidian Sync: K wrapped with an Argon2id-derived key and stored on the server. Still end-to-end, but one more password, and forgetting it loses the data.
   3. Passkeys with the PRF extension: a passkey produces a secret that wraps K, and passkeys sync through iCloud Keychain, Google Password Manager and 1Password. Most elegant, but support is newer (iOS 18+) and uneven; revisit when non-Apple support is built.
 - **Paying:** Google Play on Android, Stripe on the web. The entitlement belongs to the account and records its store, so paying on iPhone gives sync on Android too. Check Apple's current guideline wording on services used across platforms before relying on that.
-- **Data:** the record format is already neutral (JSON, AES-256-GCM, HKDF-SHA256). The one format choice to revisit early is HEIC images (section 10).
+- **Moving the key between Android devices:** Android Block Store (Google's end-to-end encrypted store for small secrets) is the closest match to iCloud Keychain. It only covers Android to Android; the first Android device still joins by QR or recovery code.
+- **Apple account, Android device:** Sign in with Apple's web flow on Android returns the same `sub` when it runs under the same developer team, so it finds the same `ID#apple#…` row and account. **v1 action:** register the Services ID for the web flow under the same team.
+- **Avoiding a second account:** a Google sign-in has nothing tying it to the Apple one. So joining by QR also links the account: the invite proves vault membership, and the server attaches the new device's sign-in (`ID#google#… → userId`). The Android sign-in screen leads with "Used Thought Reps on iPhone? Scan the code from your iPhone." A new account with no vault can be merged into the real one. Settings nudges "Add another way to sign in," so losing one provider doesn't lock the user out.
+- **Device check:** Android has no App Attest; the server needs a Play Integrity verifier alongside it.
+- **Two stores:** the entitlement accepts any active store; warn if both are billing.
+- **Data:** the record format is already neutral (JSON, AES-256-GCM, HKDF-SHA256). The one format choice to revisit early is HEIC images (section 10); Android decodes HEIC from Android 9.
 
 ## 14. Testing
 
@@ -278,6 +334,10 @@ Apple-only v1 builds one of each piece; these choices keep the rest additive.
   - Randomized operations, sync order, dropped responses, injected save failures and clock skew.
   - Check that all stores end up identical and that the IntegrityChecker and SearchIndexChecker stay clean.
   - Extends the existing seeded randomized tests.
+- **Merge tests (`ContentMerge`):**
+  - Table tests: non-overlapping edits in one block, edits in different blocks, add/remove/reorder blocks, image tokens, link and file blocks, overlaps of every kind.
+  - Properties on random edits: a clean merge contains every line either side added and none either side removed; merging with an unchanged side returns the other side exactly; image tokens are never duplicated or dropped; the result passes IntegrityChecker.
+  - Convergence runs with concurrent edits to the same thoughts, so conflict copies and merges both appear.
 - **Server tests (jest):**
   - Transaction ordering, CAS conflicts, `ConsistentRead` pulls.
   - Pairing (single use, expiry) and `K_auth` joins.
@@ -288,7 +348,7 @@ Apple-only v1 builds one of each piece; these choices keep the rest additive.
 - **Developer mode (two real devices):** a hidden "Sync lab", only in debug and TestFlight builds (never App Store; App Review rejects hidden features), turned on from Settings.
   - Uses its own throwaway library and test vault on the `dev` stage with real App Attest, so real thoughts are never touched.
   - One device starts a run and the other joins by scanning its QR code (the real pairing flow). They coordinate through a test-run record on the server (turn, step, seed), so it also works across Wi-Fi and cellular.
-  - Scripted scenarios: seeded random edits on both; same thought edited offline on both (expect a conflict copy); delete vs. edit; images uploaded and downloaded once; a ~10k-thought first sync, interrupted and resumed; joining with existing thoughts.
+  - Scripted scenarios: seeded random edits on both; same thought edited offline on both, in different paragraphs (expect a clean merge) and on the same line (expect a conflict copy); delete vs. edit; images uploaded and downloaded once; a ~10k-thought first sync, interrupted and resumed; joining with existing thoughts.
   - Fault switches: offline, drop the next response, clock skew, slow network.
   - At the end each device posts a fingerprint (a hash of every record) and runs IntegrityChecker and SearchIndexChecker; the screen shows pass or fail, which records differ, and a shareable log.
 
@@ -301,21 +361,36 @@ Apple-only v1 builds one of each piece; these choices keep the rest additive.
 
 ## Phasing
 
-1. iPad app (it can ship by itself).
-2. Sync stack and the `dev` stage; text-only engine; convergence tests.
-3. Images.
-4. Sign-in (or vault creation under A), iCloud Keychain key, pairing fallback, device list, recovery code, erase choices.
-5. Subscription and App Store notifications.
-6. Privacy, help center and review, then a TestFlight run on real iPhone + iPad pairs.
+Each phase merges to main behind a DEBUG-only flag; nothing is user-visible until phase 6. About 9–11 weeks in total. The engine comes first because it's the riskiest part and is fully testable without AWS: if convergence can't be made solid, that shows in phase 1, before any infrastructure cost.
+
+| # | Phase | What gets built | Done when | Estimate |
+|---|---|---|---|---|
+| 0 | **Schema prep (before the freeze)** | `Thought.conflictOfID` in `SchemaV1`, the backup record, the import merge (state group), an IntegrityChecker rule, a regenerated `default.store` fixture, randomized tests. No UI. | Tests pass; a backup round-trips the field | ½ day |
+| 1 | **Sync engine, no network** | `ThoughtReps/Sync/`: `sync.sqlite` (cursor, outbox, base content), outbox hooks in every `ThoughtStore` writer, `applyRemote` sharing `performImport`'s merge, `ContentMerge` (3-way merge, section 8a), conflict copies, the skew-safe clock, `SyncReconciler`, first-sync paging. All against an in-process fake server implementing the push/pull/CAS contract. | Convergence tests pass (N stores, concurrent edits, dropped responses, save failures, clock skew); merge table and property tests pass; IntegrityChecker and SearchIndexChecker stay clean | 3 weeks |
+| 2 | **Server, dev stage, text only** | `ThoughtReps-dev-Sync`: DynamoDB table with the `bySeq` LSI, push (transaction + CAS), pull, `/head`, the test-only auth bypass; App Attest code moved to `lambda/shared/`. A basic Sync lab screen. | Two simulators sync text against dev; jest covers ordering, CAS conflicts and the 410 path; a CDK test proves the bypass isn't in prod | 1.5 weeks |
+| 3 | **Images** | Blob bucket, presigned upload and download, HMAC blob names, background `URLSession`, blob-before-record ordering, blob cleanup | Images sync both ways, upload once, and are never missing on the receiving side | 1 week |
+| 4 | **Identity and keys** | Sign in with Apple (or vault creation under A), App Attest sessions, Keychain key (synced and local items, section 5), QR pairing that also links the account, recovery code, `K_auth` join, device list and removal, erase choices, "Delete sync data". The "Needs a look" timeline section and resolve sheet. Prod stack deployed. | A real iPhone and iPad pair, join and recover; the full Sync lab runs on both | 2 weeks |
+| 5 | **Subscription** | StoreKit 2 subscription, `appAccountToken`, `/entitlement` JWS check, App Store Server Notifications v2, deleting data 30 days after a lapse, restore purchases | Sandbox subscribe, renew, lapse and restore all behave correctly | 1 week |
+| 6 | **Launch prep** | Privacy manifests, `privacy.ts`, App Store privacy answers, help article (including conflict copies), `INTEGRATIONS.md`, CLAUDE.md network rule, App Review items, TestFlight with real device pairs | Testers sync real libraries for a week with no divergence | 1 week + beta |
+
+**Decisions needed before each phase:**
+
+- **Before 0 and 1:** none.
+- **Before 3:** HEIC or JPEG as the image default.
+- **Before 4:** account (B) or no account (A). The only decision that changes code.
+- **Before 5:** subscription add-on or included, and the price.
+- **Before 6:** whether to pad record sizes.
+
+**Later, not in v1:** bootstrap snapshot for very large libraries, key rotation (real device revocation), server escrow, Android (section 13).
 
 ## Open decisions
 
-1. **Account when sync is turned on (B, Sign in with Apple) or no account (A)?** Leaning B, still thinking it over.
+1. **Account when sync is turned on (B, Sign in with Apple) or no account (A)?** Leaning B, still thinking it over. Needed before phase 4.
 2. **Subscription add-on, or included?** Recommended: an add-on, so the paid-once app stays whole.
-3. **Conflict copies in v1, with 3-way merge later?** Recommended: yes.
-4. **Reminders per device, off by default on new devices?** Recommended: yes.
-5. **Ship the iPad app before sync?** Recommended: yes.
-6. **iCloud Keychain key storage defaulted on?** Recommended: yes, with an explanation.
-7. **Pad record sizes to buckets?** Cheap; decide before shipping.
-8. **HEIC or JPEG as the image default** before sync ships (matters for a future web client).
-9. **Server escrow:** not in v1; add only if people ask, as a separate opt-in.
+3. **Reminders per device, off by default on new devices?** Recommended: yes.
+4. **iCloud Keychain key storage defaulted on?** Recommended: yes, with an explanation.
+5. **Pad record sizes to buckets?** Cheap; decide before shipping.
+6. **HEIC or JPEG as the image default** before phase 3 (matters for a future web client).
+7. **Server escrow:** not in v1; add only if people ask, as a separate opt-in.
+
+Decided on 2026-10-14: 3-way merge in v1 with conflict copies as the fallback, marked by `conflictOfID` (section 8a). The iPad app has shipped.

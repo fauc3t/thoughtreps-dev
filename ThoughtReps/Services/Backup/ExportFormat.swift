@@ -207,6 +207,7 @@ enum BackupFormatV1 {
         var isPinned: Bool
         var isArchived: Bool
         var archivedAt: Date?
+        var conflictOfID: UUID? = nil
         var tags: [String]
         var blocks: [BlockRecord]
         /// Inline images, the ones the body references with `![](img:<uuid>)`.

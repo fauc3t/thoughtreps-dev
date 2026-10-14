@@ -15,8 +15,11 @@ final class Thought {
     /// Change clock of the schedule group: `nextDueAt`, `intervalDays`, `intervalModeRaw` and
     /// `learnIntervalDays`. `viewCount` and `lastViewedAt` are outside it and merge by max.
     var scheduleChangedAt: Date = Date.now
-    /// Change clock of the state group: `isPinned`, `isArchived` and `archivedAt`.
+    /// Change clock of the state group: `isPinned`, `isArchived`, `archivedAt` and `conflictOfID`.
     var stateChangedAt: Date = Date.now
+    /// The thought this one is a conflict copy of. A plain id like `Block.linkedThoughtID`: no relationship,
+    /// it may dangle once the original is deleted, and it never equals `id`.
+    var conflictOfID: UUID? = nil
 
     /// When the thought next appears on the timeline.
     var nextDueAt: Date = Date.now
