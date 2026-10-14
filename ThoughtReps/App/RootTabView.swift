@@ -147,8 +147,9 @@ struct RootTabView: View {
         .onChange(of: usesSplitView) { _, usesSplit in
             carryAcrossLayouts(toSplit: usesSplit)
         }
-        .onChange(of: navigation.newThoughtRequestCount) {
-            startCapture(prefillTag: captureContext.tag?.displayName)
+        .onChange(of: navigation.pendingNewThought, initial: true) {
+            guard let request = navigation.consumeNewThought() else { return }
+            startCapture(prefillTag: request.prefillTag(current: captureContext.tag?.displayName))
         }
         .sheet(item: $capture, onDismiss: offerReminders) { request in
             EditorView(mode: .new(prefillTag: request.prefillTag), onCreated: { createdThought = true })

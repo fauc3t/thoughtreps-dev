@@ -70,7 +70,7 @@ struct EditorGuardsTests {
         try #require(hostRoot?.presentedViewController == nil)
         let navigation = AppNavigation()
         navigation.requestNewThought()
-        #expect(navigation.newThoughtRequestCount == 1)
+        #expect(navigation.pendingNewThought == NewThoughtRequest(skipsTagPrefill: false))
         navigation.requestTab(.stats)
         #expect(navigation.selectedTab == .stats)
         navigation.requestSearch()
@@ -80,6 +80,30 @@ struct EditorGuardsTests {
         #expect(navigation.showSettings)
     }
 
+    @Test func newThoughtRequestIsHeldUntilConsumedOnce() throws {
+        try #require(hostRoot?.presentedViewController == nil)
+        let navigation = AppNavigation()
+        navigation.requestNewThought(skipsTagPrefill: true)
+        #expect(navigation.consumeNewThought() == NewThoughtRequest(skipsTagPrefill: true))
+        #expect(navigation.consumeNewThought() == nil)
+        #expect(navigation.pendingNewThought == nil)
+    }
+
+    @Test func prefillTagIsSkippedOnlyForIntentRequests() {
+        #expect(NewThoughtRequest(skipsTagPrefill: false).prefillTag(current: "work") == "work")
+        #expect(NewThoughtRequest(skipsTagPrefill: false).prefillTag(current: nil) == nil)
+        #expect(NewThoughtRequest(skipsTagPrefill: true).prefillTag(current: "work") == nil)
+    }
+
+    @Test func onlyIntentRequestsSkipTheTagPrefill() throws {
+        try #require(hostRoot?.presentedViewController == nil)
+        let navigation = AppNavigation()
+        navigation.requestNewThought()
+        #expect(navigation.consumeNewThought()?.skipsTagPrefill == false)
+        navigation.requestNewThought(skipsTagPrefill: true)
+        #expect(navigation.consumeNewThought()?.skipsTagPrefill == true)
+    }
+
     @Test func requestsStandDownWhileASheetIsUp() async throws {
         let root = try #require(hostRoot)
         present(UIViewController(), over: root)
@@ -87,10 +111,12 @@ struct EditorGuardsTests {
         try #require(ModalPresence.isPresenting)
         let navigation = AppNavigation()
         navigation.requestNewThought()
+        #expect(navigation.pendingNewThought == nil)
+        navigation.requestNewThought(skipsTagPrefill: true)
         navigation.requestTab(.stats)
         navigation.requestSearch()
         navigation.requestSettings()
-        #expect(navigation.newThoughtRequestCount == 0)
+        #expect(navigation.pendingNewThought == nil)
         #expect(navigation.selectedTab == .timeline)
         #expect(navigation.searchRequestCount == 0)
         #expect(!navigation.showSettings)

@@ -309,6 +309,11 @@ export const HELP_ARTICLES: HelpArticle[] = [
         ],
       },
       {
+        paragraphs: [
+          'On iPhones with an Action button (iPhone 15 Pro and newer), it can open a new thought for you. See [Open a new thought with the Action button](/help/action-button).',
+        ],
+      },
+      {
         heading: 'What the first line does',
         paragraphs: [
           'The first line of your thought becomes its title on the timeline. The next lines show underneath as a short preview. Heading marks like `#` are taken out of the title.',
@@ -1116,6 +1121,64 @@ export const HELP_ARTICLES: HelpArticle[] = [
         heading: 'Privacy',
         paragraphs: [
           "Sharing does not use the internet. What you share goes straight to your phone's own storage for Thought Reps.",
+        ],
+      },
+      {
+        paragraphs: [
+          'Want a blank thought with no sharing involved? The [Action button](/help/action-button) opens one in a press.',
+        ],
+      },
+    ],
+  },
+  {
+    slug: 'action-button',
+    category: 'writing',
+    title: 'Open a new thought with the Action button',
+    description:
+      'Set the Action button on your iPhone to open Thought Reps on a new, empty thought. Siri and the Shortcuts app can do it too.',
+    related: ['write-your-first-thought', 'save-from-other-apps'],
+    sections: [
+      {
+        paragraphs: [
+          'Want to write a thought the moment it hits you? Set the Action button on your iPhone to open Thought Reps on a new, empty thought. Only iPhones with an Action button (iPhone 15 Pro and newer) have one.',
+        ],
+      },
+      {
+        heading: 'Set it up',
+        steps: [
+          'Open the Settings app on your iPhone.',
+          'Tap "Action Button".',
+          'Swipe to "Shortcut" and tap "Choose a Shortcut".',
+          'Tap "Thought Reps", then "New Thought".',
+        ],
+      },
+      {
+        heading: 'What happens',
+        paragraphs: [
+          'Press and hold the Action button. Thought Reps opens with the "New thought" editor ready for you to type. It is always empty, even if you were looking at one tag when you left the app. Tap "Save" when you are done, or "Cancel" to throw it away.',
+        ],
+        example: {
+          kind: 'editor',
+          caption:
+            'The editor the Action button opens. Yours starts blank.',
+        },
+      },
+      {
+        paragraphs: [
+          'If another editor or screen is already open in the app, the button does nothing, so a draft is never replaced.',
+        ],
+      },
+      {
+        heading: 'Other ways to do it',
+        list: [
+          'Say "Hey Siri, new thought in Thought Reps" or "Hey Siri, write a thought in Thought Reps".',
+          'Open the Shortcuts app and look for "New Thought" under Thought Reps. You can add it to your Home Screen from there.',
+          'Search for "New Thought" in Spotlight.',
+        ],
+      },
+      {
+        paragraphs: [
+          'It works the same as the plus button. See [Write your first thought](/help/write-your-first-thought). To send something in from another app instead, see [Save from other apps](/help/save-from-other-apps).',
         ],
       },
     ],

@@ -36,6 +36,15 @@ struct EditThoughtRequest: Identifiable, Equatable {
     let id: UUID
 }
 
+/// A request for a new thought. One from the Action button or Siri skips the current tag's prefill.
+struct NewThoughtRequest: Equatable {
+    let skipsTagPrefill: Bool
+
+    func prefillTag(current: String?) -> String? {
+        skipsTagPrefill ? nil : current
+    }
+}
+
 /// App-wide navigation state that outside callers (the notification delegate, keyboard commands) can drive.
 @MainActor
 @Observable
@@ -47,8 +56,8 @@ final class AppNavigation {
     var editRequest: EditThoughtRequest?
     /// Increments on each reminder tap.
     private(set) var reminderOpenCount = 0
-    /// Each increments per keyboard command; whichever layout is on screen reacts to the change.
-    private(set) var newThoughtRequestCount = 0
+    /// Held until the root consumes it, so a request made before the root mounts (cold launch) isn't missed.
+    private(set) var pendingNewThought: NewThoughtRequest?
     private(set) var searchRequestCount = 0
 
     func openTimelineFromReminder() {
@@ -57,9 +66,16 @@ final class AppNavigation {
         reminderOpenCount += 1
     }
 
-    func requestNewThought() {
+    func requestNewThought(skipsTagPrefill: Bool = false) {
         guard !ModalPresence.isPresenting else { return }
-        newThoughtRequestCount += 1
+        pendingNewThought = NewThoughtRequest(skipsTagPrefill: skipsTagPrefill)
+    }
+
+    /// Takes the pending request so it is handled exactly once.
+    func consumeNewThought() -> NewThoughtRequest? {
+        let request = pendingNewThought
+        pendingNewThought = nil
+        return request
     }
 
     func requestEdit(thoughtID: UUID) {

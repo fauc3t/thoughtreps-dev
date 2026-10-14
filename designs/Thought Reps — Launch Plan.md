@@ -23,6 +23,7 @@ What still has to happen to put Thought Reps 1.0 on the App Store, once search l
 - Search.
 - Daily reminder.
 - Share extension.
+- Action button / Siri / Shortcuts: open a new thought.
 - `.thoughtreps` backup export and import, plus the one-time export link.
 - In-app feedback.
 - A one-time rating prompt.
@@ -197,7 +198,7 @@ Ordered by likely demand. Revisit this once real feedback arrives.
 
 1. Study mode: Again / Got it, with growing intervals.
 2. Markdown export.
-3. Remaining quick-capture items: Lock Screen and Control Center button, Shortcuts/Siri, widget.
+3. Remaining quick-capture items: Lock Screen and Control Center button, widget, and "Add Thought" without opening the app.
 4. iCloud sync. It needs `SchemaV2` thinking and CloudKit testing.
 5. Face ID lock, themes and alternate icons.
 

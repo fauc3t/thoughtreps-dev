@@ -30,3 +30,4 @@
 - Split `ThoughtStore.swift`, the `MarkdownTextView` Coordinator and `EditorView`.
 - Dedupe `TagRow`/`UntaggedRow`, the interval menu, `theme.js`.
 - In-app font licenses screen (OFL for Archivo and Paper Mono).
+- Quick Capture (built; device checks left): the Action button, Siri ("New thought in Thought Reps") and Shortcuts open an empty editor from the Home Screen, from another app and on cold launch; with an editor already open the draft is kept. See `designs/Thought Reps — Quick Capture Spec.md`.
