@@ -436,6 +436,8 @@ struct EditorView: View {
                         }
                     }
                     Toggle("Learn mode", isOn: $learn)
+                        // The editor keeps the standard iOS look; the app tint (near white in dark Ink) washes the switch out.
+                        .tint(.green)
                 } header: {
                     Text("Schedule")
                 } footer: {

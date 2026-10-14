@@ -65,6 +65,7 @@ struct ArchiveView: View {
         } label: {
             Label("Delete", systemImage: "trash")
         }
+        .tint(ThemeManager.shared.current.swipe.delete)
     }
 
     private func searchResults(_ model: SearchModel) -> some View {

@@ -135,7 +135,7 @@ struct ThoughtDetailView: View {
                 }
                 Toggle("Learn", isOn: learnBinding)
                     .controlSize(.small)
-                    .tint(Color.ink)
+                    .tint(ThemeManager.shared.current.toggleTint)
                     .fixedSize()
                     .accessibilityLabel("Learn mode")
             }

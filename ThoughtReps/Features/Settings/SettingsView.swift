@@ -55,6 +55,8 @@ struct SettingsView: View {
 
                 Section {
                     Toggle("Daily reminder", isOn: $reminderEnabled)
+                        // Settings keeps the standard iOS look; the app tint (near white in dark Ink) washes the switch out.
+                        .tint(.green)
                     if reminderEnabled {
                         DatePicker("Time", selection: reminderTime, displayedComponents: .hourAndMinute)
                     }

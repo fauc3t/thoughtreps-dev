@@ -139,15 +139,18 @@ struct SwipeTints {
     let pin: Color
     let tomorrow: Color
     let archive: Color
+    let delete: Color
 
-    init(pin: String, tomorrow: String, archive: String) {
-        self.init(pin: Color(hex: pin) ?? .gray, tomorrow: Color(hex: tomorrow) ?? .gray, archive: Color(hex: archive) ?? .gray)
+    init(pin: String, tomorrow: String, archive: String, delete: String) {
+        self.init(pin: Color(hex: pin) ?? .gray, tomorrow: Color(hex: tomorrow) ?? .gray,
+                  archive: Color(hex: archive) ?? .gray, delete: Color(hex: delete) ?? .red)
     }
 
-    init(pin: Color, tomorrow: Color, archive: Color) {
+    init(pin: Color, tomorrow: Color, archive: Color, delete: Color) {
         self.pin = pin
         self.tomorrow = tomorrow
         self.archive = archive
+        self.delete = delete
     }
 }
 
@@ -213,15 +216,24 @@ enum AppTheme: String, CaseIterable, Identifiable {
                            muted: ("5A5246", "BDB29E"), hl: ("FFD36B", "4A3F22"), accent: ("F2542D", "FF7A59"),
                            border: ("141210", "FFF6E3"))
 
-    /// Pin, unpin and restore share `pin`.
+    /// Pin, unpin and restore share `pin`. `delete` is set explicitly because a destructive
+    /// swipe button doesn't reliably come up red under the app's tint.
     var swipe: SwipeTints {
         switch self {
-        case .ink: SwipeTints(pin: palette.accent, tomorrow: .orange, archive: .gray)
-        case .library: SwipeTints(pin: "8B3A1F", tomorrow: "A0642A", archive: "7A6A55")
-        case .midnight: SwipeTints(pin: "8A6810", tomorrow: "3B4F86", archive: "4B5675")
-        case .garden: SwipeTints(pin: "2F6B3F", tomorrow: "56722E", archive: "66735F")
-        case .terminal: SwipeTints(pin: "1F7A2E", tomorrow: "2F7A3A", archive: "2E5A34")
-        case .pop: SwipeTints(pin: "C23818", tomorrow: "9E5608", archive: "5A5246")
+        case .ink: SwipeTints(pin: palette.accent, tomorrow: .orange, archive: .gray, delete: .red)
+        case .library: SwipeTints(pin: "8B3A1F", tomorrow: "A0642A", archive: "7A6A55", delete: "A3271C")
+        case .midnight: SwipeTints(pin: "8A6810", tomorrow: "3B4F86", archive: "4B5675", delete: "A33A3A")
+        case .garden: SwipeTints(pin: "2F6B3F", tomorrow: "56722E", archive: "66735F", delete: "A63A2E")
+        case .terminal: SwipeTints(pin: "1F7A2E", tomorrow: "2F7A3A", archive: "2E5A34", delete: "A3271C")
+        case .pop: SwipeTints(pin: "C23818", tomorrow: "9E5608", archive: "5A5246", delete: "B0201A")
+        }
+    }
+
+    /// Switch track when on. Not the accent: Ink's dark accent is near white, which hides the white knob.
+    var toggleTint: Color {
+        switch self {
+        case .ink: .green
+        default: swipe.pin
         }
     }
 
