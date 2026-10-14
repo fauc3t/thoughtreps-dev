@@ -58,6 +58,10 @@ enum ScreenshotSeed {
         var learnGap: Int? = nil
         var blurred: (title: String, content: String)? = nil
         var gallery: (title: String, scenes: [Scene])? = nil
+        /// A PDF attached as a file block, drawn in code: its filename and the lines on its page.
+        var pdf: (filename: String, lines: [String])? = nil
+        /// Titles of earlier items this one links to, as link blocks in this order.
+        var links: [String] = []
     }
 
     /// A commonplace book: quotes with their source, book notes, lessons, sermon and podcast takeaways.
@@ -106,7 +110,8 @@ enum ScreenshotSeed {
             #travel
             """,
             createdDaysAgo: 7, dueInDays: 1,
-            gallery: ("Moodboard", [.dusk, .alpine, .meadow, .city])
+            gallery: ("Moodboard", [.dusk, .alpine, .meadow, .city]),
+            pdf: ("Train tickets.pdf", ["Mountain Line", "Sat 7:05 AM", "Coach 4, seats 21-22"])
         ),
         Item(
             body: "# Hope is the thing with feathers\nSay the first two lines of Emily Dickinson’s poem from memory.\n\n#poems",
@@ -149,6 +154,11 @@ enum ScreenshotSeed {
             body: "# Idea: a tool library\nBorrow the drill you use twice a year. Start with the neighbors on our street.\n\n#ideas",
             createdDaysAgo: 30, dueInDays: 9, views: 3
         ),
+        Item(
+            body: "# Reading Walden\nWhy Thoreau keeps pulling me back: live on purpose, and count what things really cost.\n\n#books",
+            createdDaysAgo: 3, dueInDays: 4, views: 1,
+            links: ["The cost of a thing", "Trust thyself", "Thirteen virtues, one a week"]
+        ),
     ]
 
     private static let tagColors: [String: String] = [
@@ -168,6 +178,7 @@ enum ScreenshotSeed {
     static func insert(into context: ModelContext, now: Date) {
         let store = ThoughtStore(context: context, defaultIntervalDays: Scheduler.defaultIntervalDays)
         let calendar = Calendar.current
+        var idsByTitle: [String: UUID] = [:]
         for item in items {
             var blocks: [BlockDraft] = []
             if let blurred = item.blurred {
@@ -177,11 +188,22 @@ enum ScreenshotSeed {
                 let images = gallery.scenes.compactMap { $0.draft() }
                 blocks.append(BlockDraft(kind: .gallery, title: gallery.title, images: images))
             }
+            if let pdf = item.pdf {
+                let data = Self.pdfData(lines: pdf.lines)
+                blocks.append(BlockDraft(kind: .file, file: FileDraft(
+                    filename: pdf.filename, typeIdentifier: UTType.pdf.identifier, byteCount: data.count, thumbnailData: nil, data: data
+                )))
+            }
+            for title in item.links {
+                guard let id = idsByTitle[title] else { preconditionFailure("Screenshot seed: no thought titled \"\(title)\"") }
+                blocks.append(BlockDraft(kind: .thoughtLink, linkedThoughtID: id))
+            }
             let created = Scheduler.adding(days: -item.createdDaysAgo, to: now, calendar: calendar)
             let thought = store.create(body: item.body, blocks: blocks, learn: item.learnGap != nil, now: created)
             guard thought.modelContext != nil else {
                 preconditionFailure("Screenshot seed: saving \"\(item.body.prefix(40))\" failed")
             }
+            idsByTitle[thought.title] = thought.id
             let nextDueAt = Scheduler.adding(days: item.dueInDays, to: now, calendar: calendar)
                 .addingTimeInterval(item.dueInDays == 0 ? -3600 : 0)
             let lastViewedAt = item.views > 0
@@ -202,6 +224,16 @@ enum ScreenshotSeed {
         let tags = (try? context.fetch(FetchDescriptor<Tag>())) ?? []
         for tag in tags {
             if let hex = tagColors[tag.name] { store.setColor(tag, hex: hex, now: now) }
+        }
+    }
+
+    /// A one-page PDF with a few lines of text, so no document files are bundled.
+    private static func pdfData(lines: [String]) -> Data {
+        UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 612, height: 792)).pdfData { context in
+            context.beginPage()
+            for (index, line) in lines.enumerated() {
+                (line as NSString).draw(at: CGPoint(x: 72, y: 72 + CGFloat(index) * 32), withAttributes: [.font: UIFont.systemFont(ofSize: 22)])
+            }
         }
     }
 

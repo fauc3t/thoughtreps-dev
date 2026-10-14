@@ -19,8 +19,8 @@ const only = process.argv.slice(2).find((a) => !a.startsWith('--')) ?? '';
 // The set and the captures each output shows come from src/copy.js (a browser script defining SHOTS).
 const SHOTS = new Function(`${readFileSync(join(here, 'src', 'copy.js'), 'utf8')}; return SHOTS;`)();
 const NAMES = SHOTS.map((s) => s.name);
-const rawsOf = (shot) => shot.raws ?? [shot.name];
-const RAWS = SHOTS.flatMap(rawsOf);
+const rawsOf = (shot) => [...new Set(shot.cards.map((c) => c.raw))];
+const RAWS = [...new Set(SHOTS.flatMap(rawsOf))];
 const W = 1320, H = 2868;
 
 const IPHONE = {

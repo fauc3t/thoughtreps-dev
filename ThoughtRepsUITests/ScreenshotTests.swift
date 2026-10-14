@@ -120,6 +120,21 @@ final class ScreenshotTests: XCTestCase {
         snap("06-markdown-photos")
     }
 
+    /// A thought linking to three others, as cards. Not due, so it's opened from its tag.
+    func testLinkedThoughts() {
+        launch()
+        openSection("Tags")
+        let books = app.staticTexts["#books"]
+        XCTAssertTrue(books.waitForExistence(timeout: 10))
+        books.tap()
+        let all = app.buttons["All"]
+        XCTAssertTrue(all.waitForExistence(timeout: 10))
+        all.tap()
+        openThought("Reading Walden")
+        XCTAssertTrue(app.buttons["Linked thought: Trust thyself"].waitForExistence(timeout: 10))
+        snap("10-linked")
+    }
+
     func testSearch() {
         launch()
         app.buttons["Search"].tap()

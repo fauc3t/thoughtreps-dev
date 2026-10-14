@@ -1,6 +1,6 @@
 # App Store screenshots
 
-The product page screenshots (Apple's "Screenshots" asset): real simulator captures of the app inside a faked ink-style phone, under a short headline and a supporting line. One folder per asset slot under `app-store-assets/`.
+The product page screenshots (Apple's "Screenshots" asset): real simulator captures of the app, cropped into Pop-theme cards, under a short headline and a supporting line. One folder per asset slot under `app-store-assets/`.
 
 ## Apple's specs
 
@@ -10,19 +10,22 @@ The product page screenshots (Apple's "Screenshots" asset): real simulator captu
 
 ## The set
 
-Output is `static/<name>-1320x2868.png`. The copy and the set live in one place, `src/copy.js` (which captures each output shows, and its layout). Claims are checked against the shipped app (default interval 7 days, 1d/3d/7d/30d chips plus more intervals and "Custom…", Markdown and gallery blocks, blurred blocks, Learn mode's Again / Got it and its growing waits (7, 12, 20 days), six free themes, Active/Archived/All search, tag colors, one daily reminder at the chosen time); nothing from the unbuilt rest of Study mode. The sample content reads like a commonplace book (a quote with its source, a book note, a sermon and a podcast takeaway, a lesson, a poem to memorize), and any quote or poem in it must be public domain.
+Output is `static/<name>-1320x2868.png`. The copy and the set live in one place, `src/copy.js` (which captures each output shows, and its layout). Claims are checked against the shipped app (default interval 7 days, 1d/3d/7d/30d chips plus more intervals and "Custom…", Markdown, gallery, file and link blocks, blurred blocks, Learn mode's Again / Got it and its growing waits (7, 12, 20 days), six free themes, Active/Archived/All search, tag colors, one daily reminder at the chosen time); nothing from the unbuilt rest of Study mode. The sample content reads like a commonplace book (a quote with its source, a book note, a sermon and a podcast takeaway, a lesson, a poem to memorize), and any quote or poem in it must be public domain.
 
 1. `01-timeline`: "Write it down. It comes back." / "A commonplace book that brings every quote and idea back in 7 days." The Timeline with a pinned thought and four due thoughts, one of them in Learn mode (the seed keeps the list ending above the + button).
-2. `02-blurred`: "Hide the answer. Test yourself." / "Blur part of any thought until you tap to reveal it." Two phones, a thought with a blurred "Answer" block before and after the tap (`02-blurred-before`, `02-blurred-after`).
-3. `03-learn`: "Learn it for good." / "Tap Again or Got it. Each Got it waits longer: 7, 12, 20 days." A due Learn thought (two Dickinson lines to memorize) with its blurred lines revealed above Again ("Tomorrow") and Got it ("In 12 days"; the seed sets its last wait to 7).
-4. `04-themes`: "Six looks, all included." / "Ink, Library, Midnight, Garden, Terminal and Pop." Six phones in a cascade, the same thought in each theme, Ink in front (`04-themes-<theme>`); the supporting line names them, so the phones carry no labels.
-5. `05-interval`: "Pick when you see it again." / "Bring it back in 1, 3, 7 or 30 days, or set your own." A thought with its "Back in" bar: 1d, 3d, 7d (selected), 30d and the more-intervals chip.
-6. `06-markdown-photos`: "Write in Markdown, add photos." / "Headings, lists, quotes and photo galleries in any thought." A thought with bold, italic, a list, a quote and a gallery (not due, so the test opens it from its tag).
-7. `07-search`: "Find any thought in a second." / "Search every note and journal entry, active or archived." Search for "reflect", matches in bold.
-8. `08-tags`: "Sort with #tags." / "Tag thoughts as you write, and give each tag its own color." The Tags list.
-9. `09-reminders`: "Get a nudge, not a nag." / "One reminder a day at the time you pick, only when thoughts are due." The reminder notification on the Lock Screen ("Thought Reps", "4 thoughts are back today").
+2. `02-linked`: "Map how your ideas connect." / "Link any thought to another, then tap through to follow the thread." "Reading Walden" with link cards to three other thoughts (raw `10-linked`; not due, so the test opens it from its tag).
+3. `03-blocks`: "Photos, files and more." / "Write in Markdown, then add photo galleries and files to any thought." A thought with bold, italic, a list, a quote, a gallery and a PDF file block (raw `06-markdown-photos`; the PDF is drawn in code), tilted.
+4. `04-blurred`: "Hide the answer. Test yourself." / "Blur part of any thought until you tap to reveal it." Two cropped cards, a thought with a blurred "Answer" block before and after the tap (`02-blurred-before`, `02-blurred-after`).
+5. `05-learn`: "Learn it for good." / "Tap Again or Got it. Each Got it waits longer: 7, 12, 20 days." A due Learn thought (two Dickinson lines to memorize) with its blurred lines revealed above Again ("Tomorrow") and Got it ("In 12 days"; the seed sets its last wait to 7), tilted (raw `03-learn`).
+6. `06-themes`: "Six looks, all included." / "Ink, Library, Midnight, Garden, Terminal and Pop." Six cropped cards stepping down, the same thought in each theme, Ink in front (`04-themes-<theme>`); the supporting line names them, so the cards carry no labels.
+7. `07-interval`: "Pick when you see it again." / "Bring it back in 1, 3, 7 or 30 days, or set your own." A thought above a larger, tilted crop of its "Back in" bar: 1d, 3d, 7d (selected), 30d and the more-intervals chip (both from raw `05-interval`).
+8. `08-search`: "Find any thought in a second." / "Search every note and journal entry, active or archived." Search for "reflect", matches in bold; the card runs off the bottom (raw `07-search`).
+9. `09-tags`: "Sort with #tags." / "Tag thoughts as you write, and give each tag its own color." The Tags list (raw `08-tags`).
+10. `10-reminders`: "Get a nudge, not a nag." / "One reminder a day at the time you pick, only when thoughts are due." The reminder notification on the Lock Screen ("Thought Reps", "4 thoughts are back today"; raw `09-reminders`).
 
-The first three are the strongest ideas: the loop, self-testing with a blurred answer, and Learn mode. One supporting line per shot may carry a search word (commonplace book, quote, idea, note, journal) where it reads naturally. The phone is drawn in CSS (ink border, hard offset shadow, a plain island); it is not Apple artwork. All nine use one headline size, the largest at which the widest headline fits.
+The first three are what show in search results: the loop, linked thoughts, and rich blocks. One supporting line per shot may carry a search word (commonplace book, quote, idea, note, journal) where it reads naturally. All ten use one headline size, the largest at which the widest headline line fits.
+
+The frame is the Pop theme: its yellow (`#FFE7B0`) background, Futura headlines with a coral highlight, and Avenir Next supporting lines (both fonts ship with macOS, so render on a Mac). The captures inside are the Ink theme, except the themes shot. There is no phone: each capture is a crop in a card with a thick ink border and a hard offset shadow, like Pop's own cards. `src/copy.js` places every card (which raw rows it shows, scale, position, tilt), so shots vary: whole screens, cropped tops, cards running off the canvas, tilted cards.
 
 ## How the captures work
 
