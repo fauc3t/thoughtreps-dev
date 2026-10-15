@@ -61,6 +61,7 @@ extension ThoughtStore {
         }
         var candidates: [Candidate] = []
         var deletions: [(thought: Thought, deletedAt: Date)] = []
+        var raisedTombstone = false
 
         for remote in batch.thoughts {
             let id = remote.id
@@ -71,6 +72,13 @@ extension ThoughtStore {
                         outcome.requeue.insert(.thought(id))
                     } else {
                         deletions.append((local, deletion.deletedAt))
+                    }
+                } else if let tombstone = tombstones[id] {
+                    if tombstone.deletedAt < deletion.deletedAt {
+                        tombstone.deletedAt = deletion.deletedAt
+                        raisedTombstone = true
+                    } else if tombstone.deletedAt > deletion.deletedAt {
+                        outcome.requeue.insert(.thought(id))
                     }
                 }
                 continue
@@ -115,7 +123,7 @@ extension ThoughtStore {
             candidates.append(Candidate(item: ImportedThought(record: record, images: remote.images, files: remote.files), local: local, wins: wins))
         }
 
-        if !deletions.isEmpty {
+        if !deletions.isEmpty || raisedTombstone {
             for (thought, deletedAt) in deletions {
                 let id = thought.id
                 deleteWithChildren(thought)

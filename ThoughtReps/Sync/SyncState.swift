@@ -50,6 +50,8 @@ struct PageCommit: Sendable {
     var requeue: [SyncEntity] = []
     var cursor: Int64
     var epoch: Int64
+    /// Set when the page ends a from-scratch pull, to clear the resyncing flag in the same transaction.
+    var endsResync = false
 }
 
 struct OutboxEntry: Sendable, Equatable {
@@ -345,6 +347,7 @@ actor SyncState {
                 }
                 try Self.setMeta("cursor", String(page.cursor), in: database)
                 try Self.setMeta("epoch", String(page.epoch), in: database)
+                if page.endsResync { try database.execute("DELETE FROM meta WHERE key = 'resyncing'") }
             }
         }
         if !page.requeue.isEmpty { gate.withLock { $0.observer }?() }
@@ -395,6 +398,51 @@ actor SyncState {
             var keys = Set<String>()
             try database.query("SELECT record_key FROM parked") { keys.insert($0.text(0)) }
             return keys
+        }
+    }
+
+    /// Which of `keys` are parked.
+    func parkedKeys(among keys: [String]) throws -> Set<String> {
+        try perform { database in
+            var found = Set<String>()
+            for start in stride(from: 0, to: keys.count, by: 500) {
+                let chunk = Array(keys[start..<min(start + 500, keys.count)])
+                let marks = Array(repeating: "?", count: chunk.count).joined(separator: ", ")
+                try database.query("SELECT record_key FROM parked WHERE record_key IN (\(marks))", chunk.map(SQLiteValue.text)) { found.insert($0.text(0)) }
+            }
+            return found
+        }
+    }
+
+    /// The payload version the parked records were last tried with; they are tried again only when it changes.
+    func parkedVersionTried() throws -> Int? {
+        try perform { try Self.meta("parked_version", in: $0).flatMap { Int($0) } }
+    }
+
+    func setParkedVersionTried(_ version: Int) throws {
+        try perform { try Self.setMeta("parked_version", String(version), in: $0) }
+    }
+
+    /// Parked records that are pointers to a blob that couldn't be fetched or read yet (retried every cycle, unlike
+    /// the ones parked for their version).
+    func parkedPointers() throws -> [ParkedRecord] {
+        try perform { database in
+            var found: [ParkedRecord] = []
+            try database.query(
+                "SELECT record_key, seq, payload, deleted FROM parked WHERE substr(payload, 1, 4) = ? ORDER BY seq",
+                [.blob(SyncCrypto.pointerMagic)]
+            ) { row in
+                found.append(ParkedRecord(recordKey: row.text(0), seq: row.int(1), payload: row.data(2) ?? Data(), deleted: row.int(3) != 0))
+            }
+            return found
+        }
+    }
+
+    func parkedPointerCount() throws -> Int {
+        try perform { database in
+            var total = 0
+            try database.query("SELECT count(*) FROM parked WHERE substr(payload, 1, 4) = ?", [.blob(SyncCrypto.pointerMagic)]) { total = Int($0.int(0)) }
+            return total
         }
     }
 
@@ -501,6 +549,16 @@ actor SyncState {
 
     func epoch() throws -> Int64? {
         try perform { try Self.meta("epoch", in: $0).flatMap { Int64($0) } }
+    }
+
+    /// A from-scratch pull has begun and its last page hasn't been committed: the next pull must ask for a full
+    /// resync again, since the cursor alone (above 0) would make a pruned server answer 410.
+    func isResyncing() throws -> Bool {
+        try perform { try Self.meta("resyncing", in: $0) != nil }
+    }
+
+    func beginResync() throws {
+        try perform { try Self.setMeta("resyncing", "1", in: $0) }
     }
 
     func setEpoch(_ epoch: Int64) throws {

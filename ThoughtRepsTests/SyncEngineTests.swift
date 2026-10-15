@@ -258,8 +258,8 @@ struct SyncEngineTests {
         let status = await b.sync()
         #expect(status.lastError == nil)
         #expect(await server.pullCalls > 0)
-        // B never saw the deletion, so it pushes `doomed` again; A still has the tombstone, ignores it and the
-        // deletion goes back out, so everyone ends up without it.
+        // B never saw the deletion; after its full resync it drops `doomed` itself (the server forgot it, B never edited it) and the
+        // rest goes out, so everyone ends up without it.
         try await syncToQuiescence([a, b], server: server)
         let survivors = Set([shared.id, other.id, created.id])
         #expect(Set(try a.thoughts().map(\.id)) == survivors)

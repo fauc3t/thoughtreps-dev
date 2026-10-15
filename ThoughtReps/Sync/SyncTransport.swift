@@ -71,6 +71,13 @@ protocol SyncTransport: Sendable {
 enum SyncLimits {
     static let maxRecordsPerPush = 99
     static let maxBytesPerPush = 2_000_000
+    /// A record's payload goes inline up to this size; a bigger sealed record is uploaded as a blob and the row holds a pointer.
+    static let maxInlinePayload = 64 * 1024
+    /// The most a single sealed record may be, blob or not. A thought past it is held back (see `SyncEngine.Status.oversizedThoughts`).
+    static let maxRecordBytes = 16_000_000
+    /// Plaintext and blob bytes the engine plans in memory for one push chunk before sending it, and (as `maxApplyBytes`) resolves
+    /// for one pulled sub-batch. One record bigger than this still goes alone.
+    static let maxPlanBytes = 4_000_000
     /// Decoded image and file bytes held in memory while a pulled page is applied; a thought bigger than this goes alone.
     /// Files may later grow to 25 to 50 MB; blobs should then stream through a temp file instead of memory (phase 3).
     static let maxApplyBytes = 25_000_000

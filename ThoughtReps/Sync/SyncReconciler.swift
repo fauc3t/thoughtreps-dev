@@ -125,26 +125,31 @@ actor SyncReconciler {
     }
 }
 
-/// Runs the reconciler in the background.
+/// Runs the reconciler in the background. A call made while one is running waits for it and then runs its own pass,
+/// so whoever asked can rely on everything written before the call being queued.
 @MainActor
 enum SyncReconcileRunner {
-    private static var isRunning = false
+    private static var running: Task<SyncReconciler.Summary?, Never>?
 
     /// Never throws: a failure is logged and the next launch tries again.
     @discardableResult
     static func reconcile(container: ModelContainer, state: SyncState = .shared) async -> SyncReconciler.Summary? {
-        guard state.isEnabled, !isRunning else { return nil }
-        isRunning = true
-        defer { isRunning = false }
+        guard state.isEnabled else { return nil }
+        while let running { _ = await running.value }
         let settings = SettingsRecord.current()
-        do {
-            // Built in a detached task so the actor's context isn't created on the main thread.
-            return try await Task.detached {
-                try await SyncReconciler(modelContainer: container).reconcile(state: state, settings: settings)
-            }.value
-        } catch {
-            Logger(subsystem: "com.thoughtreps", category: "sync").error("Sync reconciliation failed: \(error)")
-            return nil
+        let task = Task { () -> SyncReconciler.Summary? in
+            defer { running = nil }
+            do {
+                // Built in a detached task so the actor's context isn't created on the main thread.
+                return try await Task.detached {
+                    try await SyncReconciler(modelContainer: container).reconcile(state: state, settings: settings)
+                }.value
+            } catch {
+                Logger(subsystem: "com.thoughtreps", category: "sync").error("Sync reconciliation failed: \(error)")
+                return nil
+            }
         }
+        running = task
+        return await task.value
     }
 }

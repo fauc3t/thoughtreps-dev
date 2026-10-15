@@ -10,8 +10,8 @@ import Testing
 @MainActor
 @Suite("Sync convergence")
 struct SyncConvergenceTests {
-    nonisolated static let seeds: [UInt64] = Array(1...16)
-    static let steps = 90
+    nonisolated static let seeds: [UInt64] = Array(1...40) + [45, 76]
+    static let steps = 160
     static let clockOffsets: [TimeInterval] = [0, -3 * 3600, 1800]
     static let pullLimits = [2, 5, 50]
 
@@ -71,6 +71,7 @@ struct SyncConvergenceTests {
                     images = [image]
                     body += "\n" + ImageToken.token(for: image.id)
                 }
+                if Int.random(in: 0..<30, using: &rng) == 0 { body += "\n" + String(repeating: "large ", count: 15_000) }
                 var blocks: [BlockDraft] = []
                 if Int.random(in: 0..<4, using: &rng) == 0 { blocks.append(BlockDraft(kind: .gallery, images: [newImage(UInt8.random(in: 0...255, using: &rng))])) }
                 if Int.random(in: 0..<5, using: &rng) == 0 { blocks.append(fileBlock(fakeFile(UInt8.random(in: 0...255, using: &rng)))) }
@@ -83,7 +84,8 @@ struct SyncConvergenceTests {
                 description = "create"
             case 3, 4:
                 if let own {
-                    let (body, images) = RandomizedOperationTests.withInlineImages(RandomizedOperationTests.randomBody(&rng), &rng)
+                    var (body, images) = RandomizedOperationTests.withInlineImages(RandomizedOperationTests.randomBody(&rng), &rng)
+                    if Int.random(in: 0..<30, using: &rng) == 0 { body += "\n" + String(repeating: "large ", count: 15_000) }
                     var blocks = RandomizedOperationTests.currentDrafts(of: own)
                     if Bool.random(using: &rng) { blocks += RandomizedOperationTests.randomBlocks(&rng, linkable: all.map(\.id)) }
                     device.store.update(own, body: body, blocks: blocks, images: images, intervalDays: RandomizedOperationTests.randomInterval(&rng), now: t)

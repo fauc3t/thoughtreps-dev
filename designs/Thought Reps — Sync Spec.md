@@ -134,7 +134,7 @@ iCloud Keychain is a convenience, not a dependency: sync works with QR and the r
 | `V#<vaultId>` | `HEAD` | `headSeq`, `epoch`, `prunedBeforeSeq`, live-record count, byte usage, `K_auth` verifier |
 | `V#<vaultId>` | `KW#<method>` | optional wrapped copies of K (later: sync password, passkey PRF, escrow); none required |
 | `V#<vaultId>` | `D#<keyId>` | device name, added/last-seen times |
-| `V#<vaultId>` | `R#<recordKey>` | `seq`, `deleted`, `payload` (ciphertext, inline up to ~64 KB, otherwise an S3 pointer) |
+| `V#<vaultId>` | `R#<recordKey>` | `seq`, `deleted`, `payload` (ciphertext, inline up to 64 KB sealed, otherwise a `TRP1` pointer to a record blob in S3) |
 | `INV#<hash>` | `INV` | invite, TTL attribute |
 | `DEV#<keyId>` | `VAULT` | which vault the device belongs to |
 
@@ -174,6 +174,7 @@ When two devices push at the same moment, one of them simply retries.
   - Reminders stay per device on purpose. Otherwise iPhone and iPad would both buzz. The new-device default is off.
 - **Clock skew:** the clocks are device wall-clock times. When applying remote records, the store remembers the highest clock it has seen. Local writes then use `max(now, highestSeen + 1 ms)`, a lite hybrid logical clock. That's internal to `ThoughtStore` (`SyncClock`, stored in UserDefaults), and the Scheduler functions stay pure.
   - Monotonic: every stamp past `now` becomes the new `highestSeen`. A remote clock raises `highestSeen` at most to `now + 1 day`, so one wildly wrong device can't push everyone's clocks into the future. Due dates, `createdAt`, `lastViewedAt` and `archivedAt` use real `now`. No-op without sync.
+  - **Known limit (accepted):** a device whose clock runs more than a day ahead can have a deletion undone by its own later-stamped edit, because of the `now + 1 day` cap. Phase 2's offset correction narrows it.
   - **Phase 2:** responses carry `serverTime`, so devices measure their offset and correct their stamps (and could flag a badly wrong clock).
 ## 8a. Merging content, and conflict copies
 
@@ -214,16 +215,17 @@ Only the device that lost the race merges; the other device receives the merged 
 - **Outbox, same pattern as search:** every `ThoughtStore` writer that changes content, schedule, state, tags or deletes submits `sync.enqueue(ids)`, alongside its reindex.
 - **`SyncReconciler`:** at launch, compares each thought's clock fingerprint to `sync.sqlite` and repairs drift. This mirrors `SearchReconciler`.
 - **Applying remote changes goes through `ThoughtStore`:** a new `applyRemote(...)` that shares `performImport`'s per-group merge, so search reindexing, `persist()` rollback rules and the IntegrityChecker all still apply. Content that collides with an unpushed local change goes through the 3-way merge first (section 8a).
-- **The tombstone table is now actually read.** Server tombstones older than 180 days are pruned. A device offline longer than that gets a 410 and does a full resync: pull everything (`fullResync`, so the from-scratch pull isn't itself 410'd), push whatever the server doesn't have. It never clears the device. A thought missing from the server is:
+- **The tombstone table is now actually read.** The server prunes only deletion tombstones older than 180 days, never thoughts. A device offline longer than that gets a 410 and does a full resync: pull everything (`fullResync`, so the from-scratch pull isn't itself 410'd; a persisted `resyncing` flag keeps sending it, so an interrupted pass resumes; a 410 inside a push resolves the resync too, and reconcile waits for a running pass), push whatever the server doesn't have. It never clears the device. A thought missing from the server is:
   - uploaded, if it never synced;
   - deleted locally, if it synced and wasn't content-edited here since (meta-only changes don't count);
   - kept and uploaded, if it was content-edited here since.
   - left alone while it's parked or held (the server has it, this device just hasn't applied it yet).
-- **Deletions vs edits:** a remote deletion loses to a local content edit after `deletedAt`, and vice versa.
+- **Deletions vs edits:** a remote deletion loses to a local content edit after `deletedAt`, and vice versa. A remote deletion for a thought with a local tombstone raises its `deletedAt` to the later value, so devices converge on the max.
 - **Unreadable records:**
-  - Unknown type or newer version: parked sealed in `sync.sqlite`, sync continues, status `updateRequired`; re-applied after an app update.
+  - Unknown type or newer version: parked sealed in `sync.sqlite`, sync continues, status `updateRequired`; re-tried only when the supported payload version changes. Parked tag and settings records don't block the rest of a push.
   - Decrypt or auth failure: the cycle stops with an error.
-  - Missing blob or a rejected thought: only that thought is held, retried every cycle (an unreadable blob backs off up to 32 cycles). One failing item never stops the cycle.
+  - Oversized: a record over 16 MB (`SyncLimits.maxRecordBytes`) or refused by the server as too large is held and counted in `Status.oversizedThoughts`; the queue never wedges. Users have no thought length cap.
+  - Missing blob (including a record-blob pointer's) or a rejected thought: only that thought is held, retried every cycle (an unreadable blob backs off up to 32 cycles). One failing item never stops the cycle.
   - A local edit to a parked or held thought stays queued and isn't pushed until the server's version has applied here; then it merges normally. The rest of its batch still pushes.
 - **Apply in sub-batches** of at most 25 MB of image/file bytes (`SyncLimits.maxApplyBytes`); push reads blobs off the main actor.
 
@@ -280,6 +282,7 @@ This answers the open question in TODO.md.
 ## 10. Images
 
 - **Blob name:** phase 1b names blobs `HMAC(K_idx, asset id)`, not content, so a conflict copy that needs new image ids would re-upload. (Content-HMAC de-duplication is the alternative; the server never sees content either way.) The bytes are encrypted with `K_blob` and stored at `s3://…/v/<vaultId>/b/<name>`.
+- **Large records:** a sealed record over 64 KB (`SyncLimits.maxInlinePayload`) is sealed with `sealBlob` and uploaded as a blob named by an HMAC of the record key and content hash, before the push; the server row holds a `TRP1` pointer. Superseded pointer blobs aren't collected yet (TODO.md).
 - **Upload:** `POST /blobs/upload-urls` with names, sizes and SHA-256 values. The server returns presigned PUTs only for missing blobs, with `x-amz-checksum-sha256` enforced. Uploads use a background `URLSession`.
 - **Thumbnails:** not synced; regenerated on download, as backup import already does.
 - **Pull order:** records come down, blobs download, *then* the record is applied. This keeps the IntegrityChecker invariant that image data is present.
@@ -380,7 +383,7 @@ Each phase merges to main behind a DEBUG-only flag; nothing is user-visible unti
 | # | Phase | What gets built | Done when | Estimate |
 |---|---|---|---|---|
 | 0 | **Schema prep (before the freeze)** | `Thought.conflictOfID` in `SchemaV1`, the backup record, the import merge (state group), an IntegrityChecker rule, a regenerated `default.store` fixture, randomized tests. No UI. | Tests pass; a backup round-trips the field | ½ day |
-| 1 | **Sync engine, no network** (split into rounds 1a, 1b, 1c; **1a done 2026-10-14**: `sync.sqlite`, outbox and hooks, record codec and crypto, `SyncReconciler`; **1b done 2026-10-14**: engine, fake server, `applyRemote`, skew clock, deletions, 409/410, first-sync paging, in-memory image store; **1c**: `ContentMerge`, conflict copies, convergence tests) | `ThoughtReps/Sync/`: `sync.sqlite` (cursor, outbox, base content), outbox hooks in every `ThoughtStore` writer, `applyRemote` sharing `performImport`'s merge, `ContentMerge` (3-way merge, section 8a), conflict copies, the skew-safe clock, `SyncReconciler`, first-sync paging. All against an in-process fake server implementing the push/pull/CAS contract. | Convergence tests pass (N stores, concurrent edits, dropped responses, save failures, clock skew); merge table and property tests pass; IntegrityChecker and SearchIndexChecker stay clean | 3 weeks |
+| 1 | **Sync engine, no network** (split into rounds 1a, 1b, 1c; **1a done 2026-10-14**: `sync.sqlite`, outbox and hooks, record codec and crypto, `SyncReconciler`; **1b done 2026-10-14**: engine, fake server, `applyRemote`, skew clock, deletions, 409/410, first-sync paging, in-memory image store; review fixes and the large-record blob path also done; **1c**: `ContentMerge`, conflict copies, convergence tests) | `ThoughtReps/Sync/`: `sync.sqlite` (cursor, outbox, base content), outbox hooks in every `ThoughtStore` writer, `applyRemote` sharing `performImport`'s merge, `ContentMerge` (3-way merge, section 8a), conflict copies, the skew-safe clock, `SyncReconciler`, first-sync paging. All against an in-process fake server implementing the push/pull/CAS contract. | Convergence tests pass (N stores, concurrent edits, dropped responses, save failures, clock skew); merge table and property tests pass; IntegrityChecker and SearchIndexChecker stay clean | 3 weeks |
 | 2 | **Server, dev stage, text only** | `ThoughtReps-dev-Sync`: DynamoDB table with the `bySeq` LSI, push (transaction + CAS), pull, `/head`, the test-only auth bypass; App Attest code moved to `lambda/shared/`. A basic Sync lab screen. | Two simulators sync text against dev; jest covers ordering, CAS conflicts and the 410 path; a CDK test proves the bypass isn't in prod | 1.5 weeks |
 | 3 | **Images** | Blob bucket, presigned upload and download, HMAC blob names, background `URLSession`, blob-before-record ordering, blob cleanup | Images sync both ways, upload once, and are never missing on the receiving side | 1 week |
 | 4 | **Identity and keys** | Sign in with Apple (or vault creation under A), App Attest sessions, Keychain key (synced and local items, section 5), QR pairing that also links the account, recovery code, `K_auth` join, device list and removal, erase choices, "Delete sync data". The "Needs a look" timeline section and resolve sheet. Prod stack deployed. | A real iPhone and iPad pair, join and recover; the full Sync lab runs on both | 2 weeks |

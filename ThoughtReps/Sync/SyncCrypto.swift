@@ -42,6 +42,15 @@ struct SyncKeys: Sendable {
     }
 }
 
+extension SyncKeys {
+    /// Where a sealed record too big to go inline is stored: an HMAC of the record key and the plaintext hash, so a new
+    /// version gets a new name and a retried push finds its blob already there.
+    func recordBlobName(recordKey: String, hash: String) -> String {
+        let mac = HMAC<SHA256>.authenticationCode(for: Data("blob.record|\(recordKey)|\(hash)".utf8), using: index)
+        return SyncCrypto.base64URL(Data(mac))
+    }
+}
+
 enum SyncBlobKind: String, Sendable {
     case image
     case file
@@ -118,6 +127,20 @@ enum SyncCrypto {
     }
 
     private static let blobMagic = Data("TRSB".utf8)
+
+    /// What the server stores as a record's payload when the sealed record is over `SyncLimits.maxInlinePayload`:
+    /// `"TRP1"` + the name of the blob holding the sealed record (`sealBlob` of the usual `seal` frame). A reader without
+    /// pointer support fails the magic check, so it never mistakes one for a record.
+    static let pointerMagic = Data("TRP1".utf8)
+
+    static func pointer(toBlob name: String) -> Data {
+        pointerMagic + Data(name.utf8)
+    }
+
+    static func blobName(inPointer payload: Data) -> String? {
+        guard payload.count > pointerMagic.count, payload.prefix(pointerMagic.count) == pointerMagic else { return nil }
+        return String(data: payload.dropFirst(pointerMagic.count), encoding: .utf8)
+    }
 
     static func base64URL(_ data: Data) -> String {
         data.base64EncodedString()

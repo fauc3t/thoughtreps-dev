@@ -11,7 +11,8 @@ import os
 ///   whose response was lost is recognized (the pull brings it back as the base).
 /// - A 409 means a record moved: pull, apply, and push again with the new bases, a few times at most.
 /// - A 410 means the cursor is older than the server keeps: forget the progress, queue everything local
-///   and pull everything; merging is by id and clock, so nothing is duplicated or lost.
+///   and pull everything; merging is by id and clock, so nothing is duplicated. A thought this device had synced
+///   that the server no longer has was deleted elsewhere: `resolveResync` deletes it unless it was edited here since.
 /// - A changed epoch (the vault was erased elsewhere) stops syncing and shows up as `Status.attention`.
 actor SyncEngine {
     struct Configuration: Sendable {
@@ -21,6 +22,12 @@ actor SyncEngine {
         var maxConflictRetries = 5
         var maxRecordsPerPush = SyncLimits.maxRecordsPerPush
         var maxBytesPerPush = SyncLimits.maxBytesPerPush
+        /// A sealed record over this goes up as a blob and the row holds a pointer to it.
+        var maxInlinePayload = SyncLimits.maxInlinePayload
+        /// A sealed record over this is never pushed: its thought is held back and counted in `Status.oversizedThoughts`.
+        var maxRecordBytes = SyncLimits.maxRecordBytes
+        /// Plaintext and blob bytes planned in memory before a push chunk is sent; one bigger entity goes alone.
+        var maxPlanBytes = SyncLimits.maxPlanBytes
         var blobsPerRead = 8
         var maxApplyBytes = SyncLimits.maxApplyBytes
         /// The newest payload version this build reads; records past it are parked until the app is updated.
@@ -52,6 +59,9 @@ actor SyncEngine {
         /// Queued local changes not pushed because the server's version of that thought is parked, blocked or held:
         /// they go out once it has been applied and merged.
         var waitingThoughts = 0
+        /// Queued thoughts too big to sync (a sealed record over `maxRecordBytes`, or one the server refused as too large).
+        /// They stay queued, and everything else still goes out.
+        var oversizedThoughts = 0
     }
 
     enum Failure: Error, Equatable, CustomStringConvertible {
@@ -92,6 +102,15 @@ actor SyncEngine {
     private var cycleNumber = 0
     /// Queued thoughts left alone in this push because the server holds a version this device couldn't apply yet.
     private var waitingEntities: Set<SyncEntity> = []
+    private var oversizedEntities: Set<SyncEntity> = []
+    /// Record keys whose record was over `maxRecordBytes`, with the fingerprint it had then: skipped (not encoded and
+    /// sealed again) until the fingerprint changes. Kept in memory.
+    private var oversizedFingerprints: [String: String] = [:]
+    /// What the tests read to check the memory budgets: the most bytes planned for one push chunk, resolved for one pull
+    /// sub-batch, and how many records were sealed.
+    private(set) var peakPlannedBytes = 0
+    private(set) var peakResolvedBytes = 0
+    private(set) var recordsSealed = 0
     /// Held thoughts with a blob that is there but can't be read: retried after 2, 4, 8 … (at most 32) cycles instead of
     /// every one, since each try downloads it again. Kept in memory, so a relaunch tries them all.
     private var unreadableBackoff: [String: (attempts: Int, retryAt: Int)] = [:]
@@ -164,6 +183,7 @@ actor SyncEngine {
             do {
                 update { $0.phase = .pulling }
                 try await reapplyParked()
+                try await retryPointers()
                 try await retryBlocked()
                 _ = try await pull()
                 try await resolveResync()
@@ -212,8 +232,9 @@ actor SyncEngine {
     private func refreshPending() async {
         let count = (try? await state.outboxCount()) ?? status.pending
         let cursor = (try? await state.cursor()) ?? status.cursor
-        let parked = (try? await state.parkedCount()) ?? 0
-        let blocked = (try? await state.blockedEntityIDs().count) ?? status.blockedThoughts
+        let pointers = (try? await state.parkedPointerCount()) ?? 0
+        let parked = ((try? await state.parkedCount()) ?? 0) - pointers
+        let blocked = ((try? await state.blockedEntityIDs().count) ?? status.blockedThoughts) + pointers
         update {
             $0.pending = count
             $0.cursor = cursor
@@ -258,6 +279,11 @@ actor SyncEngine {
     private func pull() async throws -> Bool {
         var startedOver = false
         var fromScratch = try await state.cursor() == 0
+        if try await state.isResyncing() {
+            fromScratch = true
+        } else if fromScratch {
+            try await state.beginResync()
+        }
         while true {
             let cursor = try await state.cursor()
             switch try await transport.pull(after: cursor, limit: config.pullLimit, fullResync: fromScratch) {
@@ -266,6 +292,7 @@ actor SyncEngine {
                 startedOver = true
                 fromScratch = true
                 try await state.resetSyncProgress(keepingBlobs: true, keepingEpoch: true, snapshotting: true)
+                try await state.beginResync()
                 await local.reconcile()
             case .page(let page):
                 try await apply(page, after: cursor)
@@ -279,24 +306,109 @@ actor SyncEngine {
         if let known = try await state.epoch(), known != page.epoch {
             throw AttentionFailure(attention: .epochChanged(known: known, server: page.epoch))
         }
+        let finalCursor = page.hasMore ? (page.records.last?.seq ?? cursor) : max(page.records.last?.seq ?? cursor, page.headSeq)
         var decoded: [Decoded] = []
-        var commit = PageCommit(
-            cursor: page.hasMore ? (page.records.last?.seq ?? cursor) : max(page.records.last?.seq ?? cursor, page.headSeq), epoch: page.epoch
-        )
+        var parks: [ParkedRecord] = []
+        var bytes = 0
         for record in page.records {
-            switch try read(record) {
-            case .readable(let item): decoded.append(item)
-            case .parked(let parked): commit.park.append(parked)
+            guard let resolved = try await resolvePointer(record) else {
+                parks.append(ParkedRecord(recordKey: record.recordKey, seq: record.seq, payload: record.payload, deleted: record.deleted))
+                continue
+            }
+            let size = resolved.payload.count
+            // Earlier sub-batches leave the cursor where it was: if the page fails midway it is fetched again, and what
+            // was applied is skipped by its base hash.
+            if !decoded.isEmpty, bytes + size > config.maxApplyBytes {
+                try await applyBatch(decoded, park: parks, cursor: cursor, epoch: page.epoch, endsResync: false)
+                decoded = []
+                parks = []
+                bytes = 0
+            }
+            switch try read(resolved) {
+            case .readable(let item):
+                decoded.append(item)
+                bytes += size
+                peakResolvedBytes = max(peakResolvedBytes, bytes)
+            case .parked(let parked): parks.append(parked)
             }
         }
+        try await applyBatch(decoded, park: parks, cursor: finalCursor, epoch: page.epoch, endsResync: !page.hasMore)
+    }
+
+    private func applyBatch(_ decoded: [Decoded], park: [ParkedRecord], cursor: Int64, epoch: Int64, endsResync: Bool) async throws {
+        var commit = PageCommit(cursor: cursor, epoch: epoch)
+        commit.endsResync = endsResync
+        commit.park = park
         commit.unpark = decoded.map(\.record.recordKey)
         try await process(decoded, retrying: [], commit: &commit)
     }
 
-    /// Parked records this version can read now (it was updated) are applied before anything new.
+    /// A pointer record becomes the record it points to. Nil when the blob isn't there or can't be read yet: the pointer
+    /// stays parked (a missing blob is tried every cycle, an unreadable one after 2, 4, 8 … cycles) and only that thought waits.
+    private func resolvePointer(_ record: PulledRecord) async throws -> PulledRecord? {
+        guard let name = SyncCrypto.blobName(inPointer: record.payload) else { return record }
+        if let backoff = unreadableBackoff[record.recordKey], backoff.retryAt > cycleNumber { return nil }
+        do {
+            let sealed = try await transport.getBlob(name: name)
+            var resolved = record
+            resolved.payload = try SyncCrypto.openBlob(sealed, vaultID: vaultID, name: name, keys: keys)
+            unreadableBackoff[record.recordKey] = nil
+            return resolved
+        } catch SyncTransportError.blobMissing(_) {
+            unreadableBackoff[record.recordKey] = nil
+            return nil
+        } catch is SyncCrypto.Failure {
+            backOff(record.recordKey)
+            return nil
+        }
+    }
+
+    private func backOff(_ key: String) {
+        let attempts = (unreadableBackoff[key]?.attempts ?? 0) + 1
+        unreadableBackoff[key] = (attempts, cycleNumber + min(1 << attempts, 32))
+    }
+
+    /// Pointer records parked for a blob that wasn't there are tried again before anything new.
+    private func retryPointers() async throws {
+        let pointers = try await state.parkedPointers()
+        guard !pointers.isEmpty, let epoch = try await state.epoch() else { return }
+        let bases = try await state.records(forKeys: pointers.map(\.recordKey))
+        for record in pointers {
+            do {
+                guard let resolved = try await resolvePointer(PulledRecord(recordKey: record.recordKey, seq: record.seq, payload: record.payload, deleted: record.deleted))
+                else { continue }
+                var commit = PageCommit(cursor: try await state.cursor(), epoch: epoch)
+                let reading: Reading
+                do {
+                    reading = try read(resolved)
+                } catch {
+                    backOff(record.recordKey)
+                    throw error
+                }
+                switch reading {
+                case .parked(let parked):
+                    commit.park = [parked]
+                    try await state.commit(commit)
+                case .readable(let item):
+                    commit.unpark = [record.recordKey]
+                    let superseded = bases[record.recordKey].map { $0.seq >= record.seq } ?? false
+                    try await process(superseded ? [] : [item], retrying: [], commit: &commit)
+                }
+            } catch {
+                Self.logger.error("Pointer record \(record.recordKey) not applied this cycle: \(error)")
+            }
+        }
+    }
+
+    /// Parked records this version can read now (it was updated) are applied before anything new. Whether one is readable
+    /// depends only on the payload version, so they are tried again only when it differs from the last try.
     private func reapplyParked() async throws {
-        let parked = try await state.parked()
-        guard !parked.isEmpty, let epoch = try await state.epoch() else { return }
+        guard try await state.parkedVersionTried() != config.payloadVersion else { return }
+        let parked = try await state.parked().filter { SyncCrypto.blobName(inPointer: $0.payload) == nil }
+        guard !parked.isEmpty, let epoch = try await state.epoch() else {
+            try await state.setParkedVersionTried(config.payloadVersion)
+            return
+        }
         let bases = try await state.records(forKeys: parked.map(\.recordKey))
         for record in parked {
             // One record that won't apply is logged and stays parked; it must not stop the rest of the cycle.
@@ -311,6 +423,7 @@ actor SyncEngine {
                 Self.logger.error("Parked record \(record.recordKey) not applied this cycle: \(error)")
             }
         }
+        try await state.setParkedVersionTried(config.payloadVersion)
     }
 
     /// Held thoughts whose blobs were missing, or whose images clashed, are tried again every cycle.
@@ -570,7 +683,15 @@ actor SyncEngine {
         var after: SyncEntity?
         var conflicts = 0
         waitingEntities = []
-        defer { let waiting = waitingEntities.count; update { $0.waitingThoughts = waiting } }
+        oversizedEntities = []
+        defer {
+            let waiting = waitingEntities.count
+            let oversized = oversizedEntities.count
+            update {
+                $0.waitingThoughts = waiting
+                $0.oversizedThoughts = oversized
+            }
+        }
         while true {
             let entries = try await state.outbox(limit: config.pushEntities, after: after)
             guard let last = entries.last else { break }
@@ -581,7 +702,10 @@ actor SyncEngine {
                 conflicts += 1
                 guard conflicts <= config.maxConflictRetries else { throw Failure.tooManyConflicts }
                 update { $0.phase = .pulling }
-                if try await pull() { after = nil }
+                if try await pull() {
+                    try await resolveResync()
+                    after = nil
+                }
                 update { $0.phase = .pushing }
             }
             await refreshPending()
@@ -595,6 +719,8 @@ actor SyncEngine {
         var hash: String
         var baseSeq: Int64?
         var sealed: Data
+        /// Set when `sealed` is a pointer: the sealed record, wrapped as a blob, to upload before the push.
+        var blob: (name: String, data: Data)?
     }
 
     private struct PlannedEntity {
@@ -602,6 +728,13 @@ actor SyncEngine {
         var records: [PlannedRecord]
         var blobs: [BlobRef]
         var size: Int { records.reduce(0) { $0 + $1.sealed.count } }
+        /// Bytes held in memory while planned: each record's plaintext, and its blob or inline sealed form.
+        var plannedBytes: Int { records.reduce(0) { $0 + $1.plaintext.count + ($1.blob?.data.count ?? $1.sealed.count) } }
+    }
+
+    private static func thoughtKeys(_ entity: SyncEntity, _ keys: SyncKeys) -> [String] {
+        guard entity.kind == .thought else { return [] }
+        return [keys.recordKey(type: .thoughtContent, entityID: entity.id), keys.recordKey(type: .thoughtMeta, entityID: entity.id)]
     }
 
     private func pushBatch(_ entries: [OutboxEntry]) async throws -> BatchResult {
@@ -611,22 +744,26 @@ actor SyncEngine {
         }
         let bases = try await state.records(forKeys: keyed.flatMap { $0.map(\.key) })
         let heldIDs = Set(try await state.held(entityIDs: entries.filter { $0.entity.kind == .thought }.map(\.entity.id)).map(\.entityID))
-        let parkedKeys = try await state.parkedKeys()
+        let parkedKeys = try await state.parkedKeys(among: entries.flatMap { Self.thoughtKeys($0.entity, keys) } + keyed.flatMap { $0.map(\.key) })
 
-        var planned: [PlannedEntity] = []
+        var chunk: [PlannedEntity] = []
+        var chunkRecords = 0
+        var chunkBytes = 0
+        var chunkPlanned = 0
         var finished: [OutboxEntry] = []
         var staleTags: [TagRecord] = []
         for (index, entry) in entries.enumerated() {
             let snapshot = snapshots[index]
             let entity = entry.entity
             // Never overwrite a server version this device hasn't applied: the local change stays queued.
-            if entity.kind == .thought, heldIDs.contains(entity.id)
-                || parkedKeys.contains(keys.recordKey(type: .thoughtContent, entityID: entity.id))
-                || parkedKeys.contains(keys.recordKey(type: .thoughtMeta, entityID: entity.id)) {
+            let thoughtKeys = Self.thoughtKeys(entity, keys)
+            if (entity.kind == .thought && heldIDs.contains(entity.id))
+                || (thoughtKeys + keyed[index].map(\.key)).contains(where: parkedKeys.contains) {
                 waitingEntities.insert(entity)
                 continue
             }
             var records: [PlannedRecord] = []
+            var tooBig = false
             for (payload, key) in keyed[index] {
                 let base = bases[key]
                 if case .tag(let tag) = payload, let base, case .tag(let known)? = try? SyncPayload.decode(base.baseContent, supporting: config.payloadVersion),
@@ -634,20 +771,55 @@ actor SyncEngine {
                     staleTags.append(known)
                     continue
                 }
+                if oversizedFingerprints[key] == payload.fingerprint {
+                    tooBig = true
+                    break
+                }
                 let plaintext = try payload.encoded()
                 let hash = SyncPayload.hash(of: plaintext)
                 if base?.baseHash == hash { continue }
-                let sealed = try SyncCrypto.seal(
+                recordsSealed += 1
+                var sealed = try SyncCrypto.seal(
                     plaintext, vaultID: vaultID, recordKey: key, payloadVersion: SyncPayload.currentVersion, keys: keys
                 )
-                records.append(PlannedRecord(key: key, payload: payload, plaintext: plaintext, hash: hash, baseSeq: base?.seq, sealed: sealed))
+                guard sealed.count <= config.maxRecordBytes else {
+                    oversizedFingerprints[key] = payload.fingerprint
+                    tooBig = true
+                    break
+                }
+                oversizedFingerprints[key] = nil
+                var blob: (name: String, data: Data)?
+                if sealed.count > config.maxInlinePayload {
+                    // TODO(phase 2/3): the server should delete a pointer's blob once a newer version supersedes it.
+                    let name = keys.recordBlobName(recordKey: key, hash: hash)
+                    blob = (name, try SyncCrypto.sealBlob(sealed, vaultID: vaultID, name: name, keys: keys))
+                    sealed = SyncCrypto.pointer(toBlob: name)
+                }
+                records.append(PlannedRecord(key: key, payload: payload, plaintext: plaintext, hash: hash, baseSeq: base?.seq, sealed: sealed, blob: blob))
+            }
+            if tooBig {
+                oversizedEntities.insert(entity)
+                continue
             }
             if records.isEmpty {
                 finished.append(entry)
-            } else {
-                let wantsBlobs = records.contains { $0.payload.type == .thoughtContent && !$0.payload.isDeletion }
-                planned.append(PlannedEntity(entry: entry, records: records, blobs: wantsBlobs ? snapshot.blobs : []))
+                continue
             }
+            let wantsBlobs = records.contains { $0.payload.type == .thoughtContent && !$0.payload.isDeletion }
+            let next = PlannedEntity(entry: entry, records: records, blobs: wantsBlobs ? snapshot.blobs : [])
+            if !chunk.isEmpty, chunkRecords + next.records.count > config.maxRecordsPerPush || chunkBytes + next.size > config.maxBytesPerPush
+                || chunkPlanned + next.plannedBytes > config.maxPlanBytes {
+                if try await send(chunk) == .conflict { return .conflict }
+                chunk = []
+                chunkRecords = 0
+                chunkBytes = 0
+                chunkPlanned = 0
+            }
+            chunk.append(next)
+            chunkRecords += next.records.count
+            chunkBytes += next.size
+            chunkPlanned += next.plannedBytes
+            peakPlannedBytes = max(peakPlannedBytes, chunkPlanned)
         }
         if !staleTags.isEmpty {
             let outcome = await local.apply(RemoteBatch(tags: staleTags), now: clockNow())
@@ -655,29 +827,29 @@ actor SyncEngine {
         }
         if !finished.isEmpty { try await state.markSynced([], dequeuing: finished) }
 
-        var chunk: [PlannedEntity] = []
-        var chunkRecords = 0
-        var chunkBytes = 0
-        for entity in planned {
-            if !chunk.isEmpty, chunkRecords + entity.records.count > config.maxRecordsPerPush || chunkBytes + entity.size > config.maxBytesPerPush {
-                if try await send(chunk) == .conflict { return .conflict }
-                chunk = []
-                chunkRecords = 0
-                chunkBytes = 0
-            }
-            chunk.append(entity)
-            chunkRecords += entity.records.count
-            chunkBytes += entity.size
-        }
         if !chunk.isEmpty, try await send(chunk) == .conflict { return .conflict }
         return .done
     }
 
     private func send(_ chunk: [PlannedEntity]) async throws -> BatchResult {
         try await upload(Set(chunk.flatMap(\.blobs)))
-        let result = try await transport.push(chunk.flatMap(\.records).map {
-            PushRecord(recordKey: $0.key, baseSeq: $0.baseSeq, payload: $0.sealed, deleted: $0.payload.isDeletion)
-        })
+        for blob in chunk.flatMap(\.records).compactMap(\.blob) {
+            if try await !transport.hasBlob(name: blob.name) { try await transport.putBlob(name: blob.name, data: blob.data) }
+        }
+        let result: PushResult
+        do {
+            result = try await transport.push(chunk.flatMap(\.records).map {
+                PushRecord(recordKey: $0.key, baseSeq: $0.baseSeq, payload: $0.sealed, deleted: $0.payload.isDeletion)
+            })
+        } catch SyncTransportError.tooLarge {
+            guard chunk.count > 1 else {
+                oversizedEntities.insert(chunk[0].entry.entity)
+                return .done
+            }
+            let middle = chunk.count / 2
+            if try await send(Array(chunk[..<middle])) == .conflict { return .conflict }
+            return try await send(Array(chunk[middle...]))
+        }
         switch result {
         case .conflict:
             return .conflict

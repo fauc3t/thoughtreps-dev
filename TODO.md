@@ -31,3 +31,5 @@
 - Dedupe `TagRow`/`UntaggedRow`, the interval menu, `theme.js`.
 - In-app font licenses screen (OFL for Archivo and Paper Mono).
 - Quick Capture (built; device checks left): the Action button, Siri ("New thought in Thought Reps") and Shortcuts open an empty editor from the Home Screen, from another app and on cold launch; with an editor already open the draft is kept. See `designs/Thought Reps — Quick Capture Spec.md`.
+- Sync (phase 2/3): server-side GC of superseded record-blob pointer blobs (`TRP1` large records); see `designs/Thought Reps — Sync Spec.md`, section 10.
+- Sync: `local.snapshots()` still loads all content records of a 49-entry push batch at once (up to 16 MB each); bound it by bytes if large thoughts get common.

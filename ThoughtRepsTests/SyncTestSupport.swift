@@ -115,6 +115,7 @@ actor FakeSyncServer: SyncTransport {
             await hook()
         }
         guard records.count <= SyncLimits.maxRecordsPerPush, records.reduce(0, { $0 + $1.payload.count }) <= SyncLimits.maxBytesPerPush,
+              records.allSatisfy({ $0.payload.count <= SyncLimits.maxInlinePayload }),
               Set(records.map(\.recordKey)).count == records.count
         else { throw SyncTransportError.tooLarge }
         let failed = records.filter { record in
@@ -181,7 +182,12 @@ extension FakeSyncServer {
     func liveThoughtIDs(keys: SyncKeys, vaultID: String) -> Set<UUID> {
         var ids = Set<UUID>()
         for (key, row) in rows where !row.deleted {
-            guard let opened = try? SyncCrypto.open(row.payload, vaultID: vaultID, recordKey: key, keys: keys),
+            var frame = row.payload
+            if let name = SyncCrypto.blobName(inPointer: frame), let sealed = blobs[name],
+               let inner = try? SyncCrypto.openBlob(sealed, vaultID: vaultID, name: name, keys: keys) {
+                frame = inner
+            }
+            guard let opened = try? SyncCrypto.open(frame, vaultID: vaultID, recordKey: key, keys: keys),
                   case .thoughtContent(let content)? = try? SyncPayload.decode(opened.plaintext)
             else { continue }
             ids.insert(content.id)
