@@ -36,6 +36,19 @@ enum SyncDebugSession {
     private static let logger = Logger(subsystem: "com.thoughtreps", category: "sync")
     private static var engine: SyncEngine?
     private static var triggers: SyncTriggers?
+    /// When the engine last finished a cycle without an error or attention state.
+    private(set) static var lastSuccessfulSync: Date?
+
+    /// The server and vault this launch syncs with (never the secret or key), or nil when it isn't configured.
+    static var target: (url: String, vault: String)? {
+        Environment().map { ($0.url.absoluteString, $0.vault) }
+    }
+
+    /// The engine's status, or nil before it has started.
+    static func status() async -> SyncEngine.Status? {
+        guard let engine else { return nil }
+        return await engine.status
+    }
 
     /// Builds the engine and triggers, creates the vault on the server if it is new, and runs a first cycle. Call once the
     /// outbox is on and reconciled.
@@ -58,6 +71,7 @@ enum SyncDebugSession {
             )
             let triggers = SyncTriggers(engine: engine)
             await triggers.start(observing: state)
+            await engine.setObserver(Self.noteStatus)
             self.engine = engine
             self.triggers = triggers
             let status = await engine.syncNow()
@@ -67,10 +81,57 @@ enum SyncDebugSession {
         }
     }
 
-    /// A cycle when the app comes to the foreground.
-    static func syncNow() async {
-        guard let engine else { return }
-        await engine.syncNow()
+    /// A cycle when the app comes to the foreground, or from the Sync lab.
+    @discardableResult
+    static func syncNow() async -> SyncEngine.Status? {
+        guard let engine else { return nil }
+        return await engine.syncNow()
     }
+
+    /// What the status file holds: enough for a test to tell that a cycle has pushed its outbox and pulled up to a seq.
+    /// Never the secret or key.
+    struct StatusSnapshot: Codable, Equatable {
+        var cycles: Int
+        var cursor: Int64
+        var outbox: Int
+        var phase: String
+        var attention: String?
+        var lastError: String?
+
+        init(_ status: SyncEngine.Status) {
+            cycles = status.cycles
+            cursor = status.cursor
+            outbox = status.pending
+            phase = SyncLabText.phase(status.phase)
+            attention = status.attention.map { SyncLabText.attention($0) }
+            lastError = status.lastError
+        }
+
+        func encoded() throws -> Data {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.sortedKeys]
+            return try encoder.encode(self)
+        }
+    }
+
+    /// `THOUGHTREPS_SYNC_STATUS_FILE`: a path the app rewrites with a `StatusSnapshot` after every cycle.
+    private nonisolated static let statusFile: URL? = ProcessInfo.processInfo.environment["THOUGHTREPS_SYNC_STATUS_FILE"]
+        .flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0) }
+
+    private static let noteStatus: @Sendable (SyncEngine.Status) -> Void = { status in
+        if let file = statusFile, status.phase == .idle || status.phase == .stopped,
+           let data = try? StatusSnapshot(status).encoded() {
+            try? data.write(to: file, options: .atomic)
+        }
+        guard status.phase == .idle, status.lastError == nil, status.attention == nil, status.cycles > 0 else { return }
+        Task { @MainActor in
+            if status.cycles != lastCycles {
+                lastCycles = status.cycles
+                lastSuccessfulSync = .now
+            }
+        }
+    }
+
+    private static var lastCycles = 0
 }
 #endif

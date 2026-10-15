@@ -150,6 +150,7 @@ struct SettingsView: View {
                                 notificationStatus = await NotificationScheduler.authorizationStatus()
                             }
                         }
+                        NavigationLink("Sync lab") { SyncLabView() }
                         Button("Delete all thoughts", role: .destructive) {
                             confirmWipe = true
                         }

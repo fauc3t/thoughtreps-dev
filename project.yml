@@ -180,6 +180,15 @@ schemes:
       config: Debug
       targets:
         - ThoughtRepsUITests
+  ThoughtRepsSyncIntegration:
+    build:
+      targets:
+        ThoughtReps: all
+        ThoughtRepsUITests: [test]
+    test:
+      config: Debug
+      targets:
+        - ThoughtRepsUITests
   ThoughtReps:
     build:
       targets:

@@ -84,6 +84,17 @@ From the command line prefix each with `SIMCTL_CHILD_` (`SIMCTL_CHILD_THOUGHTREP
 
 The runner's store is in memory, so restarting it gives every vault a new epoch and an old install stops with "epoch changed". Delete and reinstall the app on both simulators after a restart.
 
+**Sync lab.** In a DEBUG build, Settings > Developer > Sync lab shows the debug sync target (server and vault, never the secret or key), the engine's phase and attention state (stopped, epoch changed, server refused, update required), the outbox, held and parked counts, the last successful sync and the server clock offset. "Sync now" runs a cycle; "Run checks" runs `IntegrityChecker` and `SearchIndexChecker` and shows pass or fail with the violation count. It is the minimal version; pairing, scripted scenarios on real devices and fault switches are phase 4.
+
+**Two-simulator integration run.** `scripts/sync-integ.sh` runs the scenarios in `ThoughtRepsUITests/SyncScenarioTests.swift` against the local server on two simulators at once (an iPhone, "TR Sync A", that asserts what the user sees, and an iPad, "TR Sync B", that does the other side's work). It needs Xcode, Java, pnpm and a `thoughtreps-aws` checkout with `pnpm install --frozen-lockfile` done (default `../thoughtreps-aws`, or set `THOUGHTREPS_AWS_DIR`; the script never modifies it):
+
+```sh
+scripts/sync-integ.sh                                  # every scenario, prints PASS or FAIL per scenario, exits non-zero on failure
+scripts/sync-integ.sh testDeletedWhileOpen_editor      # one scenario
+```
+
+It starts the local server itself (or reuses one already answering on the port) and stops what it started, creates the two simulators if missing (`xcrun simctl create`; it never touches or shuts down others), builds once with its own derived data (`ThoughtRepsSyncIntegration` scheme), and gives each scenario a fresh vault and key. The first line printed is the run directory with each scenario's logs and `.xcresult` bundles. The two test runners coordinate through marker files in a host temp directory, and a device syncs by backgrounding and foregrounding the app. To add a scenario, add a test method to `SyncScenarioTests` and its name to `SCENARIOS` in the script. Don't run it at the same time as another run: it uses the fixed simulator names and the same port (8787, or `SYNC_LOCAL_PORT`).
+
 ## Releasing to the App Store
 
 Before uploading a build to App Store Connect (TestFlight or release), check every item. The privacy items must match each other, so change them together (see the privacy rule in CLAUDE.md).

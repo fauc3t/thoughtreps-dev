@@ -35,5 +35,6 @@
 - Sync: `local.snapshots()` still loads all content records of a 49-entry push batch at once (up to 16 MB each); bound it by bytes if large thoughts get common.
 - Sync: a file block changed in place (same block id, different file) keeps the old file on apply (`applyRemote`/import).
 - Sync (phase 4): "Needs a look" UI for conflict copies; the store methods (`keepCopy`/`keepOriginal`/`keepBoth`) exist but nothing calls them.
-- Sync (phase 2): check on two simulators that a thought deleted on another device while open keeps the editor open with its notice (Save makes a new thought) and pops the detail screen, including when covered by a pushed linked thought. Covered at store level only; the debug build has no second device to delete from.
 - Sync: `noteAttempts` keeps the first attempt (INSERT OR IGNORE), so after a lost push response plus another edit, the merge base is older than the last push and a clean merge can come out as a spurious conflict copy (nothing lost).
+- Sync (2c): `scripts/sync-integ.sh` uses fixed simulator names ("TR Sync A"/"TR Sync B") and one port, so two runs at once collide.
+- Sync (2c): the DEBUG Sync lab screen (`SyncLabView.swift`) hasn't been reviewed by a human on a device yet.
