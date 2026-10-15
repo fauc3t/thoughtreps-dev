@@ -1,6 +1,6 @@
 # Thought Reps — Device Sync Spec (iPhone ↔ iPad, AWS)
 
-Status: building, updated 2026-10-15 (first draft 2026-10-10). Phases 0 and 1 are done (the sync engine, against an in-process fake server); phase 2 (dev-stage server) is next. The account decision (section 2) gates only phase 4. Open decisions are listed at the end.
+Status: building, updated 2026-10-15 (first draft 2026-10-10). Phases 0 and 1 are done (the sync engine, against an in-process fake server); phase 2 (dev-stage server) is in progress: round 2a (server, jest, local runner) is built but not deployed, waiting on the AWS accounts; 2b and 2c are next. The account decision (section 2) gates only phase 4. Open decisions are listed at the end.
 
 Changes on 2026-10-14: iPad has shipped (section 0); 3-way merge is in v1, with conflict copies as the fallback, marked by a new `Thought.conflictOfID` field (sections 8 and 8a); key storage on the device (section 5); clarified how the push condition and `headSeq` work (section 7); Android notes (section 13); new phasing.
 
@@ -29,10 +29,10 @@ iPad  ──┘                       ├─ DynamoDB SyncTable (accounts, vault
         └─ presigned PUT/GET ──►└─ S3 SyncBlobBucket (encrypted images)
 ```
 
-- **New stack:** `ThoughtReps-prod-Sync`, in the same `prod` stage and us-east-1, with the same shared-account rules as Share.
-- **Shared code:** App Attest code moves from `lambda/export-link/shared/` to a common `lambda/shared/`.
+- **New stack:** `ThoughtReps-<env>-Sync`, built in the separate `thoughtreps-aws` repo (a CDK Pipeline with separate pipeline, dev and prod accounts), not in this repo's `infra/` and not in the shared account.
+- **Shared code:** the App Attest verification code is copied (not moved) from this repo's `infra/lambda/export-link/shared/` into `thoughtreps-aws`'s `infra/lambda/shared/` (done in 2a, unwired until phase 4); the old stacks keep their own copy.
 - **Device registration:** keep one device registry. Share exports its device table, so a device attests once for both features.
-- **Dev stage:** add a `dev` stage (`ThoughtReps-dev-Sync`) with a test-only auth bypass, because App Attest doesn't work in the simulator. Without it there's no way to test two simulators syncing. The bypass must never be in prod; a CDK assertion test should enforce that.
+- **Dev stage:** a `dev` account/stage (`ThoughtReps-dev-Sync`) with a test-only auth bypass, because App Attest doesn't work in the simulator. Without it there's no way to test two simulators syncing. The bypass must never be in prod; a CDK assertion test should enforce that.
 
 ## 2. Turning sync on: account or not (undecided)
 
@@ -146,7 +146,7 @@ iCloud Keychain is a convenience, not a dependency: sync works with QR and the r
 | `INV#<hash>` | `INV` | invite, TTL attribute |
 | `DEV#<keyId>` | `VAULT` | which vault the device belongs to |
 
-- **Change feed:** an LSI `bySeq` sorts records by `seq`. A pull is `Query pk=V#x, seq > cursor, ConsistentRead`.
+- **Change feed:** an LSI `bySeq` sorts records by `seq`. A pull reads `HEAD` to get h, then queries `pk=V#x, seq BETWEEN since+1 AND h` (see guarantee 1).
 - **Free compaction:** an edited record gets a new `seq`, so a pull only ever returns the latest version.
 - **Size cap:** an LSI caps each vault at 10 GB. Text only, a vault with 300k thoughts is well under that, and images live in S3.
 
@@ -161,7 +161,7 @@ iCloud Keychain is a convenience, not a dependency: sync works with QR and the r
 
 That gives two guarantees:
 
-1. **Commit order matches seq order.** A puller can never move its cursor past a write that lands later with a lower seq. This is the classic change-feed bug, and the reason not to use a GSI or allocate seqs on their own.
+1. **A pull only returns fully committed pushes.** AWS documents only read-committed isolation between `TransactWriteItems` and a Query, so a Query can see some items of an in-flight push and not others. Pull therefore reads `HEAD` with a single-Get `TransactGetItems` first. That read is serializable and is cancelled while a write transaction touching `HEAD` is in flight (retried, then 503 `busy`). Every push touches `HEAD`, so a successful read of h means every push up to h has completed. The Query is capped at `seq <= h`, and later pushes show up on the next pull. A puller's cursor therefore never passes a write that lands later with a lower seq, the classic change-feed bug (and the reason not to use a GSI or allocate seqs on their own).
 2. **Compare-and-swap per record.** A device can't overwrite a version it hasn't seen. A failed condition returns 409 with the conflicting keys. The client pulls, merges, then pushes again.
 
 When two devices push at the same moment, one of them simply retries.
@@ -312,14 +312,18 @@ This answers the open question in TODO.md.
 | `POST /vaults/{id}/invites` | Create a pairing invite (QR fallback) |
 | `POST /pair` | Join a vault with an invite or a `K_auth` proof |
 | `GET/DELETE /vaults/{id}/devices[/{keyId}]` | List or remove devices |
-| `POST /push` | `{epoch, records:[{key, baseSeq, deleted, payload}]}` → `{headSeq, seqs}`, 409 `{conflicts}` (a record moved), or 409 `{epochChanged, epoch}` (the vault's epoch isn't `epoch`; nothing written) |
-| `GET /pull?since=&limit=500&fullResync=` | → `{records, nextSeq, headSeq, more, epoch}`; 410 if `since < prunedBeforeSeq`, unless `fullResync` (the from-scratch pull after a 410). `nextSeq` is the last seq the page covers, read in the same consistent query as the records: the last record's seq when `more`, otherwise the head at the time of the query. The client's cursor becomes `nextSeq`, never `headSeq` (which a push can pass before it is read), and `more` with a `nextSeq` that hasn't moved is an error. |
+| `POST /push` | `{epoch, records:[{key, baseSeq, deleted, payload}]}` → `{headSeq, seqs}`, 409 `{error:"conflict", conflicts}` (a record moved), or 409 `{error:"epoch_changed", epochChanged:true, epoch}` (the vault's epoch isn't `epoch`; nothing written). 413 `too_large` for more than 99 records, more than 2 MB of payload, or a payload over 64 KiB sealed (checked after the epoch). Duplicate keys are 400. |
+| `GET /pull?since=&limit=500&fullResync=` | → `{records, nextSeq, headSeq, more, epoch}`; `limit` defaults to 500 and is capped there, and a page is bounded to about 4 MB of encoded JSON (Lambda's 6 MB response cap). 410 `gone` if `since < prunedBeforeSeq`, unless `fullResync` (the from-scratch pull after a 410); pull re-reads `HEAD` after its query, so a puller that missed a pruned tombstone gets the 410. `headSeq` is h, the head read before the query (guarantee 1). `nextSeq` is the last record's seq when `more`, otherwise h. The client's cursor becomes `nextSeq`, never `headSeq`, and `more` with a `nextSeq` that hasn't moved is an error. |
 | `GET /head` | `{headSeq, epoch}`, a cheap poll |
 | `POST /blobs/upload-urls`, `/blobs/download-urls`, `/blobs/gc` | Image transfer and cleanup |
 | `POST /entitlement` | Signed App Store transaction from the device → verified and stored on the account |
 | `DELETE /account` | Delete the account, vault, records and blobs ("Delete sync data"; also "Erase on all devices") |
 | `POST /appstore/notifications` | App Store Server Notifications v2 |
 
+- **Wire conventions (built in 2a):** every body carries `serverTime` (ms). Statuses: 400 `bad_request`, 401 `unauthorized`, 404, 410 `gone`, 413 `too_large`, 503 `busy` (a `HEAD` read cancelled by an in-flight push; retry).
+- **Large records:** a record over 64 KiB (the `TRP1` pointer path) is refused with 413 until phase 3 adds the blob bucket.
+- **Dev routes:** `POST /dev/vaults` and `POST /dev/vaults/{id}/erase`, behind an `Authorization: Dev <secret>` + `x-tr-vault` bypass with the secret in SSM. Prod has no bypass and answers 401 until phase 4's real auth.
+- **Pruning:** a daily Lambda deletes tombstones older than 180 days (a `deletedAt` attribute), raising `prunedBeforeSeq` before it deletes. Known limit: it is a full-table Scan; move it to a sparse GSI before prod scale.
 - **Session tokens:** HMAC, about 1 hour, bound to `userId`, `keyId` and `vaultId`. Push and pull send a bearer token, avoiding a challenge round trip on every call.
 - **Limits:** per-route throttles, payload size caps, a storage quota per vault (for example 10 GB of images), and the same status-code vocabulary as the export link.
 
@@ -367,11 +371,12 @@ Apple-only v1 builds one of each piece; these choices keep the rest additive.
   - Properties on random edits: a clean merge contains every line either side added and none either side removed; merging with an unchanged side returns the other side exactly; image tokens are never duplicated or dropped; the result passes IntegrityChecker.
   - Convergence runs with concurrent edits to the same thoughts, so conflict copies and merges both appear.
 - **Server tests (jest):**
-  - Transaction ordering, CAS conflicts, `ConsistentRead` pulls.
+  - Transaction ordering, CAS conflicts, the `HEAD`-bounded pull (guarantee 1).
   - Pairing (single use, expiry) and `K_auth` joins.
   - Sign in with Apple token verification, entitlement JWS verification.
   - The 410 prune path, quota, entitlement checks, account deletion.
   - A CDK assertion that the dev auth bypass is missing from prod.
+- **Local server (2a):** `pnpm --filter infra sync:local` (in `thoughtreps-aws`) runs the same handlers on 127.0.0.1:8787 against DynamoDB Local 3.3.2 (Java, no Docker). `pnpm --filter infra test:integ` runs 13 integration tests there, including 4 concurrent pushers with a puller. `pnpm test` (113 tests) doesn't need Java. Swift contract tests (2b) run against both the fake and this server.
 - **Manual:** two simulators against the `dev` stage, then a real iPhone and iPad against prod, because App Attest only works on devices.
 - **Developer mode (two real devices):** a hidden "Sync lab", only in debug and TestFlight builds (never App Store; App Review rejects hidden features), turned on from Settings.
   - Uses its own throwaway library and test vault on the `dev` stage with real App Attest, so real thoughts are never touched.
@@ -395,8 +400,8 @@ Each phase merges to main behind a DEBUG-only flag; nothing is user-visible unti
 |---|---|---|---|---|
 | 0 | **Schema prep (before the freeze)** | `Thought.conflictOfID` in `SchemaV1`, the backup record, the import merge (state group), an IntegrityChecker rule, a regenerated `default.store` fixture, randomized tests. No UI. | Tests pass; a backup round-trips the field | ½ day |
 | 1 | **Sync engine, no network** (split into rounds 1a, 1b, 1c; **1a done 2026-10-14**: `sync.sqlite`, outbox and hooks, record codec and crypto, `SyncReconciler`; **1b done 2026-10-14**: engine, fake server, `applyRemote`, skew clock, deletions, 409/410, first-sync paging, in-memory image store; review fixes and the large-record blob path also done; **1c done 2026-10-15**: `ContentMerge`, conflict copies, `attempts` bases, convergence tests; **phase 1 complete**) | `ThoughtReps/Sync/`: `sync.sqlite` (cursor, outbox, base content), outbox hooks in every `ThoughtStore` writer, `applyRemote` sharing `performImport`'s merge, `ContentMerge` (3-way merge, section 8a), conflict copies, the skew-safe clock, `SyncReconciler`, first-sync paging. All against an in-process fake server implementing the push/pull/CAS contract. | Convergence tests pass (N stores, concurrent edits, dropped responses, save failures, clock skew); merge table and property tests pass; IntegrityChecker and SearchIndexChecker stay clean | 3 weeks |
-| 2 | **Server, dev stage, text only** | `ThoughtReps-dev-Sync`: DynamoDB table with the `bySeq` LSI, push (transaction + CAS), pull, `/head`, the test-only auth bypass; App Attest code moved to `lambda/shared/`. A basic Sync lab screen. | Two simulators sync text against dev; jest covers ordering, CAS conflicts and the 410 path; a CDK test proves the bypass isn't in prod | 1.5 weeks |
-| 3 | **Images** | Blob bucket, presigned upload and download, HMAC blob names, background `URLSession`, blob-before-record ordering, blob cleanup | Images sync both ways, upload once, and are never missing on the receiving side | 1 week |
+| 2 | **Server, dev stage, text only** (split into rounds; **2a done 2026-10-15**: server, jest, local runner; not deployed, waiting on the AWS accounts. **2b**: the Swift HTTP transport, contract tests against both the fake and the local server, `serverTime` offset correction. **2c**: `scripts/sync-integ.sh` with two simulators against the local server, the first scenario being the deleted-while-open screens; a basic Sync lab screen; then the dev deploy once the accounts exist) | `ThoughtReps-dev-Sync` (in `thoughtreps-aws`): DynamoDB table with the `bySeq` LSI, push (transaction + CAS), pull, `/head`, the test-only auth bypass, tombstone pruning. | Two simulators sync text against dev; jest covers ordering, CAS conflicts and the 410 path; a CDK test proves the bypass isn't in prod | 1.5 weeks |
+| 3 | **Images** | Blob bucket, presigned upload and download, HMAC blob names, accepting `TRP1` large records (the server refuses them with 413 until then), background `URLSession`, blob-before-record ordering, blob cleanup | Images sync both ways, upload once, and are never missing on the receiving side | 1 week |
 | 4 | **Identity and keys** | Sign in with Apple (or vault creation under A), App Attest sessions, Keychain key (synced and local items, section 5), QR pairing that also links the account, recovery code, `K_auth` join, device list and removal, erase choices, "Delete sync data". The "Needs a look" timeline section and resolve sheet. Prod stack deployed. | A real iPhone and iPad pair, join and recover; the full Sync lab runs on both | 2 weeks |
 | 5 | **Subscription** | StoreKit 2 subscription, `appAccountToken`, `/entitlement` JWS check, App Store Server Notifications v2, deleting data 30 days after a lapse, restore purchases | Sandbox subscribe, renew, lapse and restore all behave correctly | 1 week |
 | 6 | **Launch prep** | Privacy manifests, `privacy.ts`, App Store privacy answers, help article (including conflict copies), `INTEGRATIONS.md`, CLAUDE.md network rule, App Review items, TestFlight with real device pairs | Testers sync real libraries for a week with no divergence | 1 week + beta |
