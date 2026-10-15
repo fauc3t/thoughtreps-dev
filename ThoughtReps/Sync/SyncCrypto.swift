@@ -33,6 +33,18 @@ struct SyncKeys: Sendable {
         let mac = HMAC<SHA256>.authenticationCode(for: Data("\(type.rawValue)|\(entityID)".utf8), using: index)
         return SyncCrypto.base64URL(Data(mac))
     }
+
+    /// The name an image or file is stored under on the server: an HMAC of its id, so the server never sees ids.
+    /// Assets are immutable, so the name never has to change.
+    func blobName(kind: SyncBlobKind, id: UUID) -> String {
+        let mac = HMAC<SHA256>.authenticationCode(for: Data("blob.\(kind.rawValue)|\(id.uuidString)".utf8), using: index)
+        return SyncCrypto.base64URL(Data(mac))
+    }
+}
+
+enum SyncBlobKind: String, Sendable {
+    case image
+    case file
 }
 
 /// Seals and opens record payloads. The frame is `"TRS1"` + one byte of payload version + a 12-byte
@@ -83,6 +95,29 @@ enum SyncCrypto {
             throw Failure.decryptionFailed
         }
     }
+
+    /// A blob is sealed with the blob key: `"TRSB"` + a 12-byte nonce + ciphertext + tag, authenticating `vaultId | name`.
+    static func sealBlob(_ data: Data, vaultID: String, name: String, keys: SyncKeys) throws -> Data {
+        let box = try AES.GCM.seal(data, using: keys.blob, authenticating: aad(vaultID: vaultID, recordKey: name, payloadVersion: 1))
+        var frame = Data(capacity: data.count + blobMagic.count + 28)
+        frame.append(blobMagic)
+        frame.append(contentsOf: box.nonce)
+        frame.append(box.ciphertext)
+        frame.append(box.tag)
+        return frame
+    }
+
+    static func openBlob(_ frame: Data, vaultID: String, name: String, keys: SyncKeys) throws -> Data {
+        guard frame.count >= blobMagic.count + 28, frame.prefix(blobMagic.count) == blobMagic else { throw Failure.badFormat }
+        do {
+            let box = try AES.GCM.SealedBox(combined: frame.dropFirst(blobMagic.count))
+            return try AES.GCM.open(box, using: keys.blob, authenticating: aad(vaultID: vaultID, recordKey: name, payloadVersion: 1))
+        } catch {
+            throw Failure.decryptionFailed
+        }
+    }
+
+    private static let blobMagic = Data("TRSB".utf8)
 
     static func base64URL(_ data: Data) -> String {
         data.base64EncodedString()

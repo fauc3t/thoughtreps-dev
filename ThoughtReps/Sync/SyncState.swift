@@ -16,6 +16,42 @@ struct SyncedRecord: Sendable, Equatable {
     var baseContent: Data
 }
 
+/// A pulled record not applied yet because the thought's other record hasn't arrived (see `RemoteOutcome.held`).
+/// The payload is the plaintext, like `SyncedRecord.baseContent`.
+struct HeldRecord: Sendable, Equatable {
+    var recordKey: String
+    var type: SyncRecordType
+    var entityID: String
+    var seq: Int64
+    var payload: Data
+    /// Held because applying it failed for a reason that can clear up (a blob not on the server yet, an image
+    /// that belongs to another thought), not because the thought's other record is still to come. Retried every cycle.
+    var blocked = false
+}
+
+/// A pulled record this version can't read (a newer payload version or an unknown type), kept still sealed.
+struct ParkedRecord: Sendable, Equatable {
+    var recordKey: String
+    var seq: Int64
+    var payload: Data
+    var deleted: Bool
+}
+
+/// Everything a pulled page changes in `sync.sqlite`, committed together: if applying the page failed, none of it is.
+struct PageCommit: Sendable {
+    var records: [SyncedRecord] = []
+    var hold: [HeldRecord] = []
+    /// Entity ids whose held records are done with (applied, deleted or superseded).
+    var release: [String] = []
+    var park: [ParkedRecord] = []
+    /// Record keys that were read this time, so any parked copy is dropped.
+    var unpark: [String] = []
+    /// Entities to push after this page; queued in the same transaction, so a crash can't lose them.
+    var requeue: [SyncEntity] = []
+    var cursor: Int64
+    var epoch: Int64
+}
+
 struct OutboxEntry: Sendable, Equatable {
     var entity: SyncEntity
     /// Bumped by every enqueue of the same entity; `markSynced` dequeues only the generation it pushed.
@@ -70,6 +106,7 @@ actor SyncState {
         var isEnabled: Bool
         var pending: [Queued] = []
         var wipeNeeded = false
+        var observer: (@Sendable () -> Void)?
     }
 
     nonisolated let location: Location
@@ -134,7 +171,15 @@ actor SyncState {
             gate.pending.append(Queued(entities: entities, at: .now))
             return true
         }
-        if accepted { Task { await self.flush() } }
+        if accepted {
+            Task { await self.flush() }
+            gate.withLock { $0.observer }?()
+        }
+    }
+
+    /// Called after every accepted `enqueue`, from any thread; the sync triggers use it to debounce a push.
+    nonisolated func setEnqueueObserver(_ observer: (@Sendable () -> Void)?) {
+        gate.withLock { $0.observer = observer }
     }
 
     /// Returns once everything enqueued so far is applied.
@@ -182,13 +227,7 @@ actor SyncState {
             var dequeued = 0
             try database.transaction {
                 for record in records {
-                    try database.execute(
-                        "INSERT OR REPLACE INTO records(record_key, type, entity_id, seq, fingerprint, base_hash, base_content) VALUES(?, ?, ?, ?, ?, ?, ?)",
-                        [
-                            .text(record.recordKey), .text(record.type.rawValue), .text(record.entityID), .int(record.seq),
-                            .text(record.fingerprint), .text(record.baseHash), .blob(record.baseContent),
-                        ]
-                    )
+                    try Self.write(record, in: database)
                 }
                 for entry in entries {
                     try database.execute(
@@ -199,6 +238,28 @@ actor SyncState {
                 }
             }
             return dequeued
+        }
+    }
+
+    /// The synced records for a set of keys, in one query per few hundred.
+    func records(forKeys keys: [String]) throws -> [String: SyncedRecord] {
+        try perform { database in
+            var found: [String: SyncedRecord] = [:]
+            for start in stride(from: 0, to: keys.count, by: 500) {
+                let chunk = Array(keys[start..<min(start + 500, keys.count)])
+                let marks = Array(repeating: "?", count: chunk.count).joined(separator: ", ")
+                try database.query(
+                    "SELECT record_key, type, entity_id, seq, fingerprint, base_hash, base_content FROM records WHERE record_key IN (\(marks))",
+                    chunk.map(SQLiteValue.text)
+                ) { row in
+                    guard let type = SyncRecordType(rawValue: row.text(1)) else { return }
+                    found[row.text(0)] = SyncedRecord(
+                        recordKey: row.text(0), type: type, entityID: row.text(2), seq: row.int(3),
+                        fingerprint: row.text(4), baseHash: row.text(5), baseContent: row.data(6) ?? Data()
+                    )
+                }
+            }
+            return found
         }
     }
 
@@ -243,6 +304,190 @@ actor SyncState {
         }
     }
 
+    // MARK: Pulled pages and held records
+
+    /// Commits a pulled page: its record bases, the records held back, the cursor and the epoch, in one transaction.
+    func commit(_ page: PageCommit) throws {
+        try perform { database in
+            try database.transaction {
+                for record in page.records {
+                    try Self.write(record, in: database)
+                }
+                for entityID in page.release {
+                    try database.execute("DELETE FROM held WHERE entity_id = ?", [.text(entityID)])
+                }
+                for held in page.hold {
+                    try database.execute(
+                        "INSERT OR REPLACE INTO held(record_key, type, entity_id, seq, payload, blocked) VALUES(?, ?, ?, ?, ?, ?)",
+                        [
+                            .text(held.recordKey), .text(held.type.rawValue), .text(held.entityID), .int(held.seq), .blob(held.payload),
+                            .int(held.blocked ? 1 : 0),
+                        ]
+                    )
+                }
+                for key in page.unpark {
+                    try database.execute("DELETE FROM parked WHERE record_key = ?", [.text(key)])
+                }
+                for parked in page.park {
+                    try database.execute(
+                        "INSERT OR REPLACE INTO parked(record_key, seq, payload, deleted) VALUES(?, ?, ?, ?)",
+                        [.text(parked.recordKey), .int(parked.seq), .blob(parked.payload), .int(parked.deleted ? 1 : 0)]
+                    )
+                }
+                for entity in page.requeue {
+                    try database.execute(
+                        """
+                        INSERT INTO outbox(kind, id, generation, enqueued_at) VALUES(?, ?, 1, ?)
+                        ON CONFLICT(kind, id) DO UPDATE SET generation = generation + 1
+                        """,
+                        [.text(entity.kind.rawValue), .text(entity.id), .double(Date.now.timeIntervalSinceReferenceDate)]
+                    )
+                }
+                try Self.setMeta("cursor", String(page.cursor), in: database)
+                try Self.setMeta("epoch", String(page.epoch), in: database)
+            }
+        }
+        if !page.requeue.isEmpty { gate.withLock { $0.observer }?() }
+    }
+
+    func held(entityIDs: [String]) throws -> [HeldRecord] {
+        try perform { database in
+            var found: [HeldRecord] = []
+            for start in stride(from: 0, to: entityIDs.count, by: 500) {
+                let chunk = Array(entityIDs[start..<min(start + 500, entityIDs.count)])
+                let marks = Array(repeating: "?", count: chunk.count).joined(separator: ", ")
+                try database.query(
+                    "SELECT record_key, type, entity_id, seq, payload, blocked FROM held WHERE entity_id IN (\(marks))",
+                    chunk.map(SQLiteValue.text)
+                ) { row in
+                    guard let type = SyncRecordType(rawValue: row.text(1)) else { return }
+                    found.append(HeldRecord(
+                        recordKey: row.text(0), type: type, entityID: row.text(2), seq: row.int(3), payload: row.data(4) ?? Data(),
+                        blocked: row.int(5) != 0
+                    ))
+                }
+            }
+            return found
+        }
+    }
+
+    /// The thoughts with a record held back for a reason that can clear up.
+    func blockedEntityIDs() throws -> [String] {
+        try perform { database in
+            var ids: [String] = []
+            try database.query("SELECT DISTINCT entity_id FROM held WHERE blocked = 1 ORDER BY entity_id") { ids.append($0.text(0)) }
+            return ids
+        }
+    }
+
+    func parked() throws -> [ParkedRecord] {
+        try perform { database in
+            var found: [ParkedRecord] = []
+            try database.query("SELECT record_key, seq, payload, deleted FROM parked ORDER BY seq") { row in
+                found.append(ParkedRecord(recordKey: row.text(0), seq: row.int(1), payload: row.data(2) ?? Data(), deleted: row.int(3) != 0))
+            }
+            return found
+        }
+    }
+
+    func parkedKeys() throws -> Set<String> {
+        try perform { database in
+            var keys = Set<String>()
+            try database.query("SELECT record_key FROM parked") { keys.insert($0.text(0)) }
+            return keys
+        }
+    }
+
+    func parkedCount() throws -> Int {
+        try perform { database in
+            var total = 0
+            try database.query("SELECT count(*) FROM parked") { total = Int($0.int(0)) }
+            return total
+        }
+    }
+
+    // MARK: Resync snapshot
+
+    /// The synced thoughts that the server doesn't have after a full pull, by id after `after`, each with the content
+    /// fingerprint it was last synced with. Only meaningful while a snapshot from `resetSyncProgress(snapshotting:)` is kept.
+    func missingFromServer(after: String?, limit: Int) throws -> [(id: String, fingerprint: String)] {
+        try perform { database in
+            var found: [(id: String, fingerprint: String)] = []
+            try database.query(
+                """
+                SELECT s.entity_id, s.fingerprint FROM resync_snapshot s
+                WHERE s.entity_id > ? AND NOT EXISTS (SELECT 1 FROM records r WHERE r.type = 'thought.content' AND r.entity_id = s.entity_id)
+                ORDER BY s.entity_id LIMIT ?
+                """,
+                [.text(after ?? ""), .int(Int64(limit))]
+            ) { found.append((id: $0.text(0), fingerprint: $0.text(1))) }
+            return found
+        }
+    }
+
+    func hasResyncSnapshot() throws -> Bool {
+        try perform { database in
+            var total = 0
+            try database.query("SELECT count(*) FROM resync_snapshot") { total = Int($0.int(0)) }
+            return total > 0
+        }
+    }
+
+    /// Keeps only `rows` in the snapshot: the thoughts whose fate can't be decided yet.
+    func replaceResyncSnapshot(_ rows: [(id: String, fingerprint: String)]) throws {
+        try perform { database in
+            try database.transaction {
+                try database.execute("DELETE FROM resync_snapshot")
+                for row in rows {
+                    try database.execute("INSERT INTO resync_snapshot(entity_id, fingerprint) VALUES(?, ?)", [.text(row.id), .text(row.fingerprint)])
+                }
+            }
+        }
+    }
+
+    func releaseHeld(entityIDs: [String]) throws {
+        try perform { database in
+            try database.transaction {
+                for id in entityIDs {
+                    try database.execute("DELETE FROM held WHERE entity_id = ?", [.text(id)])
+                }
+            }
+        }
+    }
+
+    func heldCount() throws -> Int {
+        try perform { database in
+            var total = 0
+            try database.query("SELECT count(*) FROM held") { total = Int($0.int(0)) }
+            return total
+        }
+    }
+
+    // MARK: Blobs
+
+    /// Which of the blob names have been uploaded.
+    func uploadedBlobs(among names: [String]) throws -> Set<String> {
+        try perform { database in
+            var found = Set<String>()
+            for start in stride(from: 0, to: names.count, by: 500) {
+                let chunk = Array(names[start..<min(start + 500, names.count)])
+                let marks = Array(repeating: "?", count: chunk.count).joined(separator: ", ")
+                try database.query("SELECT name FROM blobs WHERE name IN (\(marks))", chunk.map(SQLiteValue.text)) { found.insert($0.text(0)) }
+            }
+            return found
+        }
+    }
+
+    func markBlobsUploaded(_ names: [String]) throws {
+        try perform { database in
+            try database.transaction {
+                for name in names {
+                    try database.execute("INSERT OR IGNORE INTO blobs(name) VALUES(?)", [.text(name)])
+                }
+            }
+        }
+    }
+
     // MARK: Cursor and epoch
 
     /// The highest server seq pulled; 0 before the first pull.
@@ -262,13 +507,31 @@ actor SyncState {
         try perform { try Self.setMeta("epoch", String(epoch), in: $0) }
     }
 
-    /// Forgets the cursor, epoch, every synced record and the outbox. A reconcile must follow, or nothing
-    /// is queued to push. The vault stays configured.
-    func resetSyncProgress() throws {
+    /// Forgets the cursor, every synced record, held record and the outbox, and the epoch unless `keepingEpoch`.
+    /// Uploaded blobs are kept with `keepingBlobs` (the server doesn't drop blobs when it prunes records).
+    /// A reconcile must follow, or nothing is queued to push. The vault stays configured.
+    ///
+    /// With `snapshotting`, the thoughts that were synced (and the content fingerprint each was synced with) are first
+    /// copied aside, so that after the full pull the engine can tell a thought the server pruned a deletion for
+    /// from one it never had. Without it, the snapshot is dropped too.
+    func resetSyncProgress(keepingBlobs: Bool = false, keepingEpoch: Bool = false, snapshotting: Bool = false) throws {
         try perform { database in
+            let epoch = keepingEpoch ? try Self.meta("epoch", in: database) : nil
             try database.transaction {
-                try Self.clearContents(of: database)
+                var hasSnapshot = false
+                try database.query("SELECT 1 FROM resync_snapshot LIMIT 1") { _ in hasSnapshot = true }
+                // A snapshot that is still unresolved (a second 410 mid-resync) is the better record; `records` is partial now.
+                if snapshotting, !hasSnapshot {
+                    try database.execute(
+                        """
+                        INSERT INTO resync_snapshot(entity_id, fingerprint)
+                        SELECT entity_id, fingerprint FROM records WHERE type = 'thought.content' AND fingerprint LIKE 'c%'
+                        """
+                    )
+                }
+                try Self.clearContents(of: database, keepingBlobs: keepingBlobs, keepingSnapshot: snapshotting)
                 try database.execute("INSERT INTO meta(key, value) VALUES('vault_id', ?)", [.text(self.vaultID ?? "")])
+                if let epoch { try Self.setMeta("epoch", epoch, in: database) }
             }
         }
     }
@@ -423,16 +686,45 @@ actor SyncState {
         } else if version != schemaVersion {
             throw SQLiteError(code: SQLITE_SCHEMA, message: "sync state schema version \(version)")
         }
+        // Added after version 1 reached main; harmless to repeat, and a version-1 file from before them keeps working.
+        try database.execute("CREATE TABLE IF NOT EXISTS blobs(name TEXT PRIMARY KEY)")
+        try database.execute(
+            """
+            CREATE TABLE IF NOT EXISTS held(
+                record_key TEXT PRIMARY KEY, type TEXT NOT NULL, entity_id TEXT NOT NULL, seq INTEGER NOT NULL, payload BLOB NOT NULL,
+                blocked INTEGER NOT NULL DEFAULT 0
+            )
+            """
+        )
+        try database.execute(
+            "CREATE TABLE IF NOT EXISTS parked(record_key TEXT PRIMARY KEY, seq INTEGER NOT NULL, payload BLOB NOT NULL, deleted INTEGER NOT NULL)"
+        )
+        try database.execute("CREATE TABLE IF NOT EXISTS resync_snapshot(entity_id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL)")
+        try database.execute("CREATE INDEX IF NOT EXISTS held_by_entity ON held(entity_id)")
         try database.query("SELECT count(*) FROM meta") { _ in }
         try database.query("SELECT count(*) FROM records") { _ in }
         try database.query("SELECT count(*) FROM outbox") { _ in }
         return database
     }
 
-    private static func clearContents(of database: SQLiteDatabase) throws {
+    private static func clearContents(of database: SQLiteDatabase, keepingBlobs: Bool = false, keepingSnapshot: Bool = false) throws {
         try database.execute("DELETE FROM records")
+        try database.execute("DELETE FROM held")
+        try database.execute("DELETE FROM parked")
+        if !keepingSnapshot { try database.execute("DELETE FROM resync_snapshot") }
         try database.execute("DELETE FROM outbox")
         try database.execute("DELETE FROM meta")
+        if !keepingBlobs { try database.execute("DELETE FROM blobs") }
+    }
+
+    private static func write(_ record: SyncedRecord, in database: SQLiteDatabase) throws {
+        try database.execute(
+            "INSERT OR REPLACE INTO records(record_key, type, entity_id, seq, fingerprint, base_hash, base_content) VALUES(?, ?, ?, ?, ?, ?, ?)",
+            [
+                .text(record.recordKey), .text(record.type.rawValue), .text(record.entityID), .int(record.seq),
+                .text(record.fingerprint), .text(record.baseHash), .blob(record.baseContent),
+            ]
+        )
     }
 
     private static func meta(_ key: String, in database: SQLiteDatabase) throws -> String? {

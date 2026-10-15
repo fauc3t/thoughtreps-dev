@@ -207,10 +207,10 @@ enum SyncPayload: Equatable, Sendable {
         return decoder
     }
 
-    static func decode(_ data: Data) throws -> SyncPayload {
+    static func decode(_ data: Data, supporting maxVersion: Int = currentVersion) throws -> SyncPayload {
         let decoder = Self.decoder()
         let header = try decoder.decode(Header.self, from: data)
-        guard header.v >= 1, header.v <= currentVersion else { throw Failure.unsupportedVersion(header.v) }
+        guard header.v >= 1, header.v <= maxVersion else { throw Failure.unsupportedVersion(header.v) }
         guard let type = SyncRecordType(rawValue: header.type) else { throw Failure.unknownType(header.type) }
         if header.deleted {
             guard type == .thoughtContent || type == .thoughtMeta else { throw Failure.invalid }

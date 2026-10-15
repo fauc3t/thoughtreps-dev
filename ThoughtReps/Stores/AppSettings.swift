@@ -35,7 +35,10 @@ enum AppSettings {
 
     /// Call when the user changes the default interval.
     static func recordDefaultIntervalChange(now: Date, defaults: UserDefaults = .standard, sync: SyncState = .shared) {
-        defaults.set(now, forKey: Key.defaultIntervalChangedAt)
+        let clock = SyncClock(defaults: defaults)
+        let stamped = clock.stamp(now)
+        if stamped > now { clock.observe(stamped) }
+        defaults.set(stamped, forKey: Key.defaultIntervalChangedAt)
         sync.enqueue([.settings])
     }
 

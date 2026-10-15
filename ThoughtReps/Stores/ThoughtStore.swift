@@ -86,6 +86,17 @@ struct ThoughtStore {
     var searchIndex: SearchIndex = .shared
     /// Told which thoughts and tags to push after every write; a no-op while sync is off. See `SyncState`.
     var syncState: SyncState = .shared
+    /// Where the skew-safe change clock and the synced default interval are kept; see `SyncClock`.
+    var syncDefaults: UserDefaults = .standard
+
+    /// The value for a change clock written at `now`: `now`, or later if a synced device's clock was ahead.
+    /// A stamp past `now` is remembered, so the next write on a lagging clock is later still.
+    private func stamp(_ now: Date) -> Date {
+        let clock = SyncClock(defaults: syncDefaults)
+        let value = clock.stamp(now)
+        if value > now { clock.observe(value) }
+        return value
+    }
 
     // MARK: Create & edit
 
@@ -107,6 +118,12 @@ struct ThoughtStore {
             intervalDays: intervalDays
         )
         if learn { thought.intervalMode = .learn }
+        let clock = stamp(now)
+        if clock != now {
+            thought.updatedAt = clock
+            thought.scheduleChangedAt = clock
+            thought.stateChangedAt = clock
+        }
         context.insert(thought)
         let plan = plan(for: thought, body: body, blocks: blocks, images: images)
         let tagsSynced = syncTags(for: thought, texts: plan.texts)
@@ -130,10 +147,11 @@ struct ThoughtStore {
             reindex(ids: [thought.id])
             syncEnqueueContent(of: [thought.id])
         }
-        return performUpdate(thought, body: body, blocks: blocks, images: images, intervalDays: intervalDays, now: now)
+        return performUpdate(thought, body: body, blocks: blocks, images: images, intervalDays: intervalDays, now: stamp(now))
     }
 
-    private func performUpdate(
+    /// `now` is only a change clock here, so `update` passes it stamped.
+    func performUpdate(
         _ thought: Thought, body: String, blocks: [BlockDraft], images: [ImageDraft], intervalDays: Int?, now: Date
     ) -> Bool {
         if pendingImageSaves.ids.contains(thought.id), !removeTokenlessInlineImages(of: thought) {
@@ -628,7 +646,7 @@ struct ThoughtStore {
             reindex(ids: [thought.id])
             syncEnqueueContent(of: [thought.id])
         }
-        thought.updatedAt = now
+        thought.updatedAt = stamp(now)
         guard persist() else { return false }
         let block = Block(kind: .thoughtLink, content: "", order: order, linkedThoughtID: targetID)
         context.insert(block)
@@ -648,7 +666,7 @@ struct ThoughtStore {
             reindex(ids: [thought.id])
             syncEnqueueContent(of: [thought.id])
         }
-        thought.updatedAt = now
+        thought.updatedAt = stamp(now)
         guard persist() else { return false }
         for image in link.images ?? [] {
             remove(image)
@@ -688,7 +706,7 @@ struct ThoughtStore {
         defer { syncEnqueue(thought) }
         let dueBefore = thought.nextDueAt
         thought.applyView(defaultIntervalDays: defaultIntervalDays, now: now)
-        if thought.nextDueAt != dueBefore { thought.scheduleChangedAt = now }
+        if thought.nextDueAt != dueBefore { thought.scheduleChangedAt = stamp(now) }
         guard persist() else { return false }
         if countsAsDueOpen { ratingPrompt.recordDueOpen() }
         return true
@@ -707,7 +725,7 @@ struct ThoughtStore {
     func snooze(_ thought: Thought, days: Int, now: Date) -> Bool {
         defer { syncEnqueue(thought) }
         thought.applySnooze(days: days, now: now)
-        thought.scheduleChangedAt = now
+        thought.scheduleChangedAt = stamp(now)
         return persist()
     }
 
@@ -716,7 +734,7 @@ struct ThoughtStore {
         defer { syncEnqueue(thought) }
         thought.intervalDays = days
         if thought.intervalMode != .learn { reanchor(thought) }
-        thought.scheduleChangedAt = now
+        thought.scheduleChangedAt = stamp(now)
         return persist()
     }
 
@@ -734,7 +752,7 @@ struct ThoughtStore {
             thought.intervalMode = .fixed
             reanchor(thought)
         }
-        thought.scheduleChangedAt = now
+        thought.scheduleChangedAt = stamp(now)
         return persist()
     }
 
@@ -751,7 +769,7 @@ struct ThoughtStore {
         )
         thought.nextDueAt = result.nextDueAt
         thought.learnIntervalDays = result.learnIntervalDays
-        thought.scheduleChangedAt = now
+        thought.scheduleChangedAt = stamp(now)
         guard persist() else { return false }
         ratingPrompt.recordDueOpen()
         return true
@@ -776,7 +794,7 @@ struct ThoughtStore {
         guard tag.colorHex != normalized else { return true }
         defer { syncState.enqueue([.tag(tag.name)]) }
         tag.colorHex = normalized
-        tag.updatedAt = now
+        tag.updatedAt = stamp(now)
         return persist()
     }
 
@@ -786,7 +804,7 @@ struct ThoughtStore {
         guard thought.isPinned != wanted else { return true }
         defer { syncEnqueue(thought) }
         thought.isPinned = wanted
-        thought.stateChangedAt = now
+        thought.stateChangedAt = stamp(now)
         return persist()
     }
 
@@ -795,7 +813,7 @@ struct ThoughtStore {
         thought.isArchived = true
         thought.isPinned = false
         thought.archivedAt = now
-        thought.stateChangedAt = now
+        thought.stateChangedAt = stamp(now)
         defer {
             indexFingerprint(of: thought)
             syncEnqueue(thought)
@@ -808,8 +826,9 @@ struct ThoughtStore {
         thought.isArchived = false
         thought.archivedAt = nil
         thought.nextDueAt = Scheduler.restoredDue(now: now)
-        thought.stateChangedAt = now
-        thought.scheduleChangedAt = now
+        let clock = stamp(now)
+        thought.stateChangedAt = clock
+        thought.scheduleChangedAt = clock
         defer {
             indexFingerprint(of: thought)
             syncEnqueue(thought)
@@ -821,7 +840,7 @@ struct ThoughtStore {
     func delete(_ thought: Thought, now: Date) -> Bool {
         let id = thought.id
         deleteWithChildren(thought)
-        context.insert(Tombstone(id: id, kind: .thought, deletedAt: now))
+        context.insert(Tombstone(id: id, kind: .thought, deletedAt: stamp(now)))
         defer {
             reindex(ids: [id])
             syncState.enqueue([.thought(id)])
@@ -830,7 +849,7 @@ struct ThoughtStore {
     }
 
     /// Deletes blocks and images explicitly rather than by cascade; see `persist()`.
-    private func deleteWithChildren(_ thought: Thought) {
+    func deleteWithChildren(_ thought: Thought) {
         for block in thought.blocks ?? [] {
             for image in block.images ?? [] {
                 remove(image)
@@ -880,6 +899,7 @@ struct ThoughtStore {
         guard persist() else { return false }
         searchIndex.submit(.removeAll)
         syncState.disable()
+        SyncClock(defaults: syncDefaults).reset()
         return true
     }
 
@@ -890,7 +910,7 @@ struct ThoughtStore {
         _ thought: Thought, nextDueAt: Date, lastViewedAt: Date?, viewCount: Int, learnIntervalDays: Int? = nil, now: Date
     ) -> Bool {
         defer { syncEnqueue(thought) }
-        thought.scheduleChangedAt = now
+        thought.scheduleChangedAt = stamp(now)
         thought.nextDueAt = nextDueAt
         thought.lastViewedAt = lastViewedAt
         thought.viewCount = viewCount
@@ -970,45 +990,17 @@ struct ThoughtStore {
         }
         let items = ids.compactMap { newest[$0] }
 
-        let stored: [UUID: Thought]
-        var imageOwners: [UUID: UUID?] = [:]
-        var fileOwners: [UUID: UUID?] = [:]
-        var takenBlockIDs = Set<UUID>()
-        do {
-            let lookup = ids
-            stored = Dictionary(
-                try context.fetch(FetchDescriptor<Thought>(predicate: #Predicate { lookup.contains($0.id) })).map { ($0.id, $0) },
-                uniquingKeysWith: { first, _ in first }
-            )
-            let imageIDs = items.flatMap(\.record.imageIDs)
-            for image in try context.fetch(FetchDescriptor<ImageAsset>(predicate: #Predicate { imageIDs.contains($0.id) })) {
-                imageOwners[image.id] = image.thought?.id
-            }
-            let fileIDs = items.flatMap(\.record.fileIDs)
-            for file in try context.fetch(FetchDescriptor<FileAsset>(predicate: #Predicate { fileIDs.contains($0.id) })) {
-                fileOwners[file.id] = file.thought?.id
-            }
-            let blockIDs = items.flatMap { $0.record.blocks.map(\.id) }
-            takenBlockIDs = Set(try context.fetch(FetchDescriptor<Block>(predicate: #Predicate { blockIDs.contains($0.id) })).map(\.id))
-        } catch {
-            Self.logger.error("Import lookup failed: \(error)")
-            saveErrors.report(error)
-            return false
-        }
+        guard let lookup = lookUp(items) else { return false }
+        let stored = lookup.stored
+        var takenBlockIDs = lookup.takenBlockIDs
 
         var additions: [ImportedThought] = []
-        var replacements: [(thought: Thought, item: ImportedThought, wins: GroupWins)] = []
+        var replacements: [Replacement] = []
         var claimedImageIDs = Set<UUID>()
         var claimedFileIDs = Set<UUID>()
         for item in items {
             let record = item.record
-            let imageClash = record.imageIDs.contains { imageID in
-                claimedImageIDs.contains(imageID) || imageOwners[imageID].map { $0 != record.id } ?? false
-            }
-            let fileClash = record.fileIDs.contains { fileID in
-                claimedFileIDs.contains(fileID) || fileOwners[fileID].map { $0 != record.id } ?? false
-            }
-            if imageClash || fileClash {
+            if clashes(record, claimedImageIDs: claimedImageIDs, claimedFileIDs: claimedFileIDs, lookup: lookup) {
                 tally.rejected += 1
             } else if let current = stored[record.id] {
                 let wins = GroupWins(
@@ -1022,7 +1014,7 @@ struct ThoughtStore {
                         claimedImageIDs.formUnion(record.imageIDs)
                         claimedFileIDs.formUnion(record.fileIDs)
                     }
-                    replacements.append((current, item, wins))
+                    replacements.append(Replacement(thought: current, item: item, wins: wins))
                 } else {
                     tally.upToDate += 1
                 }
@@ -1032,7 +1024,68 @@ struct ThoughtStore {
                 additions.append(item)
             }
         }
+        return execute(additions: additions, replacements: replacements, tags: tagInfo, takenBlockIDs: &takenBlockIDs, tally: &tally)
+    }
 
+    /// The stored state the merge of a batch of records depends on.
+    struct ImportLookup {
+        var stored: [UUID: Thought]
+        /// Image and file ids already stored, with their owner thought.
+        var imageOwners: [UUID: UUID?] = [:]
+        var fileOwners: [UUID: UUID?] = [:]
+        var takenBlockIDs = Set<UUID>()
+    }
+
+    /// Nil, after reporting, if a fetch failed.
+    func lookUp(_ items: [ImportedThought]) -> ImportLookup? {
+        var lookup = ImportLookup(stored: [:])
+        do {
+            let ids = items.map(\.record.id)
+            lookup.stored = Dictionary(
+                try context.fetch(FetchDescriptor<Thought>(predicate: #Predicate { ids.contains($0.id) })).map { ($0.id, $0) },
+                uniquingKeysWith: { first, _ in first }
+            )
+            let imageIDs = items.flatMap(\.record.imageIDs)
+            for image in try context.fetch(FetchDescriptor<ImageAsset>(predicate: #Predicate { imageIDs.contains($0.id) })) {
+                lookup.imageOwners[image.id] = image.thought?.id
+            }
+            let fileIDs = items.flatMap(\.record.fileIDs)
+            for file in try context.fetch(FetchDescriptor<FileAsset>(predicate: #Predicate { fileIDs.contains($0.id) })) {
+                lookup.fileOwners[file.id] = file.thought?.id
+            }
+            let blockIDs = items.flatMap { $0.record.blocks.map(\.id) }
+            lookup.takenBlockIDs = Set(try context.fetch(FetchDescriptor<Block>(predicate: #Predicate { blockIDs.contains($0.id) })).map(\.id))
+        } catch {
+            Self.logger.error("Import lookup failed: \(error)")
+            saveErrors.report(error)
+            return nil
+        }
+        return lookup
+    }
+
+    /// Whether the record's images or files are already another thought's (or claimed by an earlier record of the batch).
+    func clashes(_ record: ThoughtRecord, claimedImageIDs: Set<UUID>, claimedFileIDs: Set<UUID>, lookup: ImportLookup) -> Bool {
+        let imageClash = record.imageIDs.contains { imageID in
+            claimedImageIDs.contains(imageID) || lookup.imageOwners[imageID].map { $0 != record.id } ?? false
+        }
+        let fileClash = record.fileIDs.contains { fileID in
+            claimedFileIDs.contains(fileID) || lookup.fileOwners[fileID].map { $0 != record.id } ?? false
+        }
+        return imageClash || fileClash
+    }
+
+    struct Replacement {
+        let thought: Thought
+        let item: ImportedThought
+        let wins: GroupWins
+    }
+
+    /// Writes what the merge decided: tags first, then added thoughts in one save (dropping their tombstones),
+    /// then each replacement.
+    func execute(
+        additions: [ImportedThought], replacements: [Replacement], tags tagInfo: [TagRecord],
+        takenBlockIDs: inout Set<UUID>, tally: inout ImportTally
+    ) -> Bool {
         guard let tagsByName = saveTags(
             for: additions + replacements.filter(\.wins.content).map(\.item), info: tagInfo
         ) else { return false }
@@ -1056,15 +1109,15 @@ struct ThoughtStore {
             guard persist() else { return false }
             tally.added += additions.count
         }
-        for (thought, item, wins) in replacements {
-            guard replace(thought, with: item, wins: wins, takenBlockIDs: &takenBlockIDs) else { return false }
+        for replacement in replacements {
+            guard replace(replacement.thought, with: replacement.item, wins: replacement.wins, takenBlockIDs: &takenBlockIDs) else { return false }
             tally.replaced += 1
         }
         return true
     }
 
     /// Which groups of a stored thought the imported record wins.
-    private struct GroupWins {
+    struct GroupWins {
         let content: Bool
         let schedule: Bool
         let state: Bool
@@ -1253,7 +1306,7 @@ struct ThoughtStore {
     // Any new writer that changes the body, block content or titles, or tag names must reindex the
     // thought (`reindex(ids:)`), or search results go stale until the next launch's reconciliation.
 
-    private func indexUpsert(_ thought: Thought) {
+    func indexUpsert(_ thought: Thought) {
         searchIndex.submit(.upsert(SearchDocument(thought)))
     }
 
@@ -1310,7 +1363,7 @@ struct ThoughtStore {
         syncState.enqueue(entities)
     }
 
-    private static let logger = Logger(subsystem: "com.thoughtreps", category: "store")
+    static let logger = Logger(subsystem: "com.thoughtreps", category: "store")
 
     /// Saves, and on failure rolls back so memory matches disk.
     ///
@@ -1330,7 +1383,7 @@ struct ThoughtStore {
     /// them crashes), and refuses to edit it if that fails. Keep any new write on a stored
     /// thought within those shapes.
     @discardableResult
-    private func persist(requiring ok: Bool = true) -> Bool {
+    func persist(requiring ok: Bool = true) -> Bool {
         guard ok else {
             context.rollback()
             return false
