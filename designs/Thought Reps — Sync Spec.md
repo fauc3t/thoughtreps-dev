@@ -79,15 +79,23 @@ The rest of this spec is written for **B**, with notes where A differs. Under A,
 ## 4. Encryption
 
 - **One vault key K:** 256 bits, generated on the first device. Keychain storage per section 5.
-- **Keys derived from K (HKDF-SHA256):**
-  - `K_rec`: AES-256-GCM key for records.
-  - `K_blob`: AES-256-GCM key for images.
-  - `K_idx`: HMAC key that turns `(type, uuid)` into a record key the server can't read, so the server never sees thought ids.
-  - `K_auth`: proves knowledge of K to the server (a verifier is stored at vault creation), so a device holding only the recovery code can join (section 6).
-- AAD = `vaultId | recordKey | payloadVersion`, each part length-prefixed, so the server can't swap ciphertexts between records. Wire dates are exact `Double` seconds, not the backup's ISO 8601, so clocks round-trip losslessly.
+- **Keys derived from K (HKDF-SHA256, empty salt, `info` = `thoughtreps.sync.v1.<name>`):**
+  - `K_rec` (`record`): AES-256-GCM key for sealed records.
+  - `K_blob` (`blob`): AES-256-GCM key for every blob: images, files and sealed records too big to go inline (section 10).
+  - `K_idx` (`index`): HMAC-SHA256 key behind the opaque names the server sees: record keys `base64url(HMAC(K_idx, "<type>|<uuid>"))`, asset blob names `base64url(HMAC(K_idx, "blob.<image|file>|<uuid>"))` and record-blob names `base64url(HMAC(K_idx, "blob.record|<recordKey>|<plaintext hash>"))`. All are 43 characters, so the server never sees thought or asset ids.
+  - `K_auth` (`auth`): proves knowledge of K to the server (a verifier is stored at vault creation), so a device holding only the recovery code can join (section 6). **Its info string becomes permanent the moment phase 2 derives the verifier from it;** until then nothing depends on it, but the other three already are (they are in every stored byte).
+- **Frames** (integers big-endian; `lp(x)` is a `u32` byte count followed by the UTF-8 bytes; `SyncCrypto` is the reference and `SyncGoldenTests` pins every byte):
+  - **Record frame:** `"TRS1"` | key generation (1 byte, `1`) | payload version (1 byte) | nonce (12) | ciphertext | tag (16). The ciphertext is AES-256-GCM under `K_rec` of `u32 plaintext length | plaintext | zero padding`. AAD: `lp(vaultId) | lp(recordKey) | u32 payloadVersion | u8 keyGeneration`.
+  - **Blob frame:** `"TRSB"` | key generation (1 byte, `1`) | nonce (12) | ciphertext | tag (16), the ciphertext being the data itself under `K_blob`, not padded. AAD: `lp(vaultId) | lp(blobName) | u8 keyGeneration`. A record too big to go inline is its whole sealed record frame sealed this way.
+  - **Pointer:** the payload of a record whose sealed frame is in a blob: `"TRP1"` | the 43-character blob name. Anything else after the magic is damage.
+  - Every ciphertext gets a fresh random nonce. The AAD binds the vault, the record (or blob name), the payload version and the key generation, so the server can't swap ciphertexts between records, vaults, versions or key generations.
+  - **Key generation** is reserved for key rotation (a later phase re-encrypts under a new key and bumps it). A reader that sees a generation it doesn't know parks the record, like a newer payload version.
+  - **Unknown magics:** a payload whose first four bytes are `TR` plus anything this build doesn't know (a future `TRS2`, `TRP2`, a blob `TRSC`), or a pointer whose blob opens to such a frame, is parked as "update required" (section 9), never an error. A genuine AES-GCM failure under a known magic is damage or tampering: it stops the cycle, except behind a pointer, where it holds just that thought and backs off.
+- **Padding (closes the open question):** the plaintext is padded inside the ciphertext so the whole record frame lands on a size bucket: a power of two from 512 bytes to 1 MiB, then whole MiB. Short and long thoughts below a bucket look alike; the length comes back from the `u32` prefix. A full bucket (65,536 bytes) still fits the 64 KB inline limit. The record's base hash, and so no-op detection, is over the unpadded plaintext, so identical records hash identically on every device. Blobs aren't padded: an image's size is its own, and a record blob already holds a padded frame.
+- Wire dates are a `Double` of seconds since 2001-01-01T00:00:00Z (Swift `.deferredToDate`, the reference date), not the backup's ISO 8601, so clocks round-trip losslessly. The record bodies are sync's own frozen Codable types (`SyncWireV1`, and the meta, settings and deletion structs), not the backup format's, so a backup format change can't alter a payload; golden tests pin the exact JSON.
 - This reuses the export link's CryptoKit code, with the same pattern as its `TRB1` framing.
 - **Encrypted per record, not as one blob.** Each thought is two records (content and meta), each encrypted on its own with a fresh random nonce; each tag is a record; settings is one record; each image is one blob. Editing one thought uploads one small record. The full-backup snapshot in section 9 is only an optional speedup for first sync, not how data is stored.
-- **What the server still sees:** the number of records, their sizes, when something changed and which opaque record changed. Not text, tags or thought ids. Option: pad payloads to size buckets so short and long thoughts look alike (cheap, decide before shipping).
+- **What the server still sees:** the number of records, their size bucket (not their length), when something changed and which opaque record changed. It also sees each record's `deleted` flag in plain text (a push and a pull carry it beside the ciphertext, so the server can keep tombstones and prune them), so it knows when something was deleted, and the exact size of each image and file blob. Not text, tags or thought ids.
 
 ## 5. Getting the key onto a new device
 
@@ -146,6 +154,7 @@ iCloud Keychain is a convenience, not a dependency: sync works with QR and the r
 
 - `TransactWriteItems` (at most 100 actions and 4 MB, so batches of up to 99 records, also limited by bytes).
 - The first action moves `HEAD` forward on the condition `headSeq = :expected` (and adjusts the live-record count). `:expected` is the push Lambda's own read of `HEAD` just before the transaction, not the device's cursor; if another push lands in between, the Lambda re-reads and retries. A device never needs the vault's latest seq to push.
+- The same action also carries the condition `epoch = :epoch`, where `:epoch` is the epoch the device sent with the push (the one it last pulled). If the vault was erased or replaced in between, the whole transaction is refused (409 `epoch-changed` with the server's epoch) and writes nothing, so a device that missed an "Erase on all devices" can never bring its old records back. The client stops with `epochChanged`, exactly as when a pull shows a new epoch.
 - Each record is a put with `seq = expected + i` and the condition `attribute_not_exists(seq) OR seq = :baseSeq`, where `baseSeq` is the seq of the version the device last synced for that record.
 
 **`headSeq` in short:** one counter per vault, shared by all its devices and moved only by the server. Each device keeps its own cursor (highest seq pulled) in `sync.sqlite`. A seq says what changed since; it never decides who wins a merge (the clocks do, section 8).
@@ -223,9 +232,10 @@ Only the device that lost the race merges; the other device receives the merged 
   - left alone while it's parked or held (the server has it, this device just hasn't applied it yet).
 - **Deletions vs edits:** a remote deletion loses to a local content edit after `deletedAt`, and vice versa. A remote deletion for a thought with a local tombstone raises its `deletedAt` to the later value, so devices converge on the max.
 - **Unreadable records:**
-  - Unknown type or newer version: parked sealed in `sync.sqlite`, sync continues, status `updateRequired`; re-tried only when the supported payload version changes. Parked tag and settings records don't block the rest of a push.
+  - Unknown type, newer payload version, newer key generation or an unrecognized frame magic (section 4): parked sealed in `sync.sqlite`, sync continues, status `updateRequired`; re-tried only when the build's reader version (`SyncCrypto.readerVersion`, one integer bumped whenever the app learns to read a new payload version, key generation or frame magic) changes, and that is noted only once every record that could be read has been applied (the parked list is read a few at a time, never whole). Parked tag and settings records don't block the rest of a push.
+  - A thought whose image or file bytes are missing on this device is held back alone (status `missingAttachments`, retried every cycle): its reference is never dropped, since the other devices would then delete an attachment they still have. The 30 s head check ignores entries held back this way (waiting, oversized, missing attachments); it runs a cycle when the head moved past the last pull, when the last cycle failed, or when something pushable is queued.
   - Decrypt or auth failure: the cycle stops with an error.
-  - Oversized: a record over 16 MB (`SyncLimits.maxRecordBytes`) or refused by the server as too large is held and counted in `Status.oversizedThoughts`; the queue never wedges. Users have no thought length cap.
+  - Oversized: a sealed record over 16 MiB (`SyncLimits.maxRecordBytes`, the largest padding bucket) or refused by the server as too large is held and counted in `Status.oversizedThoughts`; the queue never wedges. Users have no thought length cap.
   - Missing blob (including a record-blob pointer's) or a rejected thought: only that thought is held, retried every cycle (an unreadable blob backs off up to 32 cycles). One failing item never stops the cycle.
   - A local edit to a parked or held thought stays queued and isn't pushed until the server's version has applied here; then it merges normally. The rest of its batch still pushes.
 - **Apply in sub-batches** of at most 25 MB of image/file bytes (`SyncLimits.maxApplyBytes`); push reads blobs off the main actor.
@@ -283,8 +293,8 @@ This answers the open question in TODO.md.
 ## 10. Images
 
 - **Blob name:** phase 1b names blobs `HMAC(K_idx, asset id)`, not content, so a conflict copy that needs new image ids would re-upload. (Content-HMAC de-duplication is the alternative; the server never sees content either way.) The bytes are encrypted with `K_blob` and stored at `s3://…/v/<vaultId>/b/<name>`.
-- **Large records:** a sealed record over 64 KB (`SyncLimits.maxInlinePayload`) is sealed with `sealBlob` and uploaded as a blob named by an HMAC of the record key and content hash, before the push; the server row holds a `TRP1` pointer. Superseded pointer blobs aren't collected yet (TODO.md).
-- **Upload:** `POST /blobs/upload-urls` with names, sizes and SHA-256 values. The server returns presigned PUTs only for missing blobs, with `x-amz-checksum-sha256` enforced. Uploads use a background `URLSession`.
+- **Large records:** a sealed record over 64 KB (`SyncLimits.maxInlinePayload`) is sealed with `sealBlob` and uploaded as a blob named by an HMAC of the record key and content hash, before the push; the server row holds a `TRP1` pointer. Superseded pointer blobs aren't collected yet (TODO.md). A blob download is capped (`getBlob(maxBytes:)`): a sealed record blob at `maxRecordBytes` plus the frame, an image or file at `maxAssetBlobBytes` (25 MB); a bigger one is refused as unreadable and holds only its thought.
+- **Upload:** `POST /blobs/upload-urls` with the device's `epoch`, names, sizes and SHA-256 values. A mismatched epoch is refused (409 `epochChanged`) like a push, so a device that missed an erase can't refill the erased vault with orphan blobs; the same epoch rides on the existence check and the download URLs. The server returns presigned PUTs only for missing blobs, with `x-amz-checksum-sha256` enforced. Uploads use a background `URLSession`.
 - **Thumbnails:** not synced; regenerated on download, as backup import already does.
 - **Pull order:** records come down, blobs download, *then* the record is applied. This keeps the IntegrityChecker invariant that image data is present.
 - **Cleanup:** the server can't tell which blobs are still in use. A device with complete state occasionally sends the list of live blob names, and the server deletes anything else older than 30 days.
@@ -302,8 +312,8 @@ This answers the open question in TODO.md.
 | `POST /vaults/{id}/invites` | Create a pairing invite (QR fallback) |
 | `POST /pair` | Join a vault with an invite or a `K_auth` proof |
 | `GET/DELETE /vaults/{id}/devices[/{keyId}]` | List or remove devices |
-| `POST /push` | `{records:[{key, baseSeq, deleted, payload}]}` → `{headSeq, seqs}` or 409 `{conflicts}` |
-| `GET /pull?since=&limit=500&fullResync=` | → `{records, nextSeq, headSeq, more, epoch}`; 410 if `since < prunedBeforeSeq`, unless `fullResync` (the from-scratch pull after a 410) |
+| `POST /push` | `{epoch, records:[{key, baseSeq, deleted, payload}]}` → `{headSeq, seqs}`, 409 `{conflicts}` (a record moved), or 409 `{epochChanged, epoch}` (the vault's epoch isn't `epoch`; nothing written) |
+| `GET /pull?since=&limit=500&fullResync=` | → `{records, nextSeq, headSeq, more, epoch}`; 410 if `since < prunedBeforeSeq`, unless `fullResync` (the from-scratch pull after a 410). `nextSeq` is the last seq the page covers, read in the same consistent query as the records: the last record's seq when `more`, otherwise the head at the time of the query. The client's cursor becomes `nextSeq`, never `headSeq` (which a push can pass before it is read), and `more` with a `nextSeq` that hasn't moved is an error. |
 | `GET /head` | `{headSeq, epoch}`, a cheap poll |
 | `POST /blobs/upload-urls`, `/blobs/download-urls`, `/blobs/gc` | Image transfer and cleanup |
 | `POST /entitlement` | Signed App Store transaction from the device → verified and stored on the account |
@@ -397,7 +407,7 @@ Each phase merges to main behind a DEBUG-only flag; nothing is user-visible unti
 - **Before 3:** HEIC or JPEG as the image default.
 - **Before 4:** account (B) or no account (A). The only decision that changes code.
 - **Before 5:** subscription add-on or included, and the price.
-- **Before 6:** whether to pad record sizes.
+- **Before 6:** nothing on the wire format: padding to size buckets, the key-generation byte and the frame layouts are settled (section 4).
 
 **Later, not in v1:** bootstrap snapshot for very large libraries, key rotation (real device revocation), server escrow, Android (section 13).
 
@@ -407,7 +417,7 @@ Each phase merges to main behind a DEBUG-only flag; nothing is user-visible unti
 2. **Subscription add-on, or included?** Recommended: an add-on, so the paid-once app stays whole.
 3. **Reminders per device, off by default on new devices?** Recommended: yes.
 4. **iCloud Keychain key storage defaulted on?** Recommended: yes, with an explanation.
-5. **Pad record sizes to buckets?** Cheap; decide before shipping.
+5. ~~**Pad record sizes to buckets?**~~ Decided: yes, power-of-two buckets from 512 B to 1 MiB, then whole MiB (section 4).
 6. **HEIC or JPEG as the image default** before phase 3 (matters for a future web client).
 7. **Server escrow:** not in v1; add only if people ask, as a separate opt-in.
 

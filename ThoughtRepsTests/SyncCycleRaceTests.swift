@@ -26,6 +26,17 @@ struct SyncCycleRaceTests {
 
     @Test(arguments: seeds)
     func convergesWithWritesInsideCycles(seed: UInt64) async throws {
+        try await converge(seed: seed, harsh: false)
+    }
+
+    /// The same, with the transport failing calls, the server pruning tombstones (so a pull answers 410), and a write landing
+    /// inside the transport's push call itself, between the snapshot and the acknowledgement.
+    @Test(arguments: seeds)
+    func convergesWithWritesInsidePushesFailuresAnd410s(seed: UInt64) async throws {
+        try await converge(seed: seed, harsh: true)
+    }
+
+    private func converge(seed: UInt64, harsh: Bool) async throws {
         let server = FakeSyncServer()
         var devices: [SyncDevice] = []
         let offsets: [TimeInterval] = [0, -3 * 3600, 1800]
@@ -73,14 +84,20 @@ struct SyncCycleRaceTests {
             // A sync during which the user also writes, at random await points.
             var interferenceRng = SeededGenerator(seed: seed &* 7919 &+ UInt64(step))
             let tick = OSAllocatedBox(0)
-            device.makeEngine(wrap: { inner in
-                RaceLocal(inner, interfere: { [device] in
-                    guard Int.random(in: 0..<4, using: &interferenceRng) == 0 else { return }
-                    tick.value += 1
-                    if let d = try? randomOp(device, &interferenceRng, at: device.now(now.addingTimeInterval(Double(tick.value)))) { log.append("\(step) \(device.name) inside-sync \(d)") }
-                })
-            })
+            let interfere: @Sendable @MainActor () -> Void = { [device] in
+                guard Int.random(in: 0..<4, using: &interferenceRng) == 0 else { return }
+                tick.value += 1
+                if let d = try? randomOp(device, &interferenceRng, at: device.now(now.addingTimeInterval(Double(tick.value)))) { log.append("\(step) \(device.name) inside-sync \(d)") }
+            }
+            device.makeEngine(wrap: { inner in RaceLocal(inner, interfere: interfere) })
             if Int.random(in: 0..<6, using: &rng) == 0 { await server.dropNextPushResponse() }
+            if harsh {
+                if Int.random(in: 0..<5, using: &rng) == 0 { await server.failNextCall(after: Int.random(in: 0..<5, using: &rng)) }
+                if Int.random(in: 0..<7, using: &rng) == 0 { await server.prune(tombstonesBelow: await server.headSeq + 1) }
+                if Int.random(in: 0..<3, using: &rng) == 0 {
+                    await server.beforeNextPush { await interfere() }
+                }
+            }
             await device.sync()
             await server.clearFailures()
         }

@@ -44,6 +44,7 @@ struct EditorView: View {
     @State private var openedDrafts: [BlockDraft] = []
     @State private var openedIntervalDays: Int?
     @State private var openedLearn = false
+    @State private var openedBase: EditBase?
     @State private var isPickingLink = false
     @State private var linkTargets: [UUID: Thought] = [:]
     /// Whether any Markdown field has been focused yet; until then new blocks go at the end.
@@ -54,6 +55,17 @@ struct EditorView: View {
     @State private var titleTargetID: UUID?
     @State private var isEditingTitle = false
     @State private var titleDraft = ""
+
+    /// The thought being edited, unless another device's deletion has removed it since: a deleted model must not be read.
+    private var liveThought: Thought? {
+        guard case let .edit(thought) = mode, thought.modelContext != nil, !thought.isDeleted else { return nil }
+        return thought
+    }
+
+    private var isEditing: Bool {
+        if case .edit = mode { return true }
+        return false
+    }
 
     private var isNew: Bool {
         if case .new = mode { return true }
@@ -149,7 +161,7 @@ struct EditorView: View {
 
     /// Images already stored on the thought being edited.
     private var storedImages: [UUID: ImageAsset] {
-        guard case let .edit(thought) = mode else { return [:] }
+        guard let thought = liveThought else { return [:] }
         return Dictionary((thought.images ?? []).map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
     }
 
@@ -269,7 +281,7 @@ struct EditorView: View {
     /// The thoughts the picker leaves out: this one and every thought the drafts already link.
     private var pickerExclusions: Set<UUID> {
         var ids = linkedIDs
-        if case let .edit(thought) = mode { ids.insert(thought.id) }
+        if let id = openedBase?.content.id { ids.insert(id) }
         return ids
     }
 
@@ -286,7 +298,7 @@ struct EditorView: View {
         if let draft = inlineDrafts.first(where: { $0.id == id }), let processed = draft.processed {
             return processed.thumbnailData
         }
-        guard case let .edit(thought) = mode,
+        guard let thought = liveThought,
               let asset = thought.images?.first(where: { $0.id == id }), asset.isInline else { return nil }
         return asset.thumbnailData
     }
@@ -359,7 +371,7 @@ struct EditorView: View {
     private var learnBackLabel: String {
         let now = Date.now
         var due = Scheduler.learnStartDue(now: now)
-        if case .edit(let thought) = mode, openedLearn { due = thought.nextDueAt }
+        if let thought = liveThought, openedLearn { due = thought.nextDueAt }
         var phrase = RelativeDay.phrase(for: due, now: now)
         if phrase.hasPrefix("on ") { phrase.removeFirst(3) }
         return phrase.prefix(1).uppercased() + phrase.dropFirst()
@@ -374,6 +386,12 @@ struct EditorView: View {
         NavigationStack {
             ScrollViewReader { proxy in
             Form {
+                if isEditing && liveThought == nil {
+                    Section {
+                        Label("This thought was deleted on another device. Save keeps it as a new thought.", systemImage: "exclamationmark.triangle")
+                            .font(.footnote)
+                    }
+                }
                 Section {
                     MarkdownTextView(
                         text: $text,
@@ -597,6 +615,7 @@ struct EditorView: View {
             intervalDays = thought.intervalDays
             learn = thought.intervalMode == .learn
             drafts = BlockDraft.drafts(for: thought)
+            openedBase = EditBase(thought)
         }
         openedText = text
         openedDrafts = drafts
@@ -616,10 +635,11 @@ struct EditorView: View {
             let thought = store.create(body: trimmedText, blocks: drafts, images: inlineDrafts, intervalDays: intervalDays, learn: learn, now: .now)
             saved = thought.modelContext != nil
             if saved { onCreated?() }
-        case let .edit(thought):
+        case .edit:
             saveErrors.note = "Some changes may have been saved. Tap Save to finish."
-            saved = store.update(thought, body: trimmedText, blocks: drafts, images: inlineDrafts, intervalDays: intervalDays, now: .now)
-                && (learn == (thought.intervalMode == .learn) || store.setLearnMode(thought, learn, now: .now))
+            saved = openedBase.map {
+                store.saveEdit($0, body: trimmedText, blocks: drafts, images: inlineDrafts, intervalDays: intervalDays, learn: learn, now: .now)
+            } ?? false
         }
         if saved {
             dismiss()

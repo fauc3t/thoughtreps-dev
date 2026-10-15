@@ -206,7 +206,9 @@ struct SyncCryptoTests {
     @Test func roundTrip() throws {
         let sealed = try SyncCrypto.seal(plaintext, vaultID: "v", recordKey: "rk", payloadVersion: 1, keys: keys)
         #expect(sealed.prefix(4) == Data("TRS1".utf8))
-        #expect(sealed.count == plaintext.count + SyncCrypto.overheadBytes)
+        #expect(sealed[4] == SyncCrypto.currentKeyGeneration)
+        #expect(sealed[5] == 1)
+        #expect(sealed.count == 512, "a short record is padded to the smallest bucket")
         let opened = try SyncCrypto.open(sealed, vaultID: "v", recordKey: "rk", keys: keys)
         #expect(opened == SyncCrypto.Opened(payloadVersion: 1, plaintext: plaintext))
     }
@@ -231,22 +233,23 @@ struct SyncCryptoTests {
 
     @Test func aadIsUnambiguousAcrossFields() throws {
         #expect(
-            SyncCrypto.aad(vaultID: "A|B", recordKey: "K", payloadVersion: 1)
-                != SyncCrypto.aad(vaultID: "A", recordKey: "B|K", payloadVersion: 1)
+            SyncCrypto.recordAAD(vaultID: "A|B", recordKey: "K", payloadVersion: 1)
+                != SyncCrypto.recordAAD(vaultID: "A", recordKey: "B|K", payloadVersion: 1)
         )
+        #expect(SyncCrypto.blobAAD(vaultID: "A|B", name: "K") != SyncCrypto.blobAAD(vaultID: "A", name: "B|K"))
         let sealed = try SyncCrypto.seal(plaintext, vaultID: "A|B", recordKey: "K", payloadVersion: 1, keys: keys)
         #expect(throws: SyncCrypto.Failure.decryptionFailed) { try SyncCrypto.open(sealed, vaultID: "A", recordKey: "B|K", keys: keys) }
     }
 
     @Test func aChangedVersionByteFails() throws {
         var sealed = try SyncCrypto.seal(plaintext, vaultID: "v", recordKey: "rk", payloadVersion: 1, keys: keys)
-        sealed[4] = 2
+        sealed[5] = 2
         #expect(throws: SyncCrypto.Failure.decryptionFailed) { try SyncCrypto.open(sealed, vaultID: "v", recordKey: "rk", keys: keys) }
     }
 
     @Test func tamperingWithAnyByteFails() throws {
         let sealed = try SyncCrypto.seal(plaintext, vaultID: "v", recordKey: "rk", payloadVersion: 1, keys: keys)
-        for index in 4..<sealed.count {
+        for index in 5..<sealed.count {
             var changed = sealed
             changed[index] ^= 0x01
             #expect(throws: SyncCrypto.Failure.decryptionFailed) { try SyncCrypto.open(changed, vaultID: "v", recordKey: "rk", keys: keys) }
@@ -256,7 +259,7 @@ struct SyncCryptoTests {
     @Test func badFramesAreRecognized() throws {
         #expect(throws: SyncCrypto.Failure.badFormat) { try SyncCrypto.open(Data("short".utf8), vaultID: "v", recordKey: "rk", keys: keys) }
         var sealed = try SyncCrypto.seal(plaintext, vaultID: "v", recordKey: "rk", payloadVersion: 1, keys: keys)
-        sealed.replaceSubrange(0..<4, with: Data("TRB1".utf8))
+        sealed.replaceSubrange(0..<4, with: Data("XXXX".utf8))
         #expect(throws: SyncCrypto.Failure.badFormat) { try SyncCrypto.open(sealed, vaultID: "v", recordKey: "rk", keys: keys) }
         #expect(throws: SyncCrypto.Failure.invalidVersion) {
             try SyncCrypto.seal(plaintext, vaultID: "v", recordKey: "rk", payloadVersion: 300, keys: keys)
@@ -275,6 +278,159 @@ struct SyncCryptoTests {
         #expect(key.count == 43)
         #expect(key.allSatisfy { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" })
         #expect(!key.contains(id))
+    }
+
+    @Test func framesLandOnSizeBuckets() throws {
+        func sealedCount(_ bytes: Int) throws -> Int {
+            try SyncCrypto.seal(Data(repeating: 7, count: bytes), vaultID: "v", recordKey: "rk", payloadVersion: 1, keys: keys).count
+        }
+        let room = 512 - SyncCrypto.overheadBytes - SyncCrypto.lengthPrefixBytes
+        #expect(try sealedCount(0) == 512)
+        #expect(try sealedCount(room) == 512)
+        #expect(try sealedCount(room + 1) == 1024)
+        #expect(try sealedCount(5_000) == 8192)
+        #expect(try sealedCount(65_536 - SyncCrypto.overheadBytes - SyncCrypto.lengthPrefixBytes) == 65_536, "a full bucket still fits inline")
+        #expect(try sealedCount(1_048_576 - SyncCrypto.overheadBytes - SyncCrypto.lengthPrefixBytes) == 1_048_576)
+        #expect(try sealedCount(1_048_576) == 2 * 1_048_576, "past 1 MiB the steps are whole MiB")
+        #expect(try sealedCount(3 * 1_048_576 + 5) == 4 * 1_048_576)
+        #expect(SyncCrypto.bucket(forFrameBytes: 1) == 512)
+    }
+
+    @Test func paddingIsInsideTheCiphertextAndTheLengthComesBack() throws {
+        for size in [0, 1, 100, 470, 471, 472, 600, 4000, 70_000] {
+            let data = Data((0..<size).map { UInt8($0 % 251) })
+            let sealed = try SyncCrypto.seal(data, vaultID: "v", recordKey: "rk", payloadVersion: 1, keys: keys)
+            let opened = try SyncCrypto.open(sealed, vaultID: "v", recordKey: "rk", keys: keys)
+            #expect(opened.plaintext == data, "size \(size)")
+        }
+    }
+
+    @Test func theHashIgnoresPadding() throws {
+        let short = Data("{\"a\":1}".utf8)
+        let opened = try SyncCrypto.open(
+            SyncCrypto.seal(short, vaultID: "v", recordKey: "rk", payloadVersion: 1, keys: keys), vaultID: "v", recordKey: "rk", keys: keys
+        )
+        #expect(SyncPayload.hash(of: opened.plaintext) == SyncPayload.hash(of: short))
+    }
+
+    @Test func anUnrecognizedFrameMagicIsANewerFormatNotDamage() throws {
+        let sealed = try SyncCrypto.seal(plaintext, vaultID: "v", recordKey: "rk", payloadVersion: 1, keys: keys)
+        for magic in ["TRS2", "TRP2", "TRX9", "TRSC"] {
+            var future = sealed
+            future.replaceSubrange(0..<4, with: Data(magic.utf8))
+            #expect(throws: SyncCrypto.Failure.unrecognizedMagic, "\(magic)") { try SyncCrypto.open(future, vaultID: "v", recordKey: "rk", keys: keys) }
+            #expect(throws: SyncCrypto.Failure.unrecognizedMagic, "\(magic)") { try SyncCrypto.openBlob(future, vaultID: "v", name: "n", keys: keys) }
+        }
+        #expect(throws: SyncCrypto.Failure.unrecognizedMagic) { try SyncCrypto.open(Data("TRS2".utf8), vaultID: "v", recordKey: "rk", keys: keys) }
+        for magic in ["XXXX", "tr01", "\0\0\0\0"] {
+            var damaged = sealed
+            damaged.replaceSubrange(0..<min(4, magic.utf8.count), with: Data(magic.utf8).prefix(4))
+            #expect(throws: SyncCrypto.Failure.badFormat, "\(magic)") { try SyncCrypto.open(damaged, vaultID: "v", recordKey: "rk", keys: keys) }
+        }
+    }
+
+    @Test func anAuthenticFrameWithAForgedLengthPrefixIsBadFormat() throws {
+        let padded = Data([0x7f, 0xff, 0xff, 0xff]) + Data(count: 100)
+        let box = try AES.GCM.seal(
+            padded, using: keys.record, authenticating: SyncCrypto.recordAAD(vaultID: "v", recordKey: "rk", payloadVersion: 1)
+        )
+        var frame = Data("TRS1".utf8) + Data([SyncCrypto.currentKeyGeneration, 1])
+        frame += box.nonce + box.ciphertext + box.tag
+        #expect(throws: SyncCrypto.Failure.badFormat) { try SyncCrypto.open(frame, vaultID: "v", recordKey: "rk", keys: keys) }
+    }
+
+    @Test func aKnownMagicInTheWrongPlaceIsDamage() throws {
+        let sealed = try SyncCrypto.seal(plaintext, vaultID: "v", recordKey: "rk", payloadVersion: 1, keys: keys)
+        let blob = try SyncCrypto.sealBlob(plaintext, vaultID: "v", name: "n", keys: keys)
+        #expect(throws: SyncCrypto.Failure.badFormat) { try SyncCrypto.open(blob, vaultID: "v", recordKey: "rk", keys: keys) }
+        #expect(throws: SyncCrypto.Failure.badFormat) { try SyncCrypto.openBlob(sealed, vaultID: "v", name: "n", keys: keys) }
+        #expect(throws: SyncCrypto.Failure.badFormat) {
+            try SyncCrypto.open(SyncCrypto.pointer(toBlob: keys.blobName(kind: .image, id: UUID())), vaultID: "v", recordKey: "rk", keys: keys)
+        }
+    }
+
+    @Test func aNewerKeyGenerationIsParkedNotDamage() throws {
+        var sealed = try SyncCrypto.seal(plaintext, vaultID: "v", recordKey: "rk", payloadVersion: 1, keys: keys)
+        sealed[4] = 2
+        #expect(throws: SyncCrypto.Failure.unsupportedKeyGeneration(2)) { try SyncCrypto.open(sealed, vaultID: "v", recordKey: "rk", keys: keys) }
+        var blob = try SyncCrypto.sealBlob(plaintext, vaultID: "v", name: "n", keys: keys)
+        blob[4] = 9
+        #expect(throws: SyncCrypto.Failure.unsupportedKeyGeneration(9)) { try SyncCrypto.openBlob(blob, vaultID: "v", name: "n", keys: keys) }
+        sealed[4] = 0
+        #expect(throws: SyncCrypto.Failure.badFormat) { try SyncCrypto.open(sealed, vaultID: "v", recordKey: "rk", keys: keys) }
+    }
+
+    @Test func theKeyGenerationIsBoundIntoTheAAD() {
+        var other = SyncCrypto.recordAAD(vaultID: "v", recordKey: "rk", payloadVersion: 1)
+        #expect(other.last == SyncCrypto.currentKeyGeneration)
+        other[other.count - 1] = 2
+        #expect(other != SyncCrypto.recordAAD(vaultID: "v", recordKey: "rk", payloadVersion: 1))
+        #expect(SyncCrypto.blobAAD(vaultID: "v", name: "n").last == SyncCrypto.currentKeyGeneration)
+    }
+
+    // MARK: Blobs
+
+    @Test func aBlobRoundTrips() throws {
+        let data = Data((0..<1000).map { UInt8($0 % 256) })
+        let sealed = try SyncCrypto.sealBlob(data, vaultID: "v", name: "n", keys: keys)
+        #expect(sealed.prefix(4) == Data("TRSB".utf8))
+        #expect(sealed[4] == SyncCrypto.currentKeyGeneration)
+        #expect(sealed.count == data.count + SyncCrypto.blobOverheadBytes, "blobs aren't padded")
+        #expect(try SyncCrypto.openBlob(sealed, vaultID: "v", name: "n", keys: keys) == data)
+        #expect(try SyncCrypto.openBlob(SyncCrypto.sealBlob(Data(), vaultID: "v", name: "n", keys: keys), vaultID: "v", name: "n", keys: keys) == Data())
+    }
+
+    @Test func aBlobFailsUnderAnotherVaultNameOrKey() throws {
+        let sealed = try SyncCrypto.sealBlob(Data("pixels".utf8), vaultID: "v", name: "n", keys: keys)
+        #expect(throws: SyncCrypto.Failure.decryptionFailed) { try SyncCrypto.openBlob(sealed, vaultID: "w", name: "n", keys: keys) }
+        #expect(throws: SyncCrypto.Failure.decryptionFailed) { try SyncCrypto.openBlob(sealed, vaultID: "v", name: "m", keys: keys) }
+        let other = try SyncKeys(vaultKey: Self.vaultKey2)
+        #expect(throws: SyncCrypto.Failure.decryptionFailed) { try SyncCrypto.openBlob(sealed, vaultID: "v", name: "n", keys: other) }
+    }
+
+    @Test func tamperingWithAnyBlobByteFails() throws {
+        let sealed = try SyncCrypto.sealBlob(Data("pixels and more pixels".utf8), vaultID: "v", name: "n", keys: keys)
+        for index in 5..<sealed.count {
+            var changed = sealed
+            changed[index] ^= 0x01
+            #expect(throws: SyncCrypto.Failure.decryptionFailed, "byte \(index)") { try SyncCrypto.openBlob(changed, vaultID: "v", name: "n", keys: keys) }
+        }
+        #expect(throws: SyncCrypto.Failure.badFormat) { try SyncCrypto.openBlob(sealed.prefix(20), vaultID: "v", name: "n", keys: keys) }
+    }
+
+    @Test func aBlobAndARecordAreNotInterchangeable() throws {
+        let sealed = try SyncCrypto.seal(plaintext, vaultID: "v", recordKey: "n", payloadVersion: 1, keys: keys)
+        let blob = try SyncCrypto.sealBlob(plaintext, vaultID: "v", name: "n", keys: keys)
+        #expect(throws: SyncCrypto.Failure.badFormat) { try SyncCrypto.openBlob(sealed, vaultID: "v", name: "n", keys: keys) }
+        #expect(throws: SyncCrypto.Failure.badFormat) { try SyncCrypto.open(blob, vaultID: "v", recordKey: "n", keys: keys) }
+    }
+
+    @Test func blobNamesAreSeparatedByDomain() throws {
+        let id = UUID()
+        let image = keys.blobName(kind: .image, id: id)
+        let file = keys.blobName(kind: .file, id: id)
+        let recordKey = keys.recordKey(type: .thoughtContent, entityID: id.uuidString)
+        let record = keys.recordBlobName(recordKey: recordKey, hash: "abc")
+        #expect(Set([image, file, record, recordKey]).count == 4)
+        #expect(record == keys.recordBlobName(recordKey: recordKey, hash: "abc"))
+        #expect(record != keys.recordBlobName(recordKey: recordKey, hash: "abd"))
+        #expect(record != keys.recordBlobName(recordKey: keys.recordKey(type: .thoughtMeta, entityID: id.uuidString), hash: "abc"))
+        #expect(record != keys.recordBlobName(recordKey: "abc", hash: recordKey), "the inputs aren't interchangeable")
+        let other = try SyncKeys(vaultKey: Self.vaultKey2)
+        #expect(record != other.recordBlobName(recordKey: recordKey, hash: "abc"))
+        #expect([image, file, record].allSatisfy { $0.count == SyncCrypto.blobNameLength })
+    }
+
+    @Test func aPointerMustNameExactlyOneWellFormedBlob() throws {
+        let name = keys.blobName(kind: .image, id: UUID())
+        #expect(SyncCrypto.blobName(inPointer: SyncCrypto.pointer(toBlob: name)) == name)
+        #expect(SyncCrypto.blobName(inPointer: SyncCrypto.pointer(toBlob: String(name.dropLast()))) == nil)
+        #expect(SyncCrypto.blobName(inPointer: SyncCrypto.pointer(toBlob: name + "A")) == nil)
+        #expect(SyncCrypto.blobName(inPointer: SyncCrypto.pointer(toBlob: "../" + String(name.dropFirst(3)))) == nil)
+        #expect(SyncCrypto.blobName(inPointer: SyncCrypto.pointer(toBlob: String(name.dropLast()) + "=")) == nil)
+        #expect(SyncCrypto.blobName(inPointer: SyncCrypto.pointer(toBlob: String(name.dropLast()) + "+")) == nil)
+        #expect(SyncCrypto.blobName(inPointer: Data("TRP2".utf8) + Data(name.utf8)) == nil)
+        #expect(SyncCrypto.blobName(inPointer: Data("TRP1".utf8)) == nil)
     }
 
     @Test func aSealedPayloadOpensToTheSameRecord() throws {

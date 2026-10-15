@@ -29,6 +29,7 @@ actor FakeSyncServer: SyncTransport {
     private(set) var pullCalls = 0
     private(set) var headCalls = 0
     private(set) var conflicts = 0
+    private(set) var epochRejections = 0
     /// How many times each record key was pushed (and committed).
     private(set) var recordPushes: [String: Int] = [:]
     private(set) var blobPuts: [String: Int] = [:]
@@ -38,6 +39,8 @@ actor FakeSyncServer: SyncTransport {
     private var dropPushResponses = 0
     private var failCountdown: Int?
     private var beforeNextPush: (@Sendable () async -> Void)?
+    private var afterNextPullQuery: (@Sendable () async -> Void)?
+    private var stallingPulls = false
 
     var liveRecordCount: Int { rows.values.filter { !$0.deleted }.count }
     var callCount: Int { pushCalls + pullCalls + headCalls }
@@ -62,6 +65,23 @@ actor FakeSyncServer: SyncTransport {
     /// Runs `hook` inside the next push, before it is checked (another device getting in first).
     func beforeNextPush(_ hook: @escaping @Sendable () async -> Void) {
         beforeNextPush = hook
+    }
+
+    /// Runs `hook` inside the next pull, after its page was read and before the head is (a push landing in between).
+    func afterNextPullQuery(_ hook: @escaping @Sendable () async -> Void) {
+        afterNextPullQuery = hook
+    }
+
+    /// Every pull answers "more to come" without moving past the cursor.
+    func stallPulls(_ stalling: Bool = true) {
+        stallingPulls = stalling
+    }
+
+    /// The vault is erased: every record and blob is gone and the epoch moves on.
+    func erase() {
+        rows = [:]
+        blobs = [:]
+        epoch += 1
     }
 
     /// Drops tombstones older than `seq` and makes a pull from before it answer 410.
@@ -107,12 +127,16 @@ actor FakeSyncServer: SyncTransport {
         }
     }
 
-    func push(_ records: [PushRecord]) async throws -> PushResult {
+    func push(_ records: [PushRecord], epoch pushEpoch: Int64) async throws -> PushResult {
         try begin()
         pushCalls += 1
         if let hook = beforeNextPush {
             beforeNextPush = nil
             await hook()
+        }
+        guard pushEpoch == epoch else {
+            epochRejections += 1
+            throw SyncTransportError.epochChanged(server: epoch)
         }
         guard records.count <= SyncLimits.maxRecordsPerPush, records.reduce(0, { $0 + $1.payload.count }) <= SyncLimits.maxBytesPerPush,
               records.allSatisfy({ $0.payload.count <= SyncLimits.maxInlinePayload }),
@@ -146,9 +170,18 @@ actor FakeSyncServer: SyncTransport {
         try begin()
         pullCalls += 1
         if !fullResync, cursor < prunedBeforeSeq { return .gone }
+        if stallingPulls { return .page(PullPage(records: [], nextSeq: cursor, headSeq: headSeq, epoch: epoch, hasMore: true)) }
+        let snapshotHead = headSeq
         let newer = rows.filter { $0.value.seq > cursor }.sorted { $0.value.seq < $1.value.seq }
         let page = newer.prefix(limit).map { PulledRecord(recordKey: $0.key, seq: $0.value.seq, payload: $0.value.payload, deleted: $0.value.deleted) }
-        return .page(PullPage(records: page, headSeq: headSeq, epoch: epoch, hasMore: newer.count > limit))
+        let hasMore = newer.count > limit
+        if let hook = afterNextPullQuery {
+            afterNextPullQuery = nil
+            await hook()
+        }
+        return .page(PullPage(
+            records: page, nextSeq: hasMore ? (page.last?.seq ?? cursor) : snapshotHead, headSeq: headSeq, epoch: epoch, hasMore: hasMore
+        ))
     }
 
     func head() async throws -> SyncHead {
@@ -157,22 +190,36 @@ actor FakeSyncServer: SyncTransport {
         return SyncHead(headSeq: headSeq, epoch: epoch, liveRecordCount: liveRecordCount)
     }
 
+    /// Seeds a blob as the vault's current epoch would accept it.
     func putBlob(name: String, data: Data) async throws {
+        try await putBlob(name: name, data: data, epoch: epoch)
+    }
+
+    func putBlob(name: String, data: Data, epoch blobEpoch: Int64) async throws {
         try begin()
+        guard blobEpoch == epoch else {
+            epochRejections += 1
+            throw SyncTransportError.epochChanged(server: epoch)
+        }
         blobs[name] = data
         blobPuts[name, default: 0] += 1
         events.append(.putBlob(name))
     }
 
-    func getBlob(name: String) async throws -> Data {
+    func getBlob(name: String, maxBytes: Int) async throws -> Data {
         try begin()
         blobGets += 1
         guard let data = blobs[name] else { throw SyncTransportError.blobMissing(name) }
+        guard data.count <= maxBytes else { throw SyncTransportError.tooLarge }
         return data
     }
 
-    func hasBlob(name: String) async throws -> Bool {
+    func hasBlob(name: String, epoch blobEpoch: Int64) async throws -> Bool {
         try begin()
+        guard blobEpoch == epoch else {
+            epochRejections += 1
+            throw SyncTransportError.epochChanged(server: epoch)
+        }
         return blobs[name] != nil
     }
 }

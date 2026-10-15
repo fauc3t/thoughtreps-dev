@@ -28,8 +28,9 @@ struct SyncEntity: Hashable, Sendable {
     static let settings = SyncEntity(kind: .settings, id: settingsID)
 }
 
-/// Content group of a thought: what `updatedAt` covers.
-struct ThoughtContentRecord: Codable, Equatable, Sendable {
+/// Content group of a thought: what `updatedAt` covers. It is held in the backup's record types but goes over the
+/// wire as `SyncWireV1.Content`, so a change to the backup format can't change a sync payload.
+struct ThoughtContentRecord: Equatable, Sendable {
     var id: UUID
     var body: String
     var createdAt: Date
@@ -66,6 +67,124 @@ struct SettingsRecord: Codable, Equatable, Sendable {
 struct SyncDeletion: Codable, Equatable, Sendable {
     var id: UUID
     var deletedAt: Date
+}
+
+/// The JSON shapes of the record bodies that carry backup-format values, frozen for sync: a field is never renamed or
+/// retyped, and a new shape is a new payload version. Optionals that are nil are left out of the JSON; the known-answer
+/// tests pin the exact bytes.
+enum SyncWireV1 {
+    struct Image: Codable, Equatable {
+        var id: UUID
+        var width: Int
+        var height: Int
+        var order: Int
+    }
+
+    struct File: Codable, Equatable {
+        var id: UUID
+        var filename: String
+        var typeIdentifier: String
+        var byteCount: Int
+    }
+
+    struct Block: Codable, Equatable {
+        var id: UUID
+        var kindRaw: String
+        var title: String?
+        var content: String
+        var order: Int
+        var isBlurred: Bool
+        var images: [Image]
+        var linkedThoughtID: UUID?
+        var file: File?
+    }
+
+    struct Tag: Codable, Equatable {
+        var name: String
+        var displayName: String
+        var colorHex: String?
+        var updatedAt: Date?
+    }
+
+    struct Content: Codable, Equatable {
+        var id: UUID
+        var body: String
+        var createdAt: Date
+        var updatedAt: Date
+        var blocks: [Block]
+        var images: [Image]
+    }
+}
+
+extension SyncWireV1.Block {
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        kindRaw = try container.decode(String.self, forKey: .kindRaw)
+        title = try container.decodeIfPresent(String.self, forKey: .title)
+        content = try container.decode(String.self, forKey: .content)
+        order = try container.decode(Int.self, forKey: .order)
+        isBlurred = try container.decodeIfPresent(Bool.self, forKey: .isBlurred) ?? false
+        images = try container.decode([SyncWireV1.Image].self, forKey: .images)
+        linkedThoughtID = try container.decodeIfPresent(UUID.self, forKey: .linkedThoughtID)
+        file = try container.decodeIfPresent(SyncWireV1.File.self, forKey: .file)
+    }
+}
+
+extension SyncWireV1.Image {
+    init(_ image: ImageRecord) {
+        self.init(id: image.id, width: image.width, height: image.height, order: image.order)
+    }
+
+    var record: ImageRecord { ImageRecord(id: id, width: width, height: height, order: order) }
+}
+
+extension SyncWireV1.File {
+    init(_ file: FileRecord) {
+        self.init(id: file.id, filename: file.filename, typeIdentifier: file.typeIdentifier, byteCount: file.byteCount)
+    }
+
+    var record: FileRecord { FileRecord(id: id, filename: filename, typeIdentifier: typeIdentifier, byteCount: byteCount) }
+}
+
+extension SyncWireV1.Block {
+    init(_ block: BlockRecord) {
+        self.init(
+            id: block.id, kindRaw: block.kindRaw, title: block.title, content: block.content, order: block.order,
+            isBlurred: block.isBlurred, images: block.images.map(SyncWireV1.Image.init), linkedThoughtID: block.linkedThoughtID,
+            file: block.file.map(SyncWireV1.File.init)
+        )
+    }
+
+    var record: BlockRecord {
+        BlockRecord(
+            id: id, kindRaw: kindRaw, title: title, content: content, order: order, isBlurred: isBlurred,
+            images: images.map(\.record), linkedThoughtID: linkedThoughtID, file: file?.record
+        )
+    }
+}
+
+extension SyncWireV1.Tag {
+    init(_ tag: TagRecord) {
+        self.init(name: tag.name, displayName: tag.displayName, colorHex: tag.colorHex, updatedAt: tag.updatedAt)
+    }
+
+    var record: TagRecord { TagRecord(name: name, displayName: displayName, colorHex: colorHex, updatedAt: updatedAt) }
+}
+
+extension SyncWireV1.Content {
+    init(_ content: ThoughtContentRecord) {
+        self.init(
+            id: content.id, body: content.body, createdAt: content.createdAt, updatedAt: content.updatedAt,
+            blocks: content.blocks.map(SyncWireV1.Block.init), images: content.images.map(SyncWireV1.Image.init)
+        )
+    }
+
+    var record: ThoughtContentRecord {
+        ThoughtContentRecord(
+            id: id, body: body, createdAt: createdAt, updatedAt: updatedAt, blocks: blocks.map(\.record), images: images.map(\.record)
+        )
+    }
 }
 
 extension ThoughtContentRecord {
@@ -184,9 +303,9 @@ enum SyncPayload: Equatable, Sendable {
             try encoder.encode(Envelope(v: Self.currentVersion, type: type.rawValue, deleted: deleted, data: body))
         }
         switch self {
-        case .thoughtContent(let record): return try wrap(record)
+        case .thoughtContent(let record): return try wrap(SyncWireV1.Content(record))
         case .thoughtMeta(let record): return try wrap(record)
-        case .tag(let record): return try wrap(record)
+        case .tag(let record): return try wrap(SyncWireV1.Tag(record))
         case .settings(let record): return try wrap(record)
         case .deletion(_, let deletion): return try wrap(deletion, deleted: true)
         }
@@ -217,9 +336,9 @@ enum SyncPayload: Equatable, Sendable {
             return .deletion(type, try decoder.decode(Envelope<SyncDeletion>.self, from: data).data)
         }
         switch type {
-        case .thoughtContent: return .thoughtContent(try decoder.decode(Envelope<ThoughtContentRecord>.self, from: data).data)
+        case .thoughtContent: return .thoughtContent(try decoder.decode(Envelope<SyncWireV1.Content>.self, from: data).data.record)
         case .thoughtMeta: return .thoughtMeta(try decoder.decode(Envelope<ThoughtMetaRecord>.self, from: data).data)
-        case .tag: return .tag(try decoder.decode(Envelope<TagRecord>.self, from: data).data)
+        case .tag: return .tag(try decoder.decode(Envelope<SyncWireV1.Tag>.self, from: data).data.record)
         case .settings: return .settings(try decoder.decode(Envelope<SettingsRecord>.self, from: data).data)
         }
     }

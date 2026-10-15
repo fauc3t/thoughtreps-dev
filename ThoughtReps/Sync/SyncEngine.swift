@@ -13,7 +13,10 @@ import os
 /// - A 410 means the cursor is older than the server keeps: forget the progress, queue everything local
 ///   and pull everything; merging is by id and clock, so nothing is duplicated. A thought this device had synced
 ///   that the server no longer has was deleted elsewhere: `resolveResync` deletes it unless it was edited here since.
-/// - A changed epoch (the vault was erased elsewhere) stops syncing and shows up as `Status.attention`.
+/// - A changed epoch (the vault was erased elsewhere), seen by a pull or refused by a push, stops syncing and shows up as
+///   `Status.attention`. Nothing is uploaded again until the user decides what to do with this device's copy.
+/// - A pulled page moves the cursor to the page's `nextSeq`, never to the server's head, which a push can pass between the
+///   page's query and the head read.
 actor SyncEngine {
     struct Configuration: Sendable {
         var pullLimit = 200
@@ -30,8 +33,14 @@ actor SyncEngine {
         var maxPlanBytes = SyncLimits.maxPlanBytes
         var blobsPerRead = 8
         var maxApplyBytes = SyncLimits.maxApplyBytes
+        var maxAssetBlobBytes = SyncLimits.maxAssetBlobBytes
         /// The newest payload version this build reads; records past it are parked until the app is updated.
         var payloadVersion = SyncPayload.currentVersion
+        /// What this build can read, as one number: parked records are tried again when it changes, so it must be bumped
+        /// whenever the app learns to read something new (a payload version, a key generation, a frame magic).
+        var readerVersion = SyncCrypto.readerVersion
+        /// The newest key generation this build can open.
+        var keyGeneration = SyncCrypto.currentKeyGeneration
     }
 
     enum Phase: Sendable, Equatable {
@@ -39,7 +48,8 @@ actor SyncEngine {
     }
 
     enum Attention: Sendable, Equatable {
-        /// The vault was erased on another device (or replaced); this device must decide what to do. 1b only stops.
+        /// The vault was erased on another device (or replaced). Syncing stops, because pushing on would bring back what was
+        /// erased, until the user decides what to do with this device's copy.
         case epochChanged(known: Int64, server: Int64)
     }
 
@@ -50,6 +60,8 @@ actor SyncEngine {
         var lastError: String?
         var attention: Attention?
         var cursor: Int64 = 0
+        /// The server head this device last pulled up to; nil until a pull has caught up. Not moved by a pull that is cut
+        /// short, so the head check keeps seeing the difference and finishes it.
         var headSeq: Int64?
         var cycles = 0
         /// Some records are from a newer version of the app and wait, still sealed, until it is updated. Syncing goes on.
@@ -62,6 +74,9 @@ actor SyncEngine {
         /// Queued thoughts too big to sync (a sealed record over `maxRecordBytes`, or one the server refused as too large).
         /// They stay queued, and everything else still goes out.
         var oversizedThoughts = 0
+        /// Queued thoughts whose image or file bytes are missing on this device. Only they wait (the server must not be
+        /// told the attachment is gone); retried every cycle.
+        var missingAttachments = 0
     }
 
     enum Failure: Error, Equatable, CustomStringConvertible {
@@ -71,6 +86,8 @@ actor SyncEngine {
         case invalidRecord(String)
         case missingSeq(String)
         case blobUnreadable(String)
+        case pullStalled(Int64)
+        case missingEpoch
 
         var description: String {
             switch self {
@@ -80,6 +97,8 @@ actor SyncEngine {
             case .invalidRecord(let key): "record \(key) is not valid"
             case .missingSeq(let key): "no seq for \(key)"
             case .blobUnreadable(let name): "blob \(name) is not readable"
+            case .pullStalled(let cursor): "the server has more records but none after seq \(cursor)"
+            case .missingEpoch: "no epoch known to push with"
             }
         }
     }
@@ -103,6 +122,7 @@ actor SyncEngine {
     /// Queued thoughts left alone in this push because the server holds a version this device couldn't apply yet.
     private var waitingEntities: Set<SyncEntity> = []
     private var oversizedEntities: Set<SyncEntity> = []
+    private var missingAttachmentEntities: Set<SyncEntity> = []
     /// Record keys whose record was over `maxRecordBytes`, with the fingerprint it had then: skipped (not encoded and
     /// sealed again) until the fingerprint changes. Kept in memory.
     private var oversizedFingerprints: [String: String] = [:]
@@ -149,8 +169,9 @@ actor SyncEngine {
         return status
     }
 
-    /// The periodic check: asks the server for its head and runs a cycle only if it moved (or there is
-    /// something to push).
+    /// The periodic check: asks the server for its head and runs a cycle if it moved past what was pulled, if the last cycle
+    /// failed (so an interrupted pull is resumed), or if the outbox holds something a push could send. Entries held back
+    /// (waiting, oversized, missing attachments) don't count: they only change when a pull or a local write does.
     @discardableResult
     func syncIfHeadMoved() async -> Bool {
         guard status.attention == nil else { return false }
@@ -160,13 +181,9 @@ actor SyncEngine {
                 stop(.epochChanged(known: known, server: head.epoch))
                 return false
             }
-            guard head.headSeq != status.headSeq else {
-                if try await state.outboxCount() > 0 {
-                    await syncNow()
-                    return true
-                }
-                return false
-            }
+            let heldBack = waitingEntities.union(oversizedEntities).union(missingAttachmentEntities).count
+            let hasPushable = try await state.outboxCount() > heldBack
+            guard head.headSeq != status.headSeq || status.lastError != nil || hasPushable else { return false }
         } catch {
             record(error)
             return false
@@ -257,11 +274,18 @@ actor SyncEngine {
         case parked(ParkedRecord)
     }
 
-    /// A record this version can't interpret (a newer payload version, an unknown type) is parked, not an error. One that
-    /// fails to decrypt is: it was damaged or tampered with, and the cycle stops.
+    /// A record this version can't interpret (a newer payload version or key generation, an unknown type or frame magic) is
+    /// parked, not an error. One that fails to decrypt is: it was damaged or tampered with, and the cycle stops.
     private func read(_ record: PulledRecord) throws -> Reading {
-        let opened = try SyncCrypto.open(record.payload, vaultID: vaultID, recordKey: record.recordKey, keys: keys)
         let parked = Reading.parked(ParkedRecord(recordKey: record.recordKey, seq: record.seq, payload: record.payload, deleted: record.deleted))
+        let opened: SyncCrypto.Opened
+        do {
+            opened = try SyncCrypto.open(
+                record.payload, vaultID: vaultID, recordKey: record.recordKey, keys: keys, readableKeyGeneration: config.keyGeneration
+            )
+        } catch SyncCrypto.Failure.unrecognizedMagic, SyncCrypto.Failure.unsupportedKeyGeneration(_) {
+            return parked
+        }
         guard opened.payloadVersion <= config.payloadVersion else { return parked }
         let payload: SyncPayload
         do {
@@ -283,6 +307,8 @@ actor SyncEngine {
             fromScratch = true
         } else if fromScratch {
             try await state.beginResync()
+            // A `sync.sqlite` rebuilt mid-session has lost its outbox, so whatever isn't synced is queued again.
+            await local.reconcile()
         }
         while true {
             let cursor = try await state.cursor()
@@ -295,9 +321,12 @@ actor SyncEngine {
                 try await state.beginResync()
                 await local.reconcile()
             case .page(let page):
+                guard !page.hasMore || page.nextSeq > cursor else { throw Failure.pullStalled(cursor) }
                 try await apply(page, after: cursor)
-                update { $0.headSeq = page.headSeq }
-                if !page.hasMore { return startedOver }
+                if !page.hasMore {
+                    update { $0.headSeq = max(cursor, page.nextSeq) }
+                    return startedOver
+                }
             }
         }
     }
@@ -306,14 +335,21 @@ actor SyncEngine {
         if let known = try await state.epoch(), known != page.epoch {
             throw AttentionFailure(attention: .epochChanged(known: known, server: page.epoch))
         }
-        let finalCursor = page.hasMore ? (page.records.last?.seq ?? cursor) : max(page.records.last?.seq ?? cursor, page.headSeq)
+        let finalCursor = max(cursor, page.nextSeq)
         var decoded: [Decoded] = []
         var parks: [ParkedRecord] = []
         var bytes = 0
         for record in page.records {
-            guard let resolved = try await resolvePointer(record) else {
-                parks.append(ParkedRecord(recordKey: record.recordKey, seq: record.seq, payload: record.payload, deleted: record.deleted))
+            let resolved: PulledRecord
+            switch try await resolvePointer(record) {
+            case .waiting:
+                parks.append(Self.parked(record))
                 continue
+            case .updateRequired:
+                parks.append(Self.parked(record, needsUpdate: true))
+                continue
+            case .record(let found):
+                resolved = found
             }
             let size = resolved.payload.count
             // Earlier sub-batches leave the cursor where it was: if the page fails midway it is fetched again, and what
@@ -324,7 +360,18 @@ actor SyncEngine {
                 parks = []
                 bytes = 0
             }
-            switch try read(resolved) {
+            let reading: Reading
+            do {
+                reading = try read(resolved)
+            } catch let failure as SyncCrypto.Failure
+                where (failure == .decryptionFailed || failure == .badFormat) && SyncCrypto.blobName(inPointer: record.payload) != nil {
+                // The blob opened but doesn't hold this record (a pointer aimed at another record's blob, or not a record
+                // frame at all). Only this thought waits, like any other unreadable blob.
+                backOff(record.recordKey)
+                parks.append(Self.parked(record))
+                continue
+            }
+            switch reading {
             case .readable(let item):
                 decoded.append(item)
                 bytes += size
@@ -335,6 +382,10 @@ actor SyncEngine {
         try await applyBatch(decoded, park: parks, cursor: finalCursor, epoch: page.epoch, endsResync: !page.hasMore)
     }
 
+    private static func parked(_ record: PulledRecord, needsUpdate: Bool = false) -> ParkedRecord {
+        ParkedRecord(recordKey: record.recordKey, seq: record.seq, payload: record.payload, deleted: record.deleted, needsUpdate: needsUpdate)
+    }
+
     private func applyBatch(_ decoded: [Decoded], park: [ParkedRecord], cursor: Int64, epoch: Int64, endsResync: Bool) async throws {
         var commit = PageCommit(cursor: cursor, epoch: epoch)
         commit.endsResync = endsResync
@@ -343,23 +394,39 @@ actor SyncEngine {
         try await process(decoded, retrying: [], commit: &commit)
     }
 
-    /// A pointer record becomes the record it points to. Nil when the blob isn't there or can't be read yet: the pointer
-    /// stays parked (a missing blob is tried every cycle, an unreadable one after 2, 4, 8 … cycles) and only that thought waits.
-    private func resolvePointer(_ record: PulledRecord) async throws -> PulledRecord? {
-        guard let name = SyncCrypto.blobName(inPointer: record.payload) else { return record }
-        if let backoff = unreadableBackoff[record.recordKey], backoff.retryAt > cycleNumber { return nil }
+    private enum Resolution {
+        /// The record itself, or the record a pointer pointed to.
+        case record(PulledRecord)
+        /// The blob isn't there or can't be read yet.
+        case waiting
+        /// The blob is in a frame from a newer version of the app.
+        case updateRequired
+    }
+
+    /// A pointer record becomes the record it points to. When the blob isn't there or can't be read yet, the pointer
+    /// stays parked (a missing blob is tried every cycle, an unreadable one after 2, 4, 8 … cycles) and only that thought
+    /// waits. A blob from a newer app parks it until this one is updated.
+    private func resolvePointer(_ record: PulledRecord) async throws -> Resolution {
+        guard let name = SyncCrypto.blobName(inPointer: record.payload) else { return .record(record) }
+        if let backoff = unreadableBackoff[record.recordKey], backoff.retryAt > cycleNumber { return .waiting }
         do {
-            let sealed = try await transport.getBlob(name: name)
+            let sealed = try await transport.getBlob(name: name, maxBytes: config.maxRecordBytes + SyncCrypto.blobOverheadBytes)
             var resolved = record
             resolved.payload = try SyncCrypto.openBlob(sealed, vaultID: vaultID, name: name, keys: keys)
             unreadableBackoff[record.recordKey] = nil
-            return resolved
+            return .record(resolved)
         } catch SyncTransportError.blobMissing(_) {
             unreadableBackoff[record.recordKey] = nil
-            return nil
+            return .waiting
+        } catch SyncTransportError.tooLarge {
+            backOff(record.recordKey)
+            return .waiting
+        } catch SyncCrypto.Failure.unrecognizedMagic, SyncCrypto.Failure.unsupportedKeyGeneration(_) {
+            unreadableBackoff[record.recordKey] = nil
+            return .updateRequired
         } catch is SyncCrypto.Failure {
             backOff(record.recordKey)
-            return nil
+            return .waiting
         }
     }
 
@@ -372,12 +439,22 @@ actor SyncEngine {
     private func retryPointers() async throws {
         let pointers = try await state.parkedPointers()
         guard !pointers.isEmpty, let epoch = try await state.epoch() else { return }
-        let bases = try await state.records(forKeys: pointers.map(\.recordKey))
+        let bases = try await state.records(forKeys: pointers.map(\.recordKey), includingContent: false)
         for record in pointers {
             do {
-                guard let resolved = try await resolvePointer(PulledRecord(recordKey: record.recordKey, seq: record.seq, payload: record.payload, deleted: record.deleted))
-                else { continue }
+                let pulled = PulledRecord(recordKey: record.recordKey, seq: record.seq, payload: record.payload, deleted: record.deleted)
                 var commit = PageCommit(cursor: try await state.cursor(), epoch: epoch)
+                let resolved: PulledRecord
+                switch try await resolvePointer(pulled) {
+                case .waiting:
+                    continue
+                case .updateRequired:
+                    commit.park = [Self.parked(pulled, needsUpdate: true)]
+                    try await state.commit(commit)
+                    continue
+                case .record(let found):
+                    resolved = found
+                }
                 let reading: Reading
                 do {
                     reading = try read(resolved)
@@ -401,29 +478,64 @@ actor SyncEngine {
     }
 
     /// Parked records this version can read now (it was updated) are applied before anything new. Whether one is readable
-    /// depends only on the payload version, so they are tried again only when it differs from the last try.
+    /// depends only on what this build can read (`readerVersion`), so they are tried again only when it differs from the last try, and that is
+    /// noted only once every record that could be read has been applied.
     private func reapplyParked() async throws {
-        guard try await state.parkedVersionTried() != config.payloadVersion else { return }
-        let parked = try await state.parked().filter { SyncCrypto.blobName(inPointer: $0.payload) == nil }
-        guard !parked.isEmpty, let epoch = try await state.epoch() else {
-            try await state.setParkedVersionTried(config.payloadVersion)
+        guard try await state.parkedVersionTried() != config.readerVersion else { return }
+        guard let epoch = try await state.epoch() else {
+            try await state.setParkedVersionTried(config.readerVersion)
             return
         }
-        let bases = try await state.records(forKeys: parked.map(\.recordKey))
-        for record in parked {
-            // One record that won't apply is logged and stays parked; it must not stop the rest of the cycle.
-            do {
-                guard case .readable(let item) = try read(PulledRecord(recordKey: record.recordKey, seq: record.seq, payload: record.payload, deleted: record.deleted))
-                else { continue }
-                var commit = PageCommit(cursor: try await state.cursor(), epoch: epoch)
-                commit.unpark = [record.recordKey]
-                let superseded = bases[record.recordKey].map { $0.seq >= record.seq } ?? false
-                try await process(superseded ? [] : [item], retrying: [], commit: &commit)
-            } catch {
-                Self.logger.error("Parked record \(record.recordKey) not applied this cycle: \(error)")
+        var allApplied = true
+        var after: (seq: Int64, key: String)?
+        while true {
+            let page = try await state.parked(after: after, limit: Self.parkedPageSize)
+            guard let last = page.last else { break }
+            after = (last.seq, last.recordKey)
+            let bases = try await state.records(forKeys: page.map(\.recordKey), includingContent: false)
+            for record in page {
+                // One record that won't apply is logged and stays parked; it must not stop the rest of the cycle.
+                do {
+                    try await reapply(record, epoch: epoch, supersededBy: bases[record.recordKey]?.seq)
+                } catch {
+                    allApplied = false
+                    Self.logger.error("Parked record \(record.recordKey) not applied this cycle: \(error)")
+                }
             }
         }
-        try await state.setParkedVersionTried(config.payloadVersion)
+        if allApplied { try await state.setParkedVersionTried(config.readerVersion) }
+    }
+
+    private static let parkedPageSize = 8
+
+    private func reapply(_ record: ParkedRecord, epoch: Int64, supersededBy syncedSeq: Int64?) async throws {
+        let pulled = PulledRecord(recordKey: record.recordKey, seq: record.seq, payload: record.payload, deleted: record.deleted)
+        var resolved = pulled
+        if SyncCrypto.blobName(inPointer: record.payload) != nil {
+            switch try await resolvePointer(pulled) {
+            case .updateRequired:
+                return
+            case .waiting:
+                var commit = PageCommit(cursor: try await state.cursor(), epoch: epoch)
+                commit.park = [Self.parked(pulled)]
+                try await state.commit(commit)
+                return
+            case .record(let found):
+                resolved = found
+            }
+        }
+        let reading: Reading
+        do {
+            reading = try read(resolved)
+        } catch {
+            Self.logger.error("Parked record \(record.recordKey) is not readable: \(error)")
+            return
+        }
+        guard case .readable(let item) = reading else { return }
+        var commit = PageCommit(cursor: try await state.cursor(), epoch: epoch)
+        commit.unpark = [record.recordKey]
+        let superseded = syncedSeq.map { $0 >= record.seq } ?? false
+        try await process(superseded ? [] : [item], retrying: [], commit: &commit)
     }
 
     /// Held thoughts whose blobs were missing, or whose images clashed, are tried again every cycle.
@@ -622,8 +734,7 @@ actor SyncEngine {
                 blocked.insert(thought.id)
                 let key = thought.id.uuidString
                 if failure.unreadable {
-                    let attempts = (unreadableBackoff[key]?.attempts ?? 0) + 1
-                    unreadableBackoff[key] = (attempts, cycleNumber + min(1 << attempts, 32))
+                    backOff(key)
                 } else {
                     unreadableBackoff[key] = nil
                 }
@@ -673,7 +784,7 @@ actor SyncEngine {
             switch ref.kind {
             case .image where imageIDs.contains(ref.id), .file where fileRecords[ref.id] != nil:
                 do {
-                    let sealed = try await transport.getBlob(name: name)
+                    let sealed = try await transport.getBlob(name: name, maxBytes: config.maxAssetBlobBytes + SyncCrypto.blobOverheadBytes)
                     let bytes = try SyncCrypto.openBlob(sealed, vaultID: vaultID, name: name, keys: keys)
                     if ref.kind == .image {
                         let image = try codec.image(bytes)
@@ -686,7 +797,7 @@ actor SyncEngine {
                     }
                 } catch SyncTransportError.blobMissing(_) {
                     throw BlobFailure(unreadable: false)
-                } catch is SyncCrypto.Failure, is ImageProcessingError, is FileProcessingError {
+                } catch is SyncCrypto.Failure, is ImageProcessingError, is FileProcessingError, SyncTransportError.tooLarge {
                     throw BlobFailure(unreadable: true)
                 }
             default:
@@ -708,12 +819,15 @@ actor SyncEngine {
         var conflicts = 0
         waitingEntities = []
         oversizedEntities = []
+        missingAttachmentEntities = []
         defer {
             let waiting = waitingEntities.count
             let oversized = oversizedEntities.count
+            let missing = missingAttachmentEntities.count
             update {
                 $0.waitingThoughts = waiting
                 $0.oversizedThoughts = oversized
+                $0.missingAttachments = missing
             }
         }
         while true {
@@ -766,7 +880,11 @@ actor SyncEngine {
         let keyed = snapshots.map { snapshot in
             snapshot.payloads.map { (payload: $0, key: keys.recordKey(type: $0.type, entityID: $0.entityID)) }
         }
-        let bases = try await state.records(forKeys: keyed.flatMap { $0.map(\.key) })
+        let allKeys = keyed.flatMap { $0.map(\.key) }
+        var bases = try await state.records(forKeys: allKeys, includingContent: false)
+        // Only a tag's push is decided by the synced content.
+        let tagKeys = keyed.flatMap { $0.filter { if case .tag = $0.payload { true } else { false } }.map(\.key) }
+        bases.merge(try await state.records(forKeys: tagKeys)) { _, withContent in withContent }
         let heldIDs = Set(try await state.held(entityIDs: entries.filter { $0.entity.kind == .thought }.map(\.entity.id)).map(\.entityID))
         let parkedKeys = try await state.parkedKeys(among: entries.flatMap { Self.thoughtKeys($0.entity, keys) } + keyed.flatMap { $0.map(\.key) })
 
@@ -858,26 +976,44 @@ actor SyncEngine {
         return .done
     }
 
-    private func send(_ chunk: [PlannedEntity]) async throws -> BatchResult {
-        try await upload(Set(chunk.flatMap(\.blobs)))
+    private func send(_ planned: [PlannedEntity]) async throws -> BatchResult {
+        guard let epoch = try await state.epoch() else { throw Failure.missingEpoch }
+        do {
+            return try await send(planned, epoch: epoch)
+        } catch SyncTransportError.epochChanged(let server) {
+            throw AttentionFailure(attention: .epochChanged(known: epoch, server: server))
+        }
+    }
+
+    private func send(_ planned: [PlannedEntity], epoch: Int64) async throws -> BatchResult {
+        let missing = try await upload(Set(planned.flatMap(\.blobs)), epoch: epoch)
+        var chunk = planned
+        if !missing.isEmpty {
+            // Only the thoughts whose attachments are gone wait. Dropping the reference would tell the server (and so the
+            // other devices) that the attachment no longer exists, and they would delete a copy they still have.
+            let held = chunk.filter { !missing.isDisjoint(with: $0.blobs) }
+            missingAttachmentEntities.formUnion(held.map(\.entry.entity))
+            chunk.removeAll { !missing.isDisjoint(with: $0.blobs) }
+            guard !chunk.isEmpty else { return .done }
+        }
         try await state.noteAttempts(chunk.flatMap(\.records).filter { $0.baseSeq == nil && $0.payload.type == .thoughtContent && !$0.payload.isDeletion }
             .map { ($0.key, $0.payload.entityID, $0.hash, $0.plaintext) })
         for blob in chunk.flatMap(\.records).compactMap(\.blob) {
-            if try await !transport.hasBlob(name: blob.name) { try await transport.putBlob(name: blob.name, data: blob.data) }
+            if try await !transport.hasBlob(name: blob.name, epoch: epoch) { try await transport.putBlob(name: blob.name, data: blob.data, epoch: epoch) }
         }
         let result: PushResult
         do {
             result = try await transport.push(chunk.flatMap(\.records).map {
                 PushRecord(recordKey: $0.key, baseSeq: $0.baseSeq, payload: $0.sealed, deleted: $0.payload.isDeletion)
-            })
+            }, epoch: epoch)
         } catch SyncTransportError.tooLarge {
             guard chunk.count > 1 else {
                 oversizedEntities.insert(chunk[0].entry.entity)
                 return .done
             }
             let middle = chunk.count / 2
-            if try await send(Array(chunk[..<middle])) == .conflict { return .conflict }
-            return try await send(Array(chunk[middle...]))
+            if try await send(Array(chunk[..<middle]), epoch: epoch) == .conflict { return .conflict }
+            return try await send(Array(chunk[middle...]), epoch: epoch)
         }
         switch result {
         case .conflict:
@@ -899,18 +1035,19 @@ actor SyncEngine {
     }
 
     /// Uploads the blobs the server doesn't have, each once: the ones `sync.sqlite` shows as uploaded are skipped,
-    /// and the server is asked about the rest before sending bytes.
-    private func upload(_ refs: Set<BlobRef>) async throws {
-        guard !refs.isEmpty else { return }
+    /// and the server is asked about the rest before sending bytes. Returns the blobs this device has no bytes for.
+    private func upload(_ refs: Set<BlobRef>, epoch: Int64) async throws -> Set<BlobRef> {
+        guard !refs.isEmpty else { return [] }
         let named = Dictionary(refs.map { (keys.blobName(kind: $0.kind, id: $0.id), $0) }, uniquingKeysWith: { first, _ in first })
         let done = try await state.uploadedBlobs(among: Array(named.keys))
         let todo = named.filter { !done.contains($0.key) }.sorted { $0.key < $1.key }
+        var missing = Set<BlobRef>()
         var uploaded: [String] = []
         for group in stride(from: 0, to: todo.count, by: config.blobsPerRead).map({ Array(todo[$0..<min($0 + config.blobsPerRead, todo.count)]) }) {
             var bytes: [BlobRef: Data] = [:]
             var needed: [(name: String, ref: BlobRef)] = []
             for (name, ref) in group {
-                if try await transport.hasBlob(name: name) {
+                if try await transport.hasBlob(name: name, epoch: epoch) {
                     uploaded.append(name)
                 } else {
                     needed.append((name, ref))
@@ -918,13 +1055,17 @@ actor SyncEngine {
             }
             if !needed.isEmpty { bytes = try await local.blobBytes(needed.map(\.ref)) }
             for (name, ref) in needed {
-                guard let data = bytes[ref] else { throw SyncTransportError.blobMissing(name) }
+                guard let data = bytes[ref] else {
+                    missing.insert(ref)
+                    continue
+                }
                 let sealed = try SyncCrypto.sealBlob(data, vaultID: vaultID, name: name, keys: keys)
-                try await transport.putBlob(name: name, data: sealed)
+                try await transport.putBlob(name: name, data: sealed, epoch: epoch)
                 uploaded.append(name)
             }
             try await state.markBlobsUploaded(uploaded)
             uploaded = []
         }
+        return missing
     }
 }

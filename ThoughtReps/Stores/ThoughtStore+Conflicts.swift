@@ -113,10 +113,11 @@ extension ThoughtStore {
         return delete(copy, now: now)
     }
 
-    /// The copy is deleted.
+    /// The copy is deleted. False, with nothing written, if the thought isn't a conflict copy.
     @discardableResult
     func keepOriginal(_ copy: Thought, now: Date) -> Bool {
-        delete(copy, now: now)
+        guard copy.conflictOfID != nil else { return false }
+        return delete(copy, now: now)
     }
 
     /// The copy stays as a thought of its own.

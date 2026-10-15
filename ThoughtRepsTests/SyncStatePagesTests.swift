@@ -76,6 +76,52 @@ struct SyncStatePagesTests {
         #expect(try await state.configuredVaultID() == "vault-1")
     }
 
+    @Test func aSnapshottingResetKeepsEachSyncedContentAsAnAttemptAndTheSyncedOneWins() async throws {
+        let state = try await enabled()
+        try await state.noteAttempts([("older", "e0", "h0", Data("attempt only".utf8)), ("k1", "e1", "stale", Data("stale attempt".utf8))])
+        try await state.commit(PageCommit(
+            records: [
+                syncedRecord("k1", entityID: "e1", content: "synced one"), syncedRecord("m1", type: .thoughtMeta, entityID: "e1", content: "meta"),
+            ],
+            cursor: 3, epoch: 1
+        ))
+        try await state.noteAttempts([("k1", "e1", "stale", Data("stale attempt".utf8))])
+        try await state.resetSyncProgress(keepingEpoch: true, snapshotting: true)
+        #expect(try await state.recordCount() == 0)
+        let kept = try await state.attempts(forKeys: ["older", "k1", "m1"])
+        #expect(kept["older"]?.plaintext == Data("attempt only".utf8))
+        #expect(kept["k1"]?.plaintext == Data("synced one".utf8))
+        #expect(kept["k1"]?.hash == SyncPayload.hash(of: Data("synced one".utf8)))
+        #expect(kept["m1"] == nil, "only thought content is kept as a merge base")
+
+        try await state.resetSyncProgress(keepingEpoch: true)
+        #expect(try await state.attemptCount() == 0, "without a snapshot nothing is kept")
+    }
+
+    @Test func recordsCanBeReadWithoutTheirContent() async throws {
+        let state = try await enabled()
+        try await state.commit(PageCommit(records: [syncedRecord("a", seq: 5, content: "body")], cursor: 5, epoch: 1))
+        let light = try #require(try await state.records(forKeys: ["a"], includingContent: false)["a"])
+        let full = try #require(try await state.records(forKeys: ["a"])["a"])
+        #expect(light.seq == 5 && light.baseHash == full.baseHash && light.fingerprint == full.fingerprint)
+        #expect(light.baseContent.isEmpty)
+        #expect(full.baseContent == Data("body".utf8))
+    }
+
+    @Test func anEmptyBlobIsStoredAsAZeroLengthBlobNotNull() throws {
+        let database = try SQLiteDatabase(path: ":memory:")
+        try database.execute("CREATE TABLE t(x BLOB NOT NULL)")
+        try database.execute("INSERT INTO t(x) VALUES(?)", [.blob(Data())])
+        var type = ""
+        var data: Data?
+        try database.query("SELECT typeof(x), x FROM t") {
+            type = $0.text(0)
+            data = $0.data(1)
+        }
+        #expect(type == "blob")
+        #expect(data == Data())
+    }
+
     @Test func theEnqueueObserverHearsOnlyAcceptedEnqueues() async throws {
         final class Counter: @unchecked Sendable {
             private let lock = NSLock()

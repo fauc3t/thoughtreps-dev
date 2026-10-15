@@ -126,6 +126,7 @@ struct SyncWaitingTests {
 
         var upgraded = SyncEngine.Configuration()
         upgraded.payloadVersion = 2
+        upgraded.readerVersion = 2
         b.makeEngine(config: upgraded)
         let merged = await b.sync()
         #expect(merged.lastError == nil && merged.pending == 0 && merged.waitingThoughts == 0)

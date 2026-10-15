@@ -130,6 +130,62 @@ struct ContentMergeTests {
         #expect(ContentMerge.merge(base: base, local: Self.content("x\ny\nz"), remote: Self.content("a\nQ\nc")) == .conflict)
     }
 
+    @Test func crlfTextMergesLineByLineAndKeepsItsLineEndings() throws {
+        let base = Self.content("one\r\ntwo\r\nthree\r\nfour")
+        let mine = Self.content("ONE\r\ntwo\r\nthree\r\nfour")
+        let theirs = Self.content("one\r\ntwo\r\nthree\r\nFOUR")
+        #expect(Self.merged(base, mine, theirs)?.body == "ONE\r\ntwo\r\nthree\r\nFOUR")
+        #expect(Self.merged(base, theirs, mine)?.body == "ONE\r\ntwo\r\nthree\r\nFOUR")
+        #expect(ContentMerge.merge(base: base, local: mine, remote: Self.content("ONE!\r\ntwo\r\nthree\r\nfour")) == .conflict)
+        #expect(ContentMerge.lines("a\r\nb\n\r\nc").joined(separator: "\n") == "a\r\nb\n\r\nc")
+    }
+
+    @Test func aRewriteOfALongTextIsAConflictWithoutRunningTheDiff() {
+        let base = Self.lines("old", 20_000)
+        let rewritten = Self.lines("new", 20_000)
+        var edited = base
+        edited[10] = "edited"
+        let start = ContinuousClock.now
+        let outcome = ContentMerge.merge(base: Self.content(Self.text(base)), local: Self.content(Self.text(rewritten)), remote: Self.content(Self.text(edited)))
+        #expect(outcome == .conflict)
+        #expect(ContinuousClock.now - start < .seconds(2))
+    }
+
+    @Test func scatteredSmallEditsOfALongTextStillMerge() throws {
+        let base = Self.lines("l", 3_000)
+        var mine = base
+        mine[1] = "mine"
+        var theirs = base
+        theirs[2_990] = "theirs"
+        let result = try #require(Self.merged(Self.content(Self.text(base)), Self.content(Self.text(mine)), Self.content(Self.text(theirs))))
+        #expect(result.body.contains("mine") && result.body.contains("theirs"))
+    }
+
+    @Test func aDeletionTheOtherSidesRewriteAlreadyMadeIsNotAnOverlapInEitherDirection() throws {
+        let base = Self.content("a\nb\nc")
+        let rewritten = Self.content("a\nb'")
+        let deleted = Self.content("a\nb")
+        #expect(Self.merged(base, rewritten, deleted)?.body == "a\nb'")
+        #expect(Self.merged(base, deleted, rewritten)?.body == "a\nb'")
+        #expect(ContentMerge.merge(base: base, local: Self.content("a\nb'\nc'"), remote: deleted) == .conflict, "an edit of the deleted line is still an overlap")
+    }
+
+    @Test func aRewriteThatShrinksTheRegionTakesTheDeletionAsCovered() {
+        let base = Self.content("b\nc\nd")
+        let rewrite = Self.content("X\nY")
+        let deleted = Self.content("b\nd")
+        #expect(Self.merged(base, rewrite, deleted)?.body == "X\nY", "the rewrite keeps its text; the deletion is dropped")
+        #expect(Self.merged(base, deleted, rewrite)?.body == "X\nY")
+    }
+
+    @Test func aDeletionCoveredByARewriteAndAnEditElsewhereBothApply() {
+        let base = Self.content("a\nb\nc\nd\ne\nf\ng")
+        let mine = Self.content("A\nb'\nd\ne\nf\ng")
+        let theirs = Self.content("a\nb\nd\ne\nf\nG")
+        #expect(Self.merged(base, mine, theirs)?.body == "A\nb'\nd\ne\nf\nG")
+        #expect(Self.merged(base, theirs, mine)?.body == "A\nb'\nd\ne\nf\nG")
+    }
+
     // MARK: Blocks
 
     @Test func editsInDifferentBlocksBothLand() throws {

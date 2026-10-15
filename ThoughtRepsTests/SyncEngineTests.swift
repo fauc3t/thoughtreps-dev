@@ -126,7 +126,7 @@ struct SyncEngineTests {
         try expectSame(a, b)
         try await b.expectClean()
         #expect(try await b.state.outboxCount() == 0)
-        #expect(await server.liveRecordCount == 2, "only keep's content and meta are live")
+        #expect(await server.liveRecordCount == 3, "keep's content and meta, and the settings record, are live")
     }
 
     @Test func imagesAndFilesTravelOnceAndArriveBeforeTheirThought() async throws {
@@ -199,7 +199,7 @@ struct SyncEngineTests {
         await server.dropNextPushResponse()
         let failed = await a.sync()
         #expect(failed.lastError != nil)
-        #expect(failed.pending == 1)
+        #expect(failed.pending == 2)
         let head = await server.headSeq
         let recovered = await a.sync()
         #expect(recovered.lastError == nil)
@@ -230,7 +230,7 @@ struct SyncEngineTests {
         await server.failNextCall(after: 1)
         let failed = await a.sync()
         #expect(failed.lastError != nil)
-        #expect(failed.pending == 1)
+        #expect(failed.pending == 2)
         await a.sync()
         await b.sync()
         try expectSame(a, b)
@@ -281,7 +281,7 @@ struct SyncEngineTests {
         let status = await b.sync()
         #expect(status.attention == .epochChanged(known: 1, server: 2))
         #expect(status.phase == .stopped)
-        #expect(await server.liveRecordCount == 2, "nothing was pushed after the epoch changed")
+        #expect(await server.liveRecordCount == 3, "nothing was pushed after the epoch changed")
         let again = await b.sync()
         #expect(again.attention != nil)
         #expect(try await b.state.outboxCount() == 1)
@@ -453,7 +453,7 @@ struct SyncEngineTests {
         // The meta record is older than the content record, so a one-record page brings the meta first.
         a.store.update(thought, body: "v2", blocks: [], intervalDays: nil, now: a.now(at(10)))
         await a.sync()
-        await server.failNextCall(after: 1)
+        await server.failNextCall(after: 2)
         let interrupted = await b.sync()
         #expect(interrupted.lastError != nil)
         #expect(try b.thought(thought.id) == nil)

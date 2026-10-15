@@ -63,14 +63,16 @@ enum ConflictCopy {
         )
     }
 
-    /// The content without the images and files whose bytes aren't available: their tokens and gallery entries go, and
-    /// so do galleries, file blocks and markdown blocks left empty by that.
+    /// The content without the images and files whose bytes aren't available: their tokens (and the line, if the
+    /// token was all of it) and gallery entries go, and so do galleries, file blocks and markdown blocks left empty by that.
     static func keepingAssets(of source: ThoughtContentRecord, imageIDs: Set<UUID>, fileIDs: Set<UUID>) -> ThoughtContentRecord {
         let lostInline = Set(source.images.map(\.id)).subtracting(imageIDs)
         func text(_ text: String) -> String {
             guard !lostInline.isEmpty else { return text }
-            return text.split(separator: "\n", omittingEmptySubsequences: false).filter { line in
-                !ImageToken.references(in: String(line)).contains(where: lostInline.contains)
+            return ContentMerge.lines(text).compactMap { line in
+                guard ImageToken.references(in: line).contains(where: lostInline.contains) else { return line }
+                let rest = ImageToken.removing(lostInline, from: line)
+                return rest.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : rest
             }.joined(separator: "\n")
         }
         var result = source

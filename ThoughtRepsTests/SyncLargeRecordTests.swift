@@ -34,6 +34,16 @@ struct SyncLargeRecordTests {
         try await b.expectClean()
     }
 
+    @Test func aBodyJustUnderTheLargestBucketSyncs() async throws {
+        let a = try await SyncDevice("A", server: server)
+        let b = try await SyncDevice("B", server: server)
+        let huge = a.store.create(body: Self.bigBody(15_500_000), now: a.now(at(1)))
+        let status = await a.sync()
+        #expect(status.lastError == nil && status.oversizedThoughts == 0)
+        await b.sync()
+        #expect(try b.thought(huge.id)?.body.count == 15_500_000)
+    }
+
     @Test func aDroppedPushResponseAfterTheBlobUploadRetriesSafely() async throws {
         let a = try await SyncDevice("A", server: server)
         let b = try await SyncDevice("B", server: server)
@@ -134,10 +144,10 @@ struct SyncLargeRecordTests {
         let a = try await SyncDevice("A", server: server, config: config)
         let huge = a.store.create(body: Self.bigBody(400_000), now: a.now(at(1)))
         for _ in 0..<3 { await a.sync() }
-        #expect(await a.engine.recordsSealed == 1)
+        #expect(await a.engine.recordsSealed == 2)
         a.store.update(huge, body: Self.bigBody(450_000), blocks: [], intervalDays: nil, now: a.now(at(2)))
         let status = await a.sync()
-        #expect(await a.engine.recordsSealed == 2)
+        #expect(await a.engine.recordsSealed == 3)
         #expect(status.oversizedThoughts == 1)
     }
 
@@ -198,12 +208,13 @@ struct SyncLargeRecordTests {
         _ = try await inject(recordKey: key, inner: frame, device: b, storeBlob: true)
         await b.sync()
         #expect(try await b.state.parkedPointerCount() == 0)
-        let parked = try await b.state.parked()
+        let parked = try await b.state.parked(limit: 10)
         #expect(parked.count == 1)
         #expect(parked.first?.payload == frame)
 
         var newer = SyncEngine.Configuration()
         newer.payloadVersion = 2
+        newer.readerVersion = 2
         b.makeEngine(config: newer)
         await b.sync()
         #expect(try await b.state.parkedCount() == 0)

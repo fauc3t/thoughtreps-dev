@@ -62,8 +62,8 @@ actor SyncReconciler {
         return try context.fetch(page).map { ($0.id, $0.deletedAt) }
     }
 
-    /// Does nothing while sync is off. Entries are queued after a scan of each kind, so a write made
-    /// meanwhile (which queues itself) is never undone, only possibly queued twice.
+    /// Does nothing while sync is off. Each page of thoughts (and of tombstones) is queued as soon as it is scanned, so a
+    /// write made meanwhile (which queues itself) is never undone, only possibly queued twice.
     func reconcile(state: SyncState, settings: SettingsRecord) async throws -> Summary {
         var summary = Summary()
         summary.ranOnMainThread = Self.isOnMainThread()

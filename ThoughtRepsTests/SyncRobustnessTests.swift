@@ -162,6 +162,7 @@ struct SyncRobustnessTests {
 
         var upgraded = SyncEngine.Configuration()
         upgraded.payloadVersion = 2
+        upgraded.readerVersion = 2
         b.makeEngine(config: upgraded)
         let status = await b.sync()
         #expect(status.lastError == nil)

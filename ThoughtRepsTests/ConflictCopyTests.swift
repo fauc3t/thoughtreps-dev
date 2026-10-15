@@ -17,6 +17,16 @@ struct ConflictCopyTests {
         )
     }
 
+    @Test func keepingAssetsStripsALostTokenAndDropsOnlyLinesLeftEmpty() {
+        let lost = UUID(), kept = UUID()
+        let body = "before \(ImageToken.token(for: lost)) after\n\(ImageToken.token(for: lost))\n  \(ImageToken.token(for: kept)) tail\nlast"
+        var source = content(body)
+        source.images = [lost, kept].map { ImageRecord(id: $0, width: 4, height: 3, order: 0) }
+        let result = ConflictCopy.keepingAssets(of: source, imageIDs: [kept], fileIDs: [])
+        #expect(result.body == "before  after\n  \(ImageToken.token(for: kept)) tail\nlast")
+        #expect(result.images.map(\.id) == [kept])
+    }
+
     @Test func theCopyIdDependsOnlyOnTheOriginalAndTheLosingContent() {
         let a = content("a")
         #expect(ConflictCopy.copyID(of: original, losing: a) == ConflictCopy.copyID(of: original, losing: a))

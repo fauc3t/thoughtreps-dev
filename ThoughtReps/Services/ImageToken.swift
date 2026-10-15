@@ -26,6 +26,17 @@ enum ImageToken {
         regex.stringByReplacingMatches(in: body, range: NSRange(location: 0, length: (body as NSString).length), withTemplate: "")
     }
 
+    /// `text` without the tokens of the images in `ids`.
+    static func removing(_ ids: Set<UUID>, from text: String) -> String {
+        let source = text as NSString
+        var result = text as NSString
+        for match in regex.matches(in: text, range: NSRange(location: 0, length: source.length)).reversed() {
+            guard let id = UUID(uuidString: source.substring(with: match.range(at: 1))), ids.contains(id) else { continue }
+            result = result.replacingCharacters(in: match.range, with: "") as NSString
+        }
+        return result as String
+    }
+
     /// The image id for a Markdown image URL the renderer should load locally, or nil for any other URL.
     static func id(from url: URL) -> UUID? {
         let text = url.absoluteString

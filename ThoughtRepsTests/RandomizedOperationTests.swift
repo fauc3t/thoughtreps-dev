@@ -244,7 +244,7 @@ struct RandomizedOperationTests {
 
         for step in 0..<Self.stepsPerSeed {
             let thoughts = try context.fetch(FetchDescriptor<Thought>(sortBy: [SortDescriptor(\.createdAt), SortDescriptor(\.id)]))
-            var op = Int.random(in: 0..<31, using: &rng)
+            var op = Int.random(in: 0..<32, using: &rng)
             if op == 22 && Int.random(in: 0..<6, using: &rng) != 0 { op = 12 }
             if thoughts.isEmpty && op >= 2 && op != 11 && op != 12 && op != 18 && op != 22 && op != 23 { op = 0 }
             let target = thoughts.randomElement(using: &rng)
@@ -483,6 +483,24 @@ struct RandomizedOperationTests {
                 } else {
                     description = "resolve a copy (none)"
                 }
+            case 31:
+                let base = EditBase(target!)
+                let drafts = Self.currentDrafts(of: target!)
+                let interval = target!.intervalDays
+                let opened = target!.body
+                failureCountdown = nil
+                let doomed = target!.id
+                let concurrent = Int.random(in: 0..<4, using: &rng)
+                switch concurrent {
+                case 1: store.update(target!, body: "remote head\n" + opened, blocks: drafts, intervalDays: interval, now: now)
+                case 2: store.update(target!, body: Self.randomBody(&rng), blocks: drafts, intervalDays: interval, now: now)
+                case 3: if store.delete(target!, now: now) { deletedIDs.insert(doomed) }
+                default: break
+                }
+                failureCountdown = injectedStep
+                let edited = (opened + "\nedited \(Int.random(in: 0..<1000, using: &rng))").trimmingCharacters(in: .whitespacesAndNewlines)
+                let saved = store.saveEdit(base, body: edited, blocks: drafts, intervalDays: interval, learn: base.learn, now: now)
+                description = "saveEdit over a concurrent change (\(concurrent), saved: \(saved))"
             case 22:
                 store.deleteAll()
                 description = "deleteAll"

@@ -29,6 +29,14 @@ struct SettingsView: View {
         )
     }
 
+    /// Records the change only for the user's own edits: a synced value written to the same key must not be re-stamped.
+    private var userDefaultInterval: Binding<Int> {
+        Binding(
+            get: { defaultIntervalDays },
+            set: { AppSettings.setDefaultIntervalByUser($0, now: .now) }
+        )
+    }
+
     private func refreshExportLink() async {
         #if DEBUG
         if ScreenshotMode.isActive { return }
@@ -44,7 +52,7 @@ struct SettingsView: View {
         NavigationStack {
             Form {
                 Section {
-                    Stepper(value: $defaultIntervalDays, in: 1...90) {
+                    Stepper(value: userDefaultInterval, in: 1...90) {
                         LabeledContent("Default interval", value: "\(defaultIntervalDays) \(defaultIntervalDays == 1 ? "day" : "days")")
                     }
                 } header: {
@@ -189,7 +197,6 @@ struct SettingsView: View {
                 }
             }
             .onChange(of: reminderMinutes) { reschedule() }
-            .onChange(of: defaultIntervalDays) { AppSettings.recordDefaultIntervalChange(now: .now) }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

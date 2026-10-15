@@ -93,7 +93,7 @@ extension View {
     func thoughtDestinations() -> some View {
         navigationDestination(for: AppRoute.self) { route in
             switch route {
-            case .thought(let thought): ThoughtDetailView(thought: thought)
+            case .thought(let thought): ThoughtDetailLoader(modelID: thought.persistentModelID)
             case .linkedThought(let thought): ThoughtDetailLoader(modelID: thought.persistentModelID, openKind: .visit)
             case .tag(let tag): TagTimelineView(tag: tag)
             case .untagged: ThoughtTimelineView(scope: .untagged)

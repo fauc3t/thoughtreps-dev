@@ -46,6 +46,7 @@ struct SyncParkedAndResyncTests {
 
         var newer = SyncEngine.Configuration()
         newer.payloadVersion = 2
+        newer.readerVersion = 2
         b.makeEngine(config: newer)
         await b.sync()
         #expect(try await b.state.parkedVersionTried() == 2)

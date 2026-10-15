@@ -26,8 +26,11 @@ struct ThoughtDetailColumn: View {
 }
 
 /// Resolves a thought with a primary-key query rather than a model reference, so one that is deleted
-/// while shown turns into a placeholder instead of a dead model.
+/// while shown turns into a placeholder instead of a dead model. Pushed on a stack (no `ThoughtSelection`), an
+/// opened thought that disappears pops itself.
 struct ThoughtDetailLoader: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(ThoughtSelection.self) private var selection: ThoughtSelection?
     @Query private var matches: [Thought]
     private let openKind: OpenKind
 
@@ -38,18 +41,34 @@ struct ThoughtDetailLoader: View {
         _matches = Query(descriptor)
     }
 
+    @State private var isShown = false
+
     var body: some View {
-        if let thought = matches.first {
-            ThoughtDetailView(thought: thought, openKind: openKind)
-        } else if openKind == .visit {
-            ContentUnavailableView {
-                Label("This thought was deleted", systemImage: "trash")
-                    .font(.archivo(22, weight: .bold, relativeTo: .title2))
+        Group {
+            if let thought = matches.first {
+                ThoughtDetailView(thought: thought, openKind: openKind)
+            } else if openKind == .visit {
+                ContentUnavailableView {
+                    Label("This thought was deleted", systemImage: "trash")
+                        .font(.archivo(22, weight: .bold, relativeTo: .title2))
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color.paper)
+            } else if selection == nil {
+                Color.paper
+            } else {
+                ThoughtPlaceholder()
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Color.paper)
-        } else {
-            ThoughtPlaceholder()
+        }
+        .onAppear {
+            isShown = true
+            // Deleted while a pushed screen covered it: pop when it comes back. A self-delete only happens after the pop.
+            if matches.isEmpty, openKind == .open, selection == nil { dismiss() }
+        }
+        .onDisappear { isShown = false }
+        .onChange(of: matches.isEmpty) { _, gone in
+            // Only while on screen: a thought deleted from its own screen is removed after the pop has finished.
+            if gone, isShown, openKind == .open, selection == nil { dismiss() }
         }
     }
 }

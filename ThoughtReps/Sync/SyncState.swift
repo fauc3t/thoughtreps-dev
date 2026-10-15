@@ -29,12 +29,15 @@ struct HeldRecord: Sendable, Equatable {
     var blocked = false
 }
 
-/// A pulled record this version can't read (a newer payload version or an unknown type), kept still sealed.
+/// A pulled record this version can't read (a newer payload version, an unknown type or frame), kept still sealed.
 struct ParkedRecord: Sendable, Equatable {
     var recordKey: String
     var seq: Int64
     var payload: Data
     var deleted: Bool
+    /// A pointer parked because its blob is in a frame from a newer app. Unlike other pointers, which are retried every
+    /// cycle for a blob that isn't there or readable yet, it waits for an update.
+    var needsUpdate = false
 }
 
 /// Everything a pulled page changes in `sync.sqlite`, committed together: if applying the page failed, none of it is.
@@ -98,7 +101,7 @@ actor SyncState {
         URL.applicationSupportDirectory.appending(path: "Sync", directoryHint: .isDirectory).appending(path: "sync.sqlite")
     }
 
-    private static let schemaVersion: Int32 = 1
+    private static let schemaVersion: Int32 = 2
     private static let logger = Logger(subsystem: "com.thoughtreps", category: "sync")
 
     private struct Queued: Sendable {
@@ -245,15 +248,16 @@ actor SyncState {
         }
     }
 
-    /// The synced records for a set of keys, in one query per few hundred.
-    func records(forKeys keys: [String]) throws -> [String: SyncedRecord] {
+    /// The synced records for a set of keys, in one query per few hundred. Without `includingContent` the
+    /// `baseContent` is left empty, for callers that need only the seq and hash.
+    func records(forKeys keys: [String], includingContent: Bool = true) throws -> [String: SyncedRecord] {
         try perform { database in
             var found: [String: SyncedRecord] = [:]
             for start in stride(from: 0, to: keys.count, by: 500) {
                 let chunk = Array(keys[start..<min(start + 500, keys.count)])
                 let marks = Array(repeating: "?", count: chunk.count).joined(separator: ", ")
                 try database.query(
-                    "SELECT record_key, type, entity_id, seq, fingerprint, base_hash, base_content FROM records WHERE record_key IN (\(marks))",
+                    "SELECT record_key, type, entity_id, seq, fingerprint, base_hash, \(includingContent ? "base_content" : "NULL") FROM records WHERE record_key IN (\(marks))",
                     chunk.map(SQLiteValue.text)
                 ) { row in
                     guard let type = SyncRecordType(rawValue: row.text(1)) else { return }
@@ -388,8 +392,11 @@ actor SyncState {
                 }
                 for parked in page.park {
                     try database.execute(
-                        "INSERT OR REPLACE INTO parked(record_key, seq, payload, deleted) VALUES(?, ?, ?, ?)",
-                        [.text(parked.recordKey), .int(parked.seq), .blob(parked.payload), .int(parked.deleted ? 1 : 0)]
+                        "INSERT OR REPLACE INTO parked(record_key, seq, payload, deleted, needs_update) VALUES(?, ?, ?, ?, ?)",
+                        [
+                            .text(parked.recordKey), .int(parked.seq), .blob(parked.payload), .int(parked.deleted ? 1 : 0),
+                            .int(parked.needsUpdate ? 1 : 0),
+                        ]
                     )
                 }
                 for entity in page.requeue {
@@ -439,14 +446,28 @@ actor SyncState {
         }
     }
 
-    func parked() throws -> [ParkedRecord] {
+    /// Up to `limit` parked records ordered by seq and key, starting after `after`, so a long list is never held whole.
+    /// Pointers waiting for a blob (`needsUpdate` false) are left out: `parkedPointers` has those.
+    func parked(after: (seq: Int64, key: String)? = nil, limit: Int) throws -> [ParkedRecord] {
         try perform { database in
             var found: [ParkedRecord] = []
-            try database.query("SELECT record_key, seq, payload, deleted FROM parked ORDER BY seq") { row in
-                found.append(ParkedRecord(recordKey: row.text(0), seq: row.int(1), payload: row.data(2) ?? Data(), deleted: row.int(3) != 0))
-            }
+            let sql = """
+                SELECT record_key, seq, payload, deleted, needs_update FROM parked
+                WHERE (substr(payload, 1, 4) != ? OR needs_update = 1)\(after == nil ? "" : " AND (seq, record_key) > (?, ?)")
+                ORDER BY seq, record_key LIMIT ?
+                """
+            var binds: [SQLiteValue] = [.blob(SyncCrypto.pointerMagic)]
+            if let after { binds += [.int(after.seq), .text(after.key)] }
+            binds.append(.int(Int64(limit)))
+            try database.query(sql, binds) { found.append(Self.parkedRecord($0)) }
             return found
         }
+    }
+
+    private static func parkedRecord(_ row: SQLiteRow) -> ParkedRecord {
+        ParkedRecord(
+            recordKey: row.text(0), seq: row.int(1), payload: row.data(2) ?? Data(), deleted: row.int(3) != 0, needsUpdate: row.int(4) != 0
+        )
     }
 
     func parkedKeys() throws -> Set<String> {
@@ -470,7 +491,7 @@ actor SyncState {
         }
     }
 
-    /// The payload version the parked records were last tried with; they are tried again only when it changes.
+    /// The reader version (`SyncCrypto.readerVersion`) the parked records were last tried with; they are tried again only when it changes.
     func parkedVersionTried() throws -> Int? {
         try perform { try Self.meta("parked_version", in: $0).flatMap { Int($0) } }
     }
@@ -485,11 +506,9 @@ actor SyncState {
         try perform { database in
             var found: [ParkedRecord] = []
             try database.query(
-                "SELECT record_key, seq, payload, deleted FROM parked WHERE substr(payload, 1, 4) = ? ORDER BY seq",
+                "SELECT record_key, seq, payload, deleted, needs_update FROM parked WHERE substr(payload, 1, 4) = ? AND needs_update = 0 ORDER BY seq",
                 [.blob(SyncCrypto.pointerMagic)]
-            ) { row in
-                found.append(ParkedRecord(recordKey: row.text(0), seq: row.int(1), payload: row.data(2) ?? Data(), deleted: row.int(3) != 0))
-            }
+            ) { found.append(Self.parkedRecord($0)) }
             return found
         }
     }
@@ -497,7 +516,9 @@ actor SyncState {
     func parkedPointerCount() throws -> Int {
         try perform { database in
             var total = 0
-            try database.query("SELECT count(*) FROM parked WHERE substr(payload, 1, 4) = ?", [.blob(SyncCrypto.pointerMagic)]) { total = Int($0.int(0)) }
+            try database.query(
+                "SELECT count(*) FROM parked WHERE substr(payload, 1, 4) = ? AND needs_update = 0", [.blob(SyncCrypto.pointerMagic)]
+            ) { total = Int($0.int(0)) }
             return total
         }
     }
@@ -644,23 +665,18 @@ actor SyncState {
                     )
                 }
                 // A 410 resync keeps the content last synced of each thought, as `attempts` (the base for a merge, whose
-                // seq would be stale anyway), so edits made here since still merge instead of becoming copies.
-                var kept: [(key: String, entity: String, hash: String, content: Data)] = []
+                // seq would be stale anyway), so edits made here since still merge instead of becoming copies. The synced
+                // version replaces an older attempt for the same record.
                 if snapshotting {
-                    try database.query("SELECT record_key, entity_id, base_hash, base_content FROM records WHERE type = 'thought.content'") {
-                        kept.append(($0.text(0), $0.text(1), $0.text(2), $0.data(3) ?? Data()))
-                    }
-                    try database.query("SELECT record_key, entity_id, base_hash, content FROM attempts") {
-                        kept.append(($0.text(0), $0.text(1), $0.text(2), $0.data(3) ?? Data()))
-                    }
-                }
-                try Self.clearContents(of: database, keepingBlobs: keepingBlobs, keepingSnapshot: snapshotting)
-                for base in kept {
                     try database.execute(
-                        "INSERT OR IGNORE INTO attempts(record_key, entity_id, base_hash, content) VALUES(?, ?, ?, ?)",
-                        [.text(base.key), .text(base.entity), .text(base.hash), .blob(base.content)]
+                        """
+                        INSERT OR REPLACE INTO attempts(record_key, entity_id, base_hash, content)
+                        SELECT record_key, entity_id, base_hash, base_content FROM records
+                        WHERE type = 'thought.content' AND base_content IS NOT NULL
+                        """
                     )
                 }
+                try Self.clearContents(of: database, keepingBlobs: keepingBlobs, keepingSnapshot: snapshotting, keepingAttempts: snapshotting)
                 try database.execute("INSERT INTO meta(key, value) VALUES('vault_id', ?)", [.text(self.vaultID ?? "")])
                 if let epoch { try Self.setMeta("epoch", epoch, in: database) }
             }
@@ -817,7 +833,7 @@ actor SyncState {
         } else if version != schemaVersion {
             throw SQLiteError(code: SQLITE_SCHEMA, message: "sync state schema version \(version)")
         }
-        // Added after version 1 reached main; harmless to repeat, and a version-1 file from before them keeps working.
+        // Tables added after the first version; a file of an older schema never gets here (it is rebuilt above, being derived state).
         try database.execute("CREATE TABLE IF NOT EXISTS blobs(name TEXT PRIMARY KEY)")
         try database.execute(
             """
@@ -828,7 +844,12 @@ actor SyncState {
             """
         )
         try database.execute(
-            "CREATE TABLE IF NOT EXISTS parked(record_key TEXT PRIMARY KEY, seq INTEGER NOT NULL, payload BLOB NOT NULL, deleted INTEGER NOT NULL)"
+            """
+            CREATE TABLE IF NOT EXISTS parked(
+                record_key TEXT PRIMARY KEY, seq INTEGER NOT NULL, payload BLOB NOT NULL, deleted INTEGER NOT NULL,
+                needs_update INTEGER NOT NULL DEFAULT 0
+            )
+            """
         )
         try database.execute("CREATE TABLE IF NOT EXISTS attempts(record_key TEXT PRIMARY KEY, entity_id TEXT NOT NULL DEFAULT '', base_hash TEXT NOT NULL, content BLOB NOT NULL)")
         try database.execute("CREATE TABLE IF NOT EXISTS resync_snapshot(entity_id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL)")
@@ -839,9 +860,11 @@ actor SyncState {
         return database
     }
 
-    private static func clearContents(of database: SQLiteDatabase, keepingBlobs: Bool = false, keepingSnapshot: Bool = false) throws {
+    private static func clearContents(
+        of database: SQLiteDatabase, keepingBlobs: Bool = false, keepingSnapshot: Bool = false, keepingAttempts: Bool = false
+    ) throws {
         try database.execute("DELETE FROM records")
-        try database.execute("DELETE FROM attempts")
+        if !keepingAttempts { try database.execute("DELETE FROM attempts") }
         try database.execute("DELETE FROM held")
         try database.execute("DELETE FROM parked")
         if !keepingSnapshot { try database.execute("DELETE FROM resync_snapshot") }

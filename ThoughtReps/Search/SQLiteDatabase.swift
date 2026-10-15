@@ -73,7 +73,10 @@ final class SQLiteDatabase {
             case .double(let number): code = sqlite3_bind_double(statement, position, number)
             case .int(let number): code = sqlite3_bind_int64(statement, position, number)
             case .blob(let data):
-                code = data.withUnsafeBytes { sqlite3_bind_blob(statement, position, $0.baseAddress, Int32($0.count), Self.transient) }
+                // An empty `Data` has no base address, and binding a null pointer stores NULL, not a zero-length blob.
+                code = data.isEmpty
+                    ? sqlite3_bind_zeroblob(statement, position, 0)
+                    : data.withUnsafeBytes { sqlite3_bind_blob(statement, position, $0.baseAddress, Int32($0.count), Self.transient) }
             case .null: code = sqlite3_bind_null(statement, position)
             }
             guard code == SQLITE_OK else { throw lastError(code) }

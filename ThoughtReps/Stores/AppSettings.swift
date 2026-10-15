@@ -42,6 +42,14 @@ enum AppSettings {
         sync.enqueue([.settings])
     }
 
+    /// The user's own change to the default interval: writes it and records the change. A synced value is written to
+    /// the key directly, so it never passes through here and isn't re-stamped or queued.
+    static func setDefaultIntervalByUser(_ days: Int, now: Date, defaults: UserDefaults = .standard, sync: SyncState = .shared) {
+        guard days != defaultIntervalDays(in: defaults) else { return }
+        defaults.set(days, forKey: Key.defaultIntervalDays)
+        recordDefaultIntervalChange(now: now, defaults: defaults, sync: sync)
+    }
+
     static var thoughtFont: ThoughtFont {
         UserDefaults.standard.string(forKey: Key.thoughtFont).flatMap(ThoughtFont.init) ?? .paperMono
     }

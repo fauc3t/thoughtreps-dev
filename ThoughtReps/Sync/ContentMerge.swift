@@ -198,8 +198,13 @@ enum ContentMerge {
         if local == base { return remote }
         if remote == base || local == remote { return local }
         let baseLines = lines(base)
-        let mine = hunks(from: baseLines, to: lines(local))
-        let theirs = hunks(from: baseLines, to: lines(remote))
+        let localLines = lines(local)
+        let remoteLines = lines(remote)
+        guard changedSpan(from: baseLines, to: localLines) <= maxChangedSpan,
+              changedSpan(from: baseLines, to: remoteLines) <= maxChangedSpan
+        else { throw Conflict() }
+        let mine = hunks(from: baseLines, to: localLines)
+        let theirs = hunks(from: baseLines, to: remoteLines)
         var output: [String] = []
         var position = 0
         func emit(_ hunk: Hunk) throws {
@@ -242,8 +247,22 @@ enum ContentMerge {
         return output.joined(separator: "\n")
     }
 
-    private static func lines(_ text: String) -> [String] {
-        text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+    /// The most lines, base plus new, between the common first and last lines of a side that the line diff is
+    /// attempted on. The diff costs about its length times its size, which a rewrite of a long text makes seconds on
+    /// the main actor; a copy keeps both sides whole, so a bigger change is treated as an overlap.
+    static let maxChangedSpan = 5_000
+
+    private static func changedSpan(from old: [String], to new: [String]) -> Int {
+        var prefix = 0
+        while prefix < old.count, prefix < new.count, old[prefix] == new[prefix] { prefix += 1 }
+        var suffix = 0
+        while suffix < old.count - prefix, suffix < new.count - prefix, old[old.count - 1 - suffix] == new[new.count - 1 - suffix] { suffix += 1 }
+        return old.count + new.count - 2 * (prefix + suffix)
+    }
+
+    /// Split on the line feed scalar alone: a CRLF is one `Character`, so splitting characters would never see it.
+    static func lines(_ text: String) -> [String] {
+        text.unicodeScalars.split(separator: "\n", omittingEmptySubsequences: false).map { String(String.UnicodeScalarView($0)) }
     }
 
     /// A change in terms of the base: lines `start..<end` are replaced by `lines` (an insertion when `start == end`).
@@ -252,9 +271,16 @@ enum ContentMerge {
         var end: Int
         var lines: [String]
 
-        /// This change covers the other's base lines and ends with the other's replacement at the shared start or end.
+        /// This change covers the other's base lines and ends with the other's replacement at the shared start or end,
+        /// or the other only deletes lines this one's rewrite has already dropped (it replaces them with fewer lines).
+        /// The deletion rule is a count heuristic: base b,c,d rewritten to X,Y against a deletion of c is taken as
+        /// already covered, so the rewrite wins and the deletion is dropped. That keeps more text, never less, and
+        /// needs no copy; it is what lets a retried merge converge.
         func includes(_ other: Hunk) -> Bool {
-            guard start <= other.start, other.end <= end, !other.lines.isEmpty else { return false }
+            guard start <= other.start, other.end <= end else { return false }
+            if other.lines.isEmpty {
+                return other.start < other.end && lines.count + (other.end - other.start) <= end - start
+            }
             return (other.end == end && lines.count > other.lines.count && lines.suffix(other.lines.count) == other.lines[...])
                 || (other.start == start && lines.count > other.lines.count && lines.prefix(other.lines.count) == other.lines[...])
         }
@@ -310,7 +336,7 @@ enum ContentMerge {
 
     /// The image a line consists of alone, if it is one.
     private static func tokenLineID(_ line: String) -> UUID? {
-        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
         let ids = ImageToken.references(in: trimmed)
         return ids.count == 1 && ImageToken.removing(from: trimmed).isEmpty ? ids[0] : nil
     }

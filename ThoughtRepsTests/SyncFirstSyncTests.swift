@@ -100,31 +100,33 @@ struct SyncFirstSyncTests {
         #expect(await server.pushCalls == 0, "1.5 s after the second change is not yet 2 s")
         await sleeper.advance(by: .milliseconds(600))
         await waitUntil("the cycle") { await server.pushCalls == 1 }
-        #expect(await server.liveRecordCount == 4, "both thoughts went in one cycle")
+        #expect(await server.liveRecordCount == 5, "both thoughts went in one cycle")
         await triggers.stop(observing: a.state)
     }
 
     @Test func theHeadCheckRunsACycleOnlyWhenTheHeadMoved() async throws {
         let a = try await SyncDevice("A", server: server)
         let b = try await SyncDevice("B", server: server)
+        await a.sync()
+        await a.sync()
+        #expect(await a.engine.status.headSeq == (await server.headSeq), "A has pulled up to the head, its own first push included")
+        let pulls = await server.pullCalls
         let sleeper = ManualSleeper()
         let triggers = SyncTriggers(engine: a.engine, sleep: { try await sleeper.sleep($0) })
         await triggers.start(observing: a.state)
         await waitUntil("the head loop to sleep") { await sleeper.waiting == 1 }
 
         await sleeper.advance(by: .seconds(30))
-        await waitUntil("the first cycle") { await server.pullCalls == 1 }
+        await waitUntil("a head check") { await server.headCalls == 1 }
         await waitUntil("the head loop to sleep again") { await sleeper.waiting == 1 }
-        await sleeper.advance(by: .seconds(30))
-        await waitUntil("a second head check") { await server.headCalls == 2 }
         try await Task.sleep(for: .milliseconds(50))
-        #expect(await server.pullCalls == 1, "the head didn't move, so no cycle")
+        #expect(await server.pullCalls == pulls, "the head didn't move, so no cycle")
 
         let thought = b.store.create(body: "from B", now: b.now(at(0)))
         await b.sync()
-        await waitUntil("the head loop to sleep again") { await sleeper.waiting == 1 }
         await sleeper.advance(by: .seconds(30))
         await waitUntil("the thought to arrive") { (try? a.thought(thought.id)) != nil }
+        #expect(await server.pullCalls > pulls, "the head moved, so a cycle ran")
         await triggers.stop(observing: a.state)
     }
 }
