@@ -54,6 +54,36 @@ Debug builds also have a screenshot mode for the App Store screenshots: launch w
 
 With a paid developer account the install lasts a year.
 
+## Sync against the local server
+
+The sync server lives in `thoughtreps-aws`. Its local runner serves the API on DynamoDB Local (needs Java, no Docker; the store is in memory and lost on exit):
+
+```sh
+cd <thoughtreps-aws>
+SYNC_LOCAL_SECRET=dev-secret pnpm --filter infra sync:local   # http://127.0.0.1:8787/api/v1 (SYNC_LOCAL_PORT to change)
+```
+
+**Contract and engine tests.** The suite always runs the fake-server half. To run the HTTP half too, pass the server through `TEST_RUNNER_`-prefixed variables (without them those suites show as skipped):
+
+```sh
+TEST_RUNNER_THOUGHTREPS_SYNC_TEST_URL=http://127.0.0.1:8787/api/v1 \
+TEST_RUNNER_THOUGHTREPS_SYNC_TEST_SECRET=dev-secret \
+xcodebuild test -scheme ThoughtReps -destination 'platform=iOS Simulator,name=<simulator>'
+```
+
+Each test makes its own vault with a random id.
+
+**Two simulators.** A DEBUG build starts syncing when all four launch variables are set (any missing and it only fills the outbox):
+
+- `THOUGHTREPS_SYNC_URL`: `http://127.0.0.1:8787/api/v1`
+- `THOUGHTREPS_SYNC_VAULT`: any id of letters, digits, `_` or `-`; the vault is created on first launch
+- `THOUGHTREPS_SYNC_DEV_SECRET`: the runner's secret
+- `THOUGHTREPS_SYNC_KEY`: base64 of 32 bytes, the same on both devices. Make one with `openssl rand -base64 32`.
+
+From the command line prefix each with `SIMCTL_CHILD_` (`SIMCTL_CHILD_THOUGHTREPS_SYNC_URL=... xcrun simctl launch <device> com.thoughtreps.app`); from Xcode set them unprefixed under the scheme's Run > Arguments > Environment Variables.
+
+The runner's store is in memory, so restarting it gives every vault a new epoch and an old install stops with "epoch changed". Delete and reinstall the app on both simulators after a restart.
+
 ## Releasing to the App Store
 
 Before uploading a build to App Store Connect (TestFlight or release), check every item. The privacy items must match each other, so change them together (see the privacy rule in CLAUDE.md).

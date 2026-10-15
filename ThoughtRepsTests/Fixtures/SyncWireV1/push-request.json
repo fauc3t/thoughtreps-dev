@@ -1,0 +1,17 @@
+{
+  "epoch": 1,
+  "records": [
+    {
+      "key": "Q-Y85gZYeFMCw5FLlo5pPem-fdXn9BQl7fi8MEJti1Q",
+      "baseSeq": null,
+      "deleted": false,
+      "payload": "VFIwMSBzZWFsZWQgcGF5bG9hZCBmb3IgcmVjb3JkIGE="
+    },
+    {
+      "key": "cEqYZBq5_keBcdVD0vHgqpHZEhaFzkzXXaEcZU7T4eY",
+      "baseSeq": 4,
+      "deleted": true,
+      "payload": ""
+    }
+  ]
+}

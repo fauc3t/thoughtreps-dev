@@ -51,6 +51,9 @@ actor SyncEngine {
         /// The vault was erased on another device (or replaced). Syncing stops, because pushing on would bring back what was
         /// erased, until the user decides what to do with this device's copy.
         case epochChanged(known: Int64, server: Int64)
+        /// The server refused a request outright (bad request, unauthorized, unknown vault). Retrying can't help, so syncing
+        /// stops until the app is relaunched.
+        case serverRefused(status: Int, message: String)
     }
 
     struct Status: Sendable, Equatable {
@@ -71,12 +74,16 @@ actor SyncEngine {
         /// Queued local changes not pushed because the server's version of that thought is parked, blocked or held:
         /// they go out once it has been applied and merged.
         var waitingThoughts = 0
-        /// Queued thoughts too big to sync (a sealed record over `maxRecordBytes`, or one the server refused as too large).
+        /// Queued thoughts too big to sync (a sealed record over `maxRecordBytes`, or one the server refused as too large),
         /// They stay queued, and everything else still goes out.
         var oversizedThoughts = 0
         /// Queued thoughts whose image or file bytes are missing on this device. Only they wait (the server must not be
         /// told the attachment is gone); retried every cycle.
         var missingAttachments = 0
+        /// Queued thoughts that need blob storage the server lacks (`SyncTransport.supportsBlobs`): an image, a file, or a
+        /// record over `maxInlinePayload`. The whole thought waits, so its meta changes (pin, archive, snooze) wait with
+        /// it until the server has blobs (phase 3). Retried every cycle, without a request.
+        var waitingForBlobs = 0
     }
 
     enum Failure: Error, Equatable, CustomStringConvertible {
@@ -122,6 +129,7 @@ actor SyncEngine {
     /// Queued thoughts left alone in this push because the server holds a version this device couldn't apply yet.
     private var waitingEntities: Set<SyncEntity> = []
     private var oversizedEntities: Set<SyncEntity> = []
+    private var blobHeldEntities: Set<SyncEntity> = []
     private var missingAttachmentEntities: Set<SyncEntity> = []
     /// Record keys whose record was over `maxRecordBytes`, with the fingerprint it had then: skipped (not encoded and
     /// sealed again) until the fingerprint changes. Kept in memory.
@@ -181,9 +189,12 @@ actor SyncEngine {
                 stop(.epochChanged(known: known, server: head.epoch))
                 return false
             }
-            let heldBack = waitingEntities.union(oversizedEntities).union(missingAttachmentEntities).count
+            let heldBack = waitingEntities.union(oversizedEntities).union(missingAttachmentEntities).union(blobHeldEntities).count
             let hasPushable = try await state.outboxCount() > heldBack
             guard head.headSeq != status.headSeq || status.lastError != nil || hasPushable else { return false }
+        } catch SyncTransportError.refused(let status, let message) {
+            stop(.serverRefused(status: status, message: message))
+            return false
         } catch {
             record(error)
             return false
@@ -213,6 +224,8 @@ actor SyncEngine {
                 }
             } catch let failure as AttentionFailure {
                 stop(failure.attention)
+            } catch SyncTransportError.refused(let status, let message) {
+                stop(.serverRefused(status: status, message: message))
             } catch {
                 record(error)
             }
@@ -417,6 +430,8 @@ actor SyncEngine {
             return .record(resolved)
         } catch SyncTransportError.blobMissing(_) {
             unreadableBackoff[record.recordKey] = nil
+            return .waiting
+        } catch SyncTransportError.unsupported {
             return .waiting
         } catch SyncTransportError.tooLarge {
             backOff(record.recordKey)
@@ -795,7 +810,7 @@ actor SyncEngine {
                         thought.files[ref.id] = file
                         size += bytes.count + (file.thumbnailData?.count ?? 0)
                     }
-                } catch SyncTransportError.blobMissing(_) {
+                } catch SyncTransportError.blobMissing(_), SyncTransportError.unsupported {
                     throw BlobFailure(unreadable: false)
                 } catch is SyncCrypto.Failure, is ImageProcessingError, is FileProcessingError, SyncTransportError.tooLarge {
                     throw BlobFailure(unreadable: true)
@@ -819,12 +834,15 @@ actor SyncEngine {
         var conflicts = 0
         waitingEntities = []
         oversizedEntities = []
+        blobHeldEntities = []
         missingAttachmentEntities = []
         defer {
             let waiting = waitingEntities.count
             let oversized = oversizedEntities.count
             let missing = missingAttachmentEntities.count
+            let blobHeld = blobHeldEntities.count
             update {
+                $0.waitingForBlobs = blobHeld
                 $0.waitingThoughts = waiting
                 $0.oversizedThoughts = oversized
                 $0.missingAttachments = missing
@@ -985,7 +1003,14 @@ actor SyncEngine {
         }
     }
 
-    private func send(_ planned: [PlannedEntity], epoch: Int64) async throws -> BatchResult {
+    private func send(_ all: [PlannedEntity], epoch: Int64) async throws -> BatchResult {
+        var planned = all
+        if !transport.supportsBlobs {
+            let needsBlobs = planned.filter { !$0.blobs.isEmpty || $0.records.contains { $0.blob != nil } }
+            blobHeldEntities.formUnion(needsBlobs.map(\.entry.entity))
+            planned.removeAll { entity in needsBlobs.contains { $0.entry.entity == entity.entry.entity } }
+            guard !planned.isEmpty else { return .done }
+        }
         let missing = try await upload(Set(planned.flatMap(\.blobs)), epoch: epoch)
         var chunk = planned
         if !missing.isEmpty {

@@ -1,0 +1,15 @@
+{
+  "records": [
+    {
+      "key": "66hvlInjnHpfc8lBlN-Ow3vKAVWFTbl2hxX-e8WCX9k",
+      "seq": 9,
+      "deleted": false,
+      "payload": "VFIwMSBzZWFsZWQgcGF5bG9hZCBmb3IgcmVjb3JkIGI="
+    }
+  ],
+  "nextSeq": 9,
+  "headSeq": 9,
+  "more": false,
+  "epoch": 1,
+  "serverTime": 1768478400000
+}

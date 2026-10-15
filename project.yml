@@ -51,6 +51,12 @@ targets:
         # Set here because the generated manifest (INFOPLIST_KEY_UIApplicationSceneManifest_Generation) always writes true.
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
+        # Lets DEBUG builds reach the local sync server (http://127.0.0.1). It covers only IP addresses, .local names and
+        # unqualified hosts; ATS stays on for everything else. `info:` can't vary per configuration, so Release carries it
+        # too, and it does nothing there: Release never calls a local address. No NSLocalNetworkUsageDescription: devices on
+        # the LAN come with real auth in phase 4.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
         UIAppFonts:
           - Archivo-SemiBold.ttf
           - Archivo-Bold.ttf
@@ -138,6 +144,11 @@ targets:
     platform: iOS
     sources:
       - path: ThoughtRepsTests
+        excludes:
+          - Fixtures/SyncWireV1
+      - path: ThoughtRepsTests/Fixtures/SyncWireV1
+        type: folder
+        buildPhase: resources
     dependencies:
       - target: ThoughtReps
     settings:

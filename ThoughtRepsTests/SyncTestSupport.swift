@@ -117,6 +117,11 @@ actor FakeSyncServer: SyncTransport {
 
     // MARK: Contract
 
+    /// The server's key schema: 1 to 128 characters of `A-Za-z0-9_-`.
+    static func isValidKey(_ key: String) -> Bool {
+        (1...128).contains(key.utf8.count) && key.utf8.allSatisfy { ($0 >= 48 && $0 <= 57) || ($0 >= 65 && $0 <= 90) || ($0 >= 97 && $0 <= 122) || $0 == 45 || $0 == 95 }
+    }
+
     private func begin() throws {
         if let countdown = failCountdown {
             if countdown == 0 {
@@ -134,13 +139,18 @@ actor FakeSyncServer: SyncTransport {
             beforeNextPush = nil
             await hook()
         }
+        guard records.allSatisfy({ Self.isValidKey($0.recordKey) }) else {
+            throw SyncTransportError.refused(status: 400, message: "Invalid request body")
+        }
+        guard Set(records.map(\.recordKey)).count == records.count else {
+            throw SyncTransportError.refused(status: 400, message: "Duplicate record keys")
+        }
         guard pushEpoch == epoch else {
             epochRejections += 1
             throw SyncTransportError.epochChanged(server: epoch)
         }
         guard records.count <= SyncLimits.maxRecordsPerPush, records.reduce(0, { $0 + $1.payload.count }) <= SyncLimits.maxBytesPerPush,
-              records.allSatisfy({ $0.payload.count <= SyncLimits.maxInlinePayload }),
-              Set(records.map(\.recordKey)).count == records.count
+              records.allSatisfy({ $0.payload.count <= SyncLimits.maxInlinePayload })
         else { throw SyncTransportError.tooLarge }
         let failed = records.filter { record in
             guard let row = rows[record.recordKey] else { return false }
@@ -296,6 +306,9 @@ final class SyncDevice {
     let defaults: UserDefaults
     let index = SearchIndex(location: .inMemory)
     let server: FakeSyncServer
+    /// What the engine talks to: `server` unless a test hands in another transport (the HTTP one).
+    var transport: any SyncTransport
+    let vault: String
     let keys: SyncKeys
     /// How far this device's wall clock is from the test's.
     var clockOffset: TimeInterval
@@ -317,11 +330,13 @@ final class SyncDevice {
     )
 
     init(
-        _ name: String, server: FakeSyncServer, clockOffset: TimeInterval = 0, config: SyncEngine.Configuration = .init(),
+        _ name: String, server: FakeSyncServer, transport: (any SyncTransport)? = nil, vault: String = SyncDevice.vaultID, clockOffset: TimeInterval = 0, config: SyncEngine.Configuration = .init(),
         defaultInterval: Int = 7
     ) async throws {
         self.name = name
         self.server = server
+        self.transport = transport ?? server
+        self.vault = vault
         self.clockOffset = clockOffset
         self.config = config
         keys = try SyncKeys(vaultKey: Self.vaultKey)
@@ -346,7 +361,7 @@ final class SyncDevice {
             }
             try context.save()
         }
-        try await state.configure(vaultID: Self.vaultID)
+        try await state.configure(vaultID: vault)
         makeEngine()
     }
 
@@ -363,7 +378,7 @@ final class SyncDevice {
             }.value
         })
         engine = SyncEngine(
-            transport: server, state: state, local: wrap(local), keys: keys, vaultID: Self.vaultID, codec: Self.testCodec,
+            transport: transport, state: state, local: wrap(local), keys: keys, vaultID: vault, codec: Self.testCodec,
             config: config ?? self.config
         )
     }

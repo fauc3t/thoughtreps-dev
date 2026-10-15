@@ -89,12 +89,13 @@ struct ThoughtStore {
     /// Where the skew-safe change clock and the synced default interval are kept; see `SyncClock`.
     var syncDefaults: UserDefaults = .standard
 
-    /// The value for a change clock written at `now`: `now`, or later if a synced device's clock was ahead.
-    /// A stamp past `now` is remembered, so the next write on a lagging clock is later still.
+    /// The value for a change clock written at `now`: `now` moved onto the server's clock when sync knows its offset, or
+    /// later if anything seen so far (remote clocks, this device's earlier stamps) was. While sync is on every stamp is
+    /// remembered, so no later stamp can be lower, whatever the offset does.
     func stamp(_ now: Date) -> Date {
         let clock = SyncClock(defaults: syncDefaults)
         let value = clock.stamp(now)
-        if value > now { clock.observe(value) }
+        if syncState.isEnabled { clock.observe(value) }
         return value
     }
 

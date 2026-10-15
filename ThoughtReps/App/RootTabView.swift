@@ -176,6 +176,9 @@ struct RootTabView: View {
             switch phase {
             case .active:
                 importInbox()
+                #if DEBUG
+                Task { await SyncDebugSession.syncNow() }
+                #endif
                 Task { await NotificationScheduler.reschedule(context: context, now: .now) }
             case .background:
                 let assertion = BackgroundAssertion()
@@ -209,6 +212,7 @@ struct RootTabView: View {
             await SearchIndexChecker.logViolations(in: context)
             await SyncState.shared.enableForDebugging()
             await SyncReconcileRunner.reconcile(container: context.container)
+            await SyncDebugSession.start(container: context.container)
             #endif
         }
     }

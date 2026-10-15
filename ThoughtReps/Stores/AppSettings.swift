@@ -37,7 +37,7 @@ enum AppSettings {
     static func recordDefaultIntervalChange(now: Date, defaults: UserDefaults = .standard, sync: SyncState = .shared) {
         let clock = SyncClock(defaults: defaults)
         let stamped = clock.stamp(now)
-        if stamped > now { clock.observe(stamped) }
+        if sync.isEnabled { clock.observe(stamped) }
         defaults.set(stamped, forKey: Key.defaultIntervalChangedAt)
         sync.enqueue([.settings])
     }
