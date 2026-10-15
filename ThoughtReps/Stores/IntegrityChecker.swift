@@ -58,6 +58,10 @@ enum IntegrityChecker {
         }
 
         let liveThoughtIDs = Set(thoughts.map(\.id))
+        var seenThoughtIDs = Set<UUID>()
+        for thought in thoughts where !seenThoughtIDs.insert(thought.id).inserted {
+            add("Duplicate thought id \(thought.id)", thought.id.uuidString)
+        }
         var seenTombstones = Set<UUID>()
         for tombstone in tombstones {
             if TombstoneKind(rawValue: tombstone.kind) == nil {

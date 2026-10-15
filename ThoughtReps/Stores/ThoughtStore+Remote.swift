@@ -7,7 +7,9 @@ extension ThoughtStore {
     /// of `RemoteMerge`), plus remote deletions, tag records and the settings record.
     ///
     /// - Content that differs from the local thought replaces it when the thought has no unpushed change
-    ///   (`contentBaseHash`), and otherwise goes through `ContentResolver`. Meta merges by group either way.
+    ///   (`contentBaseHash`), and otherwise goes through `ContentResolver`: a clean merge is applied with a new
+    ///   content clock and queued, an overlap makes a conflict copy (see `prepareConflictCopy`). Meta merges by
+    ///   group either way.
     /// - A thought not stored yet is created once both its records are here; with one, it is held back.
     /// - A deletion removes the thought (and leaves a tombstone), unless its content was edited after
     ///   `deletedAt`. Records for a thought with a tombstone bring it back only when newer than the deletion.
@@ -22,7 +24,7 @@ extension ThoughtStore {
         var outcome = RemoteOutcome()
         var work = RemoteWork()
         observeClocks(of: batch, now: now)
-        applyRemoteSteps(batch, outcome: &outcome, work: &work)
+        applyRemoteSteps(batch, now: now, outcome: &outcome, work: &work)
         reindexAfterRemote(work, outcome: &outcome)
         return outcome
     }
@@ -34,7 +36,7 @@ extension ThoughtStore {
         var live: [UUID: RemoteThought] = [:]
     }
 
-    private func applyRemoteSteps(_ batch: RemoteBatch, outcome: inout RemoteOutcome, work: inout RemoteWork) {
+    private func applyRemoteSteps(_ batch: RemoteBatch, now: Date, outcome: inout RemoteOutcome, work: inout RemoteWork) {
         let ids = batch.thoughts.map(\.id)
         let stored: [UUID: Thought]
         let tombstones: [UUID: Tombstone]
@@ -60,6 +62,7 @@ extension ThoughtStore {
             var wins: GroupWins
         }
         var candidates: [Candidate] = []
+        var copies: [ImportedThought] = []
         var deletions: [(thought: Thought, deletedAt: Date)] = []
         var raisedTombstone = false
 
@@ -103,14 +106,33 @@ extension ThoughtStore {
             let localContent = ThoughtContentRecord(local)
             let localMeta = ThoughtMetaRecord(local)
             var wins = GroupWins(content: false, schedule: false, state: false, counters: false)
+            var applied = remote.content ?? localContent
             if let content = remote.content, content != localContent {
                 let hasUnpushedChange = remote.contentBaseHash.map { SyncPayload.hash(of: Self.plaintext(localContent)) != $0 } ?? true
+                let takeContent = GroupWins(content: true, schedule: false, state: false, counters: false)
                 if !hasUnpushedChange {
-                    wins = GroupWins(content: true, schedule: false, state: false, counters: false)
+                    wins = takeContent
                 } else {
                     switch ContentResolver.resolve(base: remote.contentBase, local: localContent, remote: content) {
-                    case .takeRemote: wins = GroupWins(content: true, schedule: false, state: false, counters: false)
+                    case .takeRemote: wins = takeContent
                     case .keepLocal: outcome.requeue.insert(.thought(id))
+                    case .merged(var merged):
+                        merged.updatedAt = mergedContentClock(local: localContent.updatedAt, remote: content.updatedAt, now: now)
+                        applied = merged
+                        wins = takeContent
+                        outcome.requeue.insert(.thought(id))
+                    case .conflictCopy(let winner, let loser):
+                        let losing = loser == .local ? localContent : content
+                        guard let copy = prepareConflictCopy(of: id, losing: losing, remote: remote, incoming: Set(ids), now: now) else {
+                            outcome.saved = false
+                            continue
+                        }
+                        if let item = copy.item { copies.append(item) }
+                        if copy.item != nil || copy.alreadyHere {
+                            work.touched.insert(copy.id)
+                            outcome.requeue.insert(.thought(copy.id))
+                        }
+                        if winner == .remote { wins = takeContent } else { outcome.requeue.insert(.thought(id)) }
                     }
                 }
             }
@@ -119,7 +141,7 @@ extension ThoughtStore {
                 wins = GroupWins(content: wins.content, schedule: metaWins.schedule, state: metaWins.state, counters: metaWins.counters)
             }
             guard wins.any else { continue }
-            let record = ThoughtRecord(content: remote.content ?? localContent, meta: remote.meta ?? localMeta)
+            let record = ThoughtRecord(content: applied, meta: remote.meta ?? localMeta)
             candidates.append(Candidate(item: ImportedThought(record: record, images: remote.images, files: remote.files), local: local, wins: wins))
         }
 
@@ -162,6 +184,10 @@ extension ThoughtStore {
             }
         }
         var tally = ImportTally()
+        additions += copies
+        // The copies are saved before the replacements, so they must be queued even when a later save fails and
+        // the cycle ends without committing `requeue`.
+        defer { syncState.enqueue(copies.map { .thought($0.record.id) }) }
         guard execute(additions: additions, replacements: replacements, tags: [], takenBlockIDs: &takenBlockIDs, tally: &tally) else {
             outcome.saved = false
             return

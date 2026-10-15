@@ -233,6 +233,7 @@ struct RandomizedOperationTests {
         store.ratingPrompt = RatingPrompt(defaults: defaults)
         let index = SearchIndex(location: .inMemory)
         store.searchIndex = index
+        store.syncDefaults = defaults
         let syncState = SyncState(location: .inMemory)
         try await syncState.configure(vaultID: "randomized")
         store.syncState = syncState
@@ -243,7 +244,7 @@ struct RandomizedOperationTests {
 
         for step in 0..<Self.stepsPerSeed {
             let thoughts = try context.fetch(FetchDescriptor<Thought>(sortBy: [SortDescriptor(\.createdAt), SortDescriptor(\.id)]))
-            var op = Int.random(in: 0..<29, using: &rng)
+            var op = Int.random(in: 0..<31, using: &rng)
             if op == 22 && Int.random(in: 0..<6, using: &rng) != 0 { op = 12 }
             if thoughts.isEmpty && op >= 2 && op != 11 && op != 12 && op != 18 && op != 22 && op != 23 { op = 0 }
             let target = thoughts.randomElement(using: &rng)
@@ -427,6 +428,61 @@ struct RandomizedOperationTests {
                 store.update(target!, body: target!.body, blocks: drafts, intervalDays: target!.intervalDays, now: now)
                 allowedClocks = [0]
                 description = "remove file block (of \(files.count))"
+            case 29:
+                let local = ThoughtContentRecord(target!)
+                var base = local
+                base.body += "\nbase-line"
+                base.updatedAt = local.updatedAt.addingTimeInterval(-500)
+                var remote = local
+                switch Int.random(in: 0..<3, using: &rng) {
+                case 0: remote.body = base.body + "\nremote \(Int.random(in: 0..<1000, using: &rng))"
+                case 1: remote.body = Self.randomBody(&rng)
+                default: remote.body = "remote head\n" + local.body
+                }
+                var arrived: [UUID: ProcessedImage] = [:]
+                if Bool.random(using: &rng) {
+                    let image = UUID()
+                    arrived[image] = fakeImage(UInt8.random(in: 0...255, using: &rng))
+                    remote.body += "\n" + ImageToken.token(for: image)
+                    remote.images.append(ImageRecord(id: image, width: 40, height: 30, order: 0))
+                }
+                if Bool.random(using: &rng) {
+                    let image = UUID()
+                    arrived[image] = fakeImage(UInt8.random(in: 0...255, using: &rng))
+                    remote.blocks.append(BlockRecord(
+                        id: UUID(), kindRaw: BlockKind.gallery.rawValue, title: nil, content: "", order: remote.blocks.count,
+                        images: [ImageRecord(id: image, width: 40, height: 30, order: 0)]
+                    ))
+                }
+                remote.updatedAt = max(local.createdAt, local.updatedAt.addingTimeInterval(Double(Int.random(in: -1000...1000, using: &rng))))
+                let outcome = store.applyRemote(
+                    RemoteBatch(thoughts: [RemoteThought(
+                        id: target!.id, content: remote, contentBase: base,
+                        contentBaseHash: SyncPayload.hash(of: try SyncPayload.thoughtContent(base).encoded()), images: arrived
+                    )]),
+                    now: now
+                )
+                syncState.enqueue(Array(outcome.requeue))
+                syncSnapshot = try Self.syncSnapshot(context)
+                description = "applyRemote of a colliding version (saved: \(outcome.saved), requeue: \(outcome.requeue.count))"
+            case 30:
+                let found = ThoughtCounts.conflictCopies(limit: 5, in: context).thoughts
+                if let copy = found.randomElement(using: &rng) {
+                    switch Int.random(in: 0..<3, using: &rng) {
+                    case 0:
+                        let kept = store.keepCopy(copy, now: now)
+                        description = "keepCopy (\(kept))"
+                    case 1:
+                        let id = copy.id
+                        if store.keepOriginal(copy, now: now) { deletedIDs.insert(id) }
+                        description = "keepOriginal"
+                    default:
+                        store.keepBoth(copy, now: now)
+                        description = "keepBoth"
+                    }
+                } else {
+                    description = "resolve a copy (none)"
+                }
             case 22:
                 store.deleteAll()
                 description = "deleteAll"

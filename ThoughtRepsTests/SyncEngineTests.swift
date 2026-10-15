@@ -408,14 +408,15 @@ struct SyncEngineTests {
         try expectSame(a, b)
     }
 
-    @Test func theContentResolverSeamPicksTheLaterEditAndBreaksTiesTheSameWayOnBothSides() {
+    @Test func withNoBaseAnyDifferenceIsAConflictCopyOfTheEarlierEditAndTiesBreakTheSameWayOnBothSides() {
         func content(_ body: String, _ updatedAt: Date) -> ThoughtContentRecord {
             ThoughtContentRecord(id: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!, body: body, createdAt: at(0), updatedAt: updatedAt, blocks: [], images: [])
         }
         let older = content("older", at(1))
         let newer = content("newer", at(2))
-        #expect(ContentResolver.resolve(base: nil, local: older, remote: newer) == .takeRemote)
+        #expect(ContentResolver.resolve(base: nil, local: older, remote: newer) == .conflictCopy(winner: .remote, loser: .local))
         #expect(ContentResolver.resolve(base: older, local: newer, remote: older) == .keepLocal)
+        #expect(ContentResolver.resolve(base: nil, local: older, remote: content("older", at(5))) == .takeRemote, "same content: no copy")
         let x = content("x", at(3))
         let y = content("y", at(3))
         let forward = ContentResolver.resolve(base: nil, local: x, remote: y)
@@ -436,8 +437,10 @@ struct SyncEngineTests {
         try b.context.save()
         try await b.reconcile()
         try await syncToQuiescence([a, b], server: server)
-        #expect(Set(try a.thoughts().map(\.id)) == [fromA.id, shared.id, fromB.id])
+        #expect(try a.thoughts().count == 4, "the older version of the shared thought is kept as a conflict copy")
+        #expect(Set(try a.thoughts().map(\.id)).isSuperset(of: [fromA.id, shared.id, fromB.id]))
         #expect(try #require(try b.thought(shared.id)).body == "both have this")
+        #expect(try a.thoughts().filter { $0.conflictOfID == shared.id }.map(\.body) == ["both have this (older)"])
         try expectSame(a, b)
         try await a.expectClean()
         try await b.expectClean()

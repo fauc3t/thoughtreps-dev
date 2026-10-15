@@ -11,6 +11,7 @@ import Testing
 @Suite("Sync convergence")
 struct SyncConvergenceTests {
     nonisolated static let seeds: [UInt64] = Array(1...40) + [45, 76]
+    nonisolated static let lineEditSeeds: [UInt64] = Array(1...24)
     static let steps = 160
     static let clockOffsets: [TimeInterval] = [0, -3 * 3600, 1800]
     static let pullLimits = [2, 5, 50]
@@ -25,8 +26,8 @@ struct SyncConvergenceTests {
         try await converge(seed: seed, editsAnyThought: false)
     }
 
-    /// Any device edits or deletes any thought, so the same thought is edited concurrently. Until the merge exists
-    /// this only has to converge (the later edit wins whole) and keep every checker clean.
+    /// Any device edits or deletes any thought, so the same thought is edited concurrently (whole-body rewrites,
+    /// which mostly overlap and make conflict copies). It has to converge and keep every checker clean.
     @Test(arguments: seeds)
     func devicesConvergeWhenEditingTheSameThoughts(seed: UInt64) async throws {
         try await converge(seed: seed, editsAnyThought: true)
@@ -189,6 +190,150 @@ struct SyncConvergenceTests {
             #expect(ids.isDisjoint(with: deleted), "seed \(seed): a deleted thought came back, even after the server pruned its tombstone")
         }
         #expect(await server.liveThoughtIDs(keys: devices[0].keys, vaultID: SyncDevice.vaultID) == ids, "seed \(seed): the server holds the same thoughts")
+    }
+
+    // MARK: Concurrent line edits of the same thoughts
+
+    private struct LineBook {
+        var counter = 0
+        /// Every line any device wrote (or started with).
+        var written = Set<String>()
+        /// Lines a user edit removed or overwrote, which may legitimately be gone.
+        var removed = Set<String>()
+
+        mutating func fresh() -> String {
+            counter += 1
+            let line = "w\(counter)"
+            written.insert(line)
+            return line
+        }
+    }
+
+    private static func lines(of thought: Thought) -> [String] {
+        thought.markdownTexts.flatMap { $0.split(separator: "\n").map(String.init) }.filter { ImageToken.references(in: $0).isEmpty }
+    }
+
+    /// One user edit of one line, of the body or of a markdown block, saved through `update`.
+    private func editLine(of thought: Thought, on device: SyncDevice, book: inout LineBook, at now: Date, _ rng: inout SeededGenerator) -> String {
+        var drafts = RandomizedOperationTests.currentDrafts(of: thought)
+        let markdown = drafts.indices.filter { drafts[$0].kind == .markdown }
+        let partIndex = Int.random(in: 0...markdown.count, using: &rng)
+        let before = partIndex == 0 ? thought.body : drafts[markdown[partIndex - 1]].content
+        var lines = before.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        var newImages: [ImageDraft] = []
+        var removed: [String] = []
+        switch Int.random(in: 0..<5, using: &rng) {
+        case 0 where !lines.isEmpty:
+            removed.append(lines.remove(at: Int.random(in: 0..<lines.count, using: &rng)))
+        case 1, 2:
+            guard !lines.isEmpty else { return "nothing" }
+            let index = Int.random(in: 0..<lines.count, using: &rng)
+            removed.append(lines[index])
+            lines[index] = book.fresh()
+        case 3:
+            let image = newImage(UInt8.random(in: 0...255, using: &rng))
+            newImages.append(image)
+            let token = ImageToken.token(for: image.id)
+            lines.insert(contentsOf: [book.fresh(), token], at: Int.random(in: 0...lines.count, using: &rng))
+        default:
+            lines.insert(book.fresh(), at: Int.random(in: 0...lines.count, using: &rng))
+        }
+        let text = lines.joined(separator: "\n")
+        var body = thought.body
+        if partIndex == 0 { body = text } else { drafts[markdown[partIndex - 1]].content = text }
+        guard device.store.update(thought, body: body, blocks: drafts, images: newImages, intervalDays: thought.intervalDays, now: now) else { return "failed" }
+        book.removed.formUnion(removed.filter { !lines.contains($0) })
+        return "part \(partIndex) removed \(removed) now \(lines)"
+    }
+
+    /// Devices edit single lines of the same few thoughts at the same time, so clean merges and conflict copies both
+    /// happen. At quiescence every device holds the same thoughts, no line a user wrote and didn't remove is lost
+    /// (it is in the original or in a copy), the checkers are clean and no copy is made twice.
+    @Test(arguments: lineEditSeeds)
+    func devicesConvergeWithoutLosingTextWhenEditingLinesOfTheSameThoughts(seed: UInt64) async throws {
+        let server = FakeSyncServer()
+        let count = Self.clockOffsets.count
+        var devices: [SyncDevice] = []
+        for index in 0..<count {
+            devices.append(try await SyncDevice(
+                "D\(index)", server: server, clockOffset: Self.clockOffsets[index],
+                config: .paged(pull: Self.pullLimits[index], push: [3, 10, 49][index])
+            ))
+        }
+        var rng = SeededGenerator(seed: seed)
+        var now = Date(timeIntervalSince1970: 1_790_000_000)
+        var book = LineBook()
+        for _ in 0..<3 {
+            let body = (0..<6).map { _ in book.fresh() }.joined(separator: "\n")
+            let block = (0..<4).map { _ in book.fresh() }.joined(separator: "\n")
+            devices[0].store.create(body: body, blocks: [BlockDraft(content: block)], now: devices[0].now(now))
+        }
+        if seed % 2 == 1 {
+            // Every device starts from the same backup, so none has a synced base.
+            let records = try devices[0].thoughts().map { ImportedThought(record: ThoughtRecord($0, hasImage: { _ in true }), images: [:]) }
+            for device in devices.dropFirst() {
+                var tally = ImportTally()
+                device.store.importThoughts(records, tags: [], tally: &tally)
+                try await device.reconcile()
+            }
+        }
+        try await syncToQuiescence(devices, server: server)
+        var log: [String] = []
+
+        for step in 0..<70 {
+            now = now.addingTimeInterval(Double(Int.random(in: 1...90, using: &rng)))
+            let device = devices[Int.random(in: 0..<count, using: &rng)]
+            let t = device.now(now)
+            let all = try device.thoughts().sorted { ($0.createdAt, $0.id.uuidString) < ($1.createdAt, $1.id.uuidString) }
+            switch Int.random(in: 0..<14, using: &rng) {
+            case 0..<8:
+                guard let thought = all.randomElement(using: &rng) else { continue }
+                let detail = editLine(of: thought, on: device, book: &book, at: t, &rng)
+                log.append("\(step) \(device.name) edit \(thought.id.uuidString.prefix(4)) \(detail)")
+            case 8:
+                let body = (0..<3).map { _ in book.fresh() }.joined(separator: "\n")
+                device.store.create(body: body, now: t)
+                log.append("\(step) \(device.name) create")
+            default:
+                switch Int.random(in: 0..<5, using: &rng) {
+                case 0: await server.failNextCall(after: Int.random(in: 0..<4, using: &rng))
+                case 1: await server.dropNextPushResponse()
+                case 2: device.failSaves = 1
+                default: break
+                }
+                let status = await device.sync()
+                device.failSaves = 0
+                await server.clearFailures()
+                log.append("\(step) \(device.name) sync (error: \(status.lastError ?? "-"))")
+            }
+        }
+
+        await server.clearFailures()
+        try await syncToQuiescence(devices, server: server, maxRounds: 40)
+
+        let tail = log.suffix(12).joined(separator: "\n")
+        let reference = try devices[0].canonicalDump()
+        let counts = try summary(devices)
+        for device in devices {
+            let dump = try device.canonicalDump()
+            let difference = Set(dump).symmetricDifference(reference).sorted().map { String($0.prefix(60)) }
+            let bodies = try device.thoughts().map { "\($0.id.uuidString.prefix(4)) of \($0.conflictOfID?.uuidString.prefix(4) ?? "-"): \(Self.lines(of: $0))" }
+            #expect(dump == reference, "seed \(seed): \(device.name) differs from D0 (\(counts))\n\(difference.joined(separator: "\n"))\n\(bodies.joined(separator: "\n"))\n\(tail)")
+            #expect(try await device.state.outboxCount() == 0, "seed \(seed): \(device.name) still has queued changes")
+            #expect(try await device.state.heldCount() == 0, "seed \(seed): \(device.name) still holds records")
+            let status = await device.engine.status
+            #expect(status.lastError == nil && status.attention == nil, "seed \(seed): \(device.name) \(status)")
+            try await device.expectClean("seed \(seed)")
+        }
+
+        let thoughts = try devices[0].thoughts()
+        let present = Set(thoughts.flatMap(Self.lines(of:)))
+        let lost = book.written.subtracting(book.removed).subtracting(present)
+        #expect(lost.isEmpty, "seed \(seed): lines lost: \(lost.sorted())\n\(log.joined(separator: "\n"))\n\(thoughts.map { "\($0.id.uuidString.prefix(4)) of \($0.conflictOfID?.uuidString.prefix(4) ?? "-"): \(Self.lines(of: $0))" }.joined(separator: "\n"))")
+
+        let copies = thoughts.filter { $0.conflictOfID != nil }
+        let signatures = copies.map { "\($0.conflictOfID!) \(Self.lines(of: $0))" }
+        #expect(Set(signatures).count == signatures.count, "seed \(seed): a copy was made twice")
     }
 
     /// Not just that the devices agree: whoever wrote last wins, on every device, even from a lagging clock.

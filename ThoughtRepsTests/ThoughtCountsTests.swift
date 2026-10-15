@@ -99,6 +99,28 @@ struct ThoughtCountsTests {
         #expect(n(ThoughtCounts.active(tag: "a")) == 0)
     }
 
+    @Test func conflictCopiesAreFoundByPredicateIncludingArchivedAndDangling() throws {
+        let original = thought(tags: [])
+        let first = thought(tags: [])
+        first.conflictOfID = original.id
+        first.stateChangedAt = now.addingTimeInterval(10)
+        let second = thought(tags: [], archived: true)
+        second.conflictOfID = UUID()
+        second.stateChangedAt = now.addingTimeInterval(5)
+        let third = thought(tags: [])
+        third.conflictOfID = original.id
+        third.stateChangedAt = now.addingTimeInterval(20)
+        try context.save()
+        #expect(n(ThoughtCounts.conflictCopies) == 3)
+        #expect(ThoughtCounts.count(ThoughtCounts.conflictCopies, in: context, limit: 1) == 1)
+        let page = ThoughtCounts.conflictCopies(limit: 2, in: context)
+        #expect(page.total == 3)
+        #expect(page.thoughts.map(\.id) == [second.id, first.id], "the longest unresolved first, capped at the limit")
+        first.conflictOfID = nil
+        try context.save()
+        #expect(n(ThoughtCounts.conflictCopies) == 2)
+    }
+
     @Test func anyCountsArchivedThoughts() throws {
         let a = tag("a")
         thought(tags: [a], archived: true)

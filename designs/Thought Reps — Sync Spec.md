@@ -1,6 +1,6 @@
 # Thought Reps — Device Sync Spec (iPhone ↔ iPad, AWS)
 
-Status: ready to build, updated 2026-10-14 (first draft 2026-10-10). Not built. Phase 0 and phase 1 can start now; the account decision (section 2) gates only phase 4. Open decisions are listed at the end.
+Status: building, updated 2026-10-15 (first draft 2026-10-10). Phases 0 and 1 are done (the sync engine, against an in-process fake server); phase 2 (dev-stage server) is next. The account decision (section 2) gates only phase 4. Open decisions are listed at the end.
 
 Changes on 2026-10-14: iPad has shipped (section 0); 3-way merge is in v1, with conflict copies as the fallback, marked by a new `Thought.conflictOfID` field (sections 8 and 8a); key storage on the device (section 5); clarified how the push condition and `headSeq` work (section 7); Android notes (section 13); new phasing.
 
@@ -183,18 +183,19 @@ When two devices push at the same moment, one of them simply retries.
 Only when a pulled `thought.content` record lands on a thought this device has also changed and not yet pushed (it's in the outbox). The same path handles a 409 on push: pull, then merge.
 
 1. **No unpushed local change:** apply the remote version as is. This is the common case.
-2. **Unpushed local change:** take three versions: **base** (last synced content, in `sync.sqlite`), **local** (the store now), **remote** (just pulled).
+2. **Unpushed local change:** take three versions: **base** (last synced content, in `sync.sqlite`), **local** (the store now), **remote** (just pulled). A first push whose response was lost has no synced base, so its plaintext is kept in the `attempts` table as the base until a real one is written; a 410 resync keeps each thought's last synced content there too. **No base at all and differing content:** a conflict copy, never a guess (text is never lost). Known cost: restoring an older backup onto a synced device yields one copy per thought changed since.
 3. **Merge blocks by id first:** blocks added, removed or reordered on either side. A block removed on one side and edited on the other is an overlap.
-4. **Then merge text line by line inside each markdown block** (diff3, built on Swift's `CollectionDifference`). Image tokens (`![](img:<uuid>)`) are whole lines. Link, file and gallery blocks merge at the block level only; a gallery's image list merges as a set with the remote order winning.
-5. **Clean merge:** write the result through `applyRemote` with a new content clock (section 8, clock skew). The base becomes the remote version; the outbox entry stays, so the merged result is pushed with `baseSeq` = the remote seq.
+4. **Then merge text line by line inside each markdown block** (diff3, built on Swift's `CollectionDifference`). Image tokens (`![](img:<uuid>)`) are whole lines. Link and file blocks merge whole; galleries merge as a set of images with the remote order winning.
+5. **Clean merge:** apply the result through `applyRemote` with a fresh stamped `updatedAt` (section 8, clock skew). The base becomes the remote version; the outbox entry stays, so the merged result is pushed with `baseSeq` = the remote seq.
 6. **Overlap anywhere:** no partial merge. The later `updatedAt` stays as the thought, and the other side's full content becomes a conflict copy.
 
-Only the device that lost the race merges; the other device receives the merged result as a plain remote change. So the merge doesn't need to be deterministic across devices, only correct. The merge is a pure function (`ContentMerge.merge(base:local:remote:) -> .merged(Content) | .conflict`) in `Sync/`, tested on its own.
+Only the device that lost the race merges; the other device receives the merged result as a plain remote change. So the merge doesn't need to be deterministic across devices, only correct. The merge is a pure function (`ContentMerge.merge(base:local:remote:) -> .merged(Content) | .conflict`) in `Sync/ContentMerge.swift`, tested on its own.
 
 ### Conflict copies
 
 - **Field:** `Thought.conflictOfID: UUID?` (default nil), pointing at the original. A plain id like `Block.linkedThoughtID`: no relationship, may dangle, never points at itself. It's state, so it's in the state group (`stateChangedAt`) and the meta record, and both devices see it. Added to `SchemaV1` before the freeze (phase 0), so sync needs no migration.
-- **The copy:** a new thought with the losing side's blocks and tags (images referenced, not re-uploaded: blob names de-duplicate). Due now. Its own outgoing links come with it; links *to* the original stay on the original.
+- **The copy** (`Sync/ConflictCopy.swift`, `ThoughtStore+Conflicts.swift`): a new thought with the losing side's blocks and tags; the later `updatedAt` stays as the original (ties by hash). Its thought, block, image and file ids are new, derived from the original id and the losing content hash, so both devices make the same copy; image tokens are rewritten. Image or file bytes missing locally are dropped from the copy rather than stalling sync. Due now, default schedule. Its own outgoing links come with it; links *to* the original stay on the original.
+- **Built in 1c:** `ThoughtStore.keepCopy`, `keepOriginal` and `keepBoth` (taking `now`), and `ThoughtCounts.conflictCopies` with a paged helper. The UI below is phase 4.
 - **Timeline:** a "Needs a look" section above Pinned lists thoughts with `conflictOfID` set, each showing the original as a card. A fetch with a predicate on `conflictOfID != nil`, never an in-memory filter.
 - **Resolve sheet, three choices:**
   - **Keep this version:** the copy's content replaces the original's (a content write on the original), and the copy is deleted.
@@ -202,7 +203,7 @@ Only the device that lost the race merges; the other device receives the merged 
   - **Keep both:** `conflictOfID` is cleared; the copy becomes a normal thought.
 - **Original deleted meanwhile** (dangling id): the sheet offers only "Keep" (clears the field) or "Delete".
 - **Backup format:** `conflictOfID` goes in the thought record and merges with the state group on import. Added before any build has shipped, so no `formatVersion` bump.
-- **Integrity:** `IntegrityChecker` gains "`conflictOfID` never equals the thought's own id." Reminders don't count copies differently; they're ordinary due thoughts.
+- **Integrity:** `IntegrityChecker` gains "`conflictOfID` never equals the thought's own id" and, from 1c, "Duplicate thought id." Reminders don't count copies differently; they're ordinary due thoughts.
 
 ## 9. Client (`ThoughtReps/Sync/`)
 
@@ -383,7 +384,7 @@ Each phase merges to main behind a DEBUG-only flag; nothing is user-visible unti
 | # | Phase | What gets built | Done when | Estimate |
 |---|---|---|---|---|
 | 0 | **Schema prep (before the freeze)** | `Thought.conflictOfID` in `SchemaV1`, the backup record, the import merge (state group), an IntegrityChecker rule, a regenerated `default.store` fixture, randomized tests. No UI. | Tests pass; a backup round-trips the field | ½ day |
-| 1 | **Sync engine, no network** (split into rounds 1a, 1b, 1c; **1a done 2026-10-14**: `sync.sqlite`, outbox and hooks, record codec and crypto, `SyncReconciler`; **1b done 2026-10-14**: engine, fake server, `applyRemote`, skew clock, deletions, 409/410, first-sync paging, in-memory image store; review fixes and the large-record blob path also done; **1c**: `ContentMerge`, conflict copies, convergence tests) | `ThoughtReps/Sync/`: `sync.sqlite` (cursor, outbox, base content), outbox hooks in every `ThoughtStore` writer, `applyRemote` sharing `performImport`'s merge, `ContentMerge` (3-way merge, section 8a), conflict copies, the skew-safe clock, `SyncReconciler`, first-sync paging. All against an in-process fake server implementing the push/pull/CAS contract. | Convergence tests pass (N stores, concurrent edits, dropped responses, save failures, clock skew); merge table and property tests pass; IntegrityChecker and SearchIndexChecker stay clean | 3 weeks |
+| 1 | **Sync engine, no network** (split into rounds 1a, 1b, 1c; **1a done 2026-10-14**: `sync.sqlite`, outbox and hooks, record codec and crypto, `SyncReconciler`; **1b done 2026-10-14**: engine, fake server, `applyRemote`, skew clock, deletions, 409/410, first-sync paging, in-memory image store; review fixes and the large-record blob path also done; **1c done 2026-10-15**: `ContentMerge`, conflict copies, `attempts` bases, convergence tests; **phase 1 complete**) | `ThoughtReps/Sync/`: `sync.sqlite` (cursor, outbox, base content), outbox hooks in every `ThoughtStore` writer, `applyRemote` sharing `performImport`'s merge, `ContentMerge` (3-way merge, section 8a), conflict copies, the skew-safe clock, `SyncReconciler`, first-sync paging. All against an in-process fake server implementing the push/pull/CAS contract. | Convergence tests pass (N stores, concurrent edits, dropped responses, save failures, clock skew); merge table and property tests pass; IntegrityChecker and SearchIndexChecker stay clean | 3 weeks |
 | 2 | **Server, dev stage, text only** | `ThoughtReps-dev-Sync`: DynamoDB table with the `bySeq` LSI, push (transaction + CAS), pull, `/head`, the test-only auth bypass; App Attest code moved to `lambda/shared/`. A basic Sync lab screen. | Two simulators sync text against dev; jest covers ordering, CAS conflicts and the 410 path; a CDK test proves the bypass isn't in prod | 1.5 weeks |
 | 3 | **Images** | Blob bucket, presigned upload and download, HMAC blob names, background `URLSession`, blob-before-record ordering, blob cleanup | Images sync both ways, upload once, and are never missing on the receiving side | 1 week |
 | 4 | **Identity and keys** | Sign in with Apple (or vault creation under A), App Attest sessions, Keychain key (synced and local items, section 5), QR pairing that also links the account, recovery code, `K_auth` join, device list and removal, erase choices, "Delete sync data". The "Needs a look" timeline section and resolve sheet. Prod stack deployed. | A real iPhone and iPad pair, join and recover; the full Sync lab runs on both | 2 weeks |

@@ -33,3 +33,6 @@
 - Quick Capture (built; device checks left): the Action button, Siri ("New thought in Thought Reps") and Shortcuts open an empty editor from the Home Screen, from another app and on cold launch; with an editor already open the draft is kept. See `designs/Thought Reps — Quick Capture Spec.md`.
 - Sync (phase 2/3): server-side GC of superseded record-blob pointer blobs (`TRP1` large records); see `designs/Thought Reps — Sync Spec.md`, section 10.
 - Sync: `local.snapshots()` still loads all content records of a 49-entry push batch at once (up to 16 MB each); bound it by bytes if large thoughts get common.
+- Sync: a file block changed in place (same block id, different file) keeps the old file on apply (`applyRemote`/import).
+- Sync (phase 4): "Needs a look" UI for conflict copies; the store methods (`keepCopy`/`keepOriginal`/`keepBoth`) exist but nothing calls them.
+- Sync: `noteAttempts` keeps the first attempt (INSERT OR IGNORE), so after a lost push response plus another edit, the merge base is older than the last push and a clean merge can come out as a spurious conflict copy (nothing lost).

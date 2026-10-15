@@ -91,7 +91,7 @@ struct ThoughtStore {
 
     /// The value for a change clock written at `now`: `now`, or later if a synced device's clock was ahead.
     /// A stamp past `now` is remembered, so the next write on a lagging clock is later still.
-    private func stamp(_ now: Date) -> Date {
+    func stamp(_ now: Date) -> Date {
         let clock = SyncClock(defaults: syncDefaults)
         let value = clock.stamp(now)
         if value > now { clock.observe(value) }
@@ -1319,7 +1319,7 @@ struct ThoughtStore {
     /// The thoughts are fetched rather than read from the objects the caller holds: after a failed
     /// save is rolled back, reading a relationship such as `tags` straight off such an object can
     /// crash SwiftData (see `persist()`), while a fresh fetch is safe.
-    private func reindex(ids: Set<UUID>) {
+    func reindex(ids: Set<UUID>) {
         let lookup = Array(ids)
         do {
             var descriptor = FetchDescriptor<Thought>(predicate: #Predicate { lookup.contains($0.id) })
@@ -1341,13 +1341,13 @@ struct ThoughtStore {
     // Any new writer that changes a clock or a field a sync record carries must enqueue the thought
     // (or, for a color, the tag); extra entries are harmless, a missing one is not.
 
-    private func syncEnqueue(_ thought: Thought) {
+    func syncEnqueue(_ thought: Thought) {
         syncState.enqueue([.thought(thought.id)])
     }
 
     /// Enqueues the thoughts and the tags they carry, which may be new. Tags come from a fresh fetch for
     /// the reason `reindex` does; a failed fetch still enqueues the thoughts.
-    private func syncEnqueueContent(of ids: Set<UUID>) {
+    func syncEnqueueContent(of ids: Set<UUID>) {
         guard syncState.isEnabled else { return }
         var entities = ids.map(SyncEntity.thought)
         let lookup = Array(ids)

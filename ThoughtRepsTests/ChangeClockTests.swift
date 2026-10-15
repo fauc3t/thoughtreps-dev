@@ -362,6 +362,15 @@ struct ChangeClockTests {
         try checkClean()
     }
 
+    @Test func theCheckerFlagsTwoThoughtsWithOneId() throws {
+        let thought = store.create(body: "# A", now: t0)
+        try checkClean()
+        let twin = Thought(body: "# B", createdAt: t0, nextDueAt: t0)
+        twin.id = thought.id
+        container.mainContext.insert(twin)
+        #expect(try IntegrityChecker.check(container.mainContext).contains { $0.description.contains("Duplicate thought id") })
+    }
+
     @Test func aPinLaterHereKeepsTheNewerSideOfEachGroup() throws {
         let thought = store.create(body: "# A", now: t0)
         var incoming = recordOf(thought)

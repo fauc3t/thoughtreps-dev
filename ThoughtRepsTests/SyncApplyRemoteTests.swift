@@ -213,12 +213,35 @@ struct SyncApplyRemoteTests {
 
         let keepLocal = apply([RemoteThought(id: content.id, content: remoteEdit, contentBase: content, contentBaseHash: baseHash)])
         #expect(thought.body == "local edit")
-        #expect(keepLocal.requeue == [.thought(content.id)])
+        let remoteCopy = ConflictCopy.copyID(of: content.id, losing: remoteEdit)
+        #expect(keepLocal.requeue == [.thought(content.id), .thought(remoteCopy)], "the remote edit lost and became a copy")
+        #expect(try local(remoteCopy)?.body == "remote edit")
 
         remoteEdit.updatedAt = at(40)
+        let localCopy = ConflictCopy.copyID(of: content.id, losing: ThoughtContentRecord(thought))
         let takeRemote = apply([RemoteThought(id: content.id, content: remoteEdit, contentBase: content, contentBaseHash: baseHash)])
-        #expect(takeRemote.requeue.isEmpty)
         #expect(thought.body == "remote edit")
+        #expect(takeRemote.requeue == [.thought(localCopy)], "the local edit lost and became a copy")
+        #expect(try local(localCopy)?.body == "local edit")
+        try await expectClean()
+    }
+
+    @Test func aLosingImageWithNoBytesIsLeftOutOfTheCopyInsteadOfStallingSync() async throws {
+        let (content, meta) = try remote(body: "base", updated: 10)
+        apply([RemoteThought(id: content.id, content: content, meta: meta)])
+        let thought = try #require(try local(content.id))
+        store.update(thought, body: "local edit", blocks: [], intervalDays: nil, now: at(30))
+        let missing = UUID()
+        var loser = content
+        loser.body = "remote edit\n\(ImageToken.token(for: missing))\nmore"
+        loser.updatedAt = at(20)
+        loser.images = [ImageRecord(id: missing, width: 4, height: 3, order: 0)]
+        loser.blocks = [BlockRecord(id: UUID(), kindRaw: "gallery", title: nil, content: "", order: 0, images: [ImageRecord(id: UUID(), width: 4, height: 3, order: 0)])]
+        let baseHash = SyncPayload.hash(of: try SyncPayload.thoughtContent(content).encoded())
+        let outcome = apply([RemoteThought(id: content.id, content: loser, contentBase: content, contentBaseHash: baseHash)])
+        #expect(outcome.saved)
+        let copy = try #require(try local(ConflictCopy.copyID(of: content.id, losing: loser)))
+        #expect(copy.body == "remote edit\nmore" && copy.blocks?.isEmpty == true && copy.images?.isEmpty == true)
         try await expectClean()
     }
 

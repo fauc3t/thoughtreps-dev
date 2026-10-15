@@ -44,16 +44,42 @@ struct RemoteOutcome: Sendable, Equatable {
 }
 
 /// Decides a collision: a pulled `thought.content` landing on a thought whose content has a change not yet
-/// pushed. This is the one place the 3-way merge and conflict copies plug in (`base` is the content last synced).
+/// pushed (`base` is the content last synced). Pure; the store carries the decision out (spec section 8a).
 enum ContentResolver {
     enum Resolution: Equatable {
         case takeRemote
         case keepLocal
+        /// A clean 3-way merge. Its `updatedAt` is a placeholder: the store gives the result a fresh content clock.
+        case merged(ThoughtContentRecord)
+        /// The changes overlap. The winner stays as the thought and the loser's full content becomes a conflict copy.
+        case conflictCopy(winner: ConflictCopy.Side, loser: ConflictCopy.Side)
     }
 
-    /// For now the later `updatedAt` wins whole, and an equal one is settled by comparing the records'
-    /// hashes so that every device picks the same side.
     static func resolve(base: ThoughtContentRecord?, local: ThoughtContentRecord, remote: ThoughtContentRecord) -> Resolution {
+        guard let base else {
+            return ContentMerge.sameContent(local, remote) ? laterEdit(local: local, remote: remote) : copyOfTheEarlierEdit(local: local, remote: remote)
+        }
+        if ContentMerge.sameContent(remote, base) { return .keepLocal }
+        if ContentMerge.sameContent(local, base) { return .takeRemote }
+        switch ContentMerge.merge(base: base, local: local, remote: remote) {
+        case .merged(let merged):
+            if merged == remote { return .takeRemote }
+            if merged == local { return .keepLocal }
+            return .merged(merged)
+        case .conflict:
+            return copyOfTheEarlierEdit(local: local, remote: remote)
+        }
+    }
+
+    private static func copyOfTheEarlierEdit(local: ThoughtContentRecord, remote: ThoughtContentRecord) -> Resolution {
+        laterEdit(local: local, remote: remote) == .takeRemote
+            ? .conflictCopy(winner: .remote, loser: .local)
+            : .conflictCopy(winner: .local, loser: .remote)
+    }
+
+    /// The later `updatedAt` wins whole, and an equal one is settled by comparing the records' hashes so that every
+    /// device picks the same side. Picks the winner of a conflict (with no base to merge against, any difference is one).
+    private static func laterEdit(local: ThoughtContentRecord, remote: ThoughtContentRecord) -> Resolution {
         if remote.updatedAt != local.updatedAt { return remote.updatedAt > local.updatedAt ? .takeRemote : .keepLocal }
         return hash(remote) >= hash(local) ? .takeRemote : .keepLocal
     }

@@ -468,6 +468,7 @@ actor SyncEngine {
                 }
             }
             guard await local.discardUnchanged(deletable, now: clockNow()) else { throw Failure.applyFailed }
+            try await state.forgetAttempts(entityIDs: Array(deletable.keys))
         }
         try await state.replaceResyncSnapshot(unresolved)
     }
@@ -527,6 +528,7 @@ actor SyncEngine {
         let lastSynced = try await state.records(forKeys: thoughtIDs.flatMap { id in
             [keys.recordKey(type: .thoughtContent, entityID: id), keys.recordKey(type: .thoughtMeta, entityID: id)]
         })
+        let attempts = try await state.attempts(forKeys: thoughtIDs.map { keys.recordKey(type: .thoughtContent, entityID: $0) })
         var thoughts: [RemoteThought] = []
         for idString in thoughtIDs {
             guard let id = UUID(uuidString: idString) else { throw Failure.invalidRecord(idString) }
@@ -547,9 +549,13 @@ actor SyncEngine {
                 default: break
                 }
             }
-            if let base = lastSynced[keys.recordKey(type: .thoughtContent, entityID: idString)] {
+            let contentKey = keys.recordKey(type: .thoughtContent, entityID: idString)
+            if let base = lastSynced[contentKey] {
                 remote.contentBaseHash = base.baseHash
                 if case .thoughtContent(let content)? = try? SyncPayload.decode(base.baseContent, supporting: config.payloadVersion) { remote.contentBase = content }
+            } else if let attempt = attempts[contentKey] {
+                remote.contentBaseHash = attempt.hash
+                if case .thoughtContent(let content)? = try? SyncPayload.decode(attempt.plaintext, supporting: config.payloadVersion) { remote.contentBase = content }
             }
             if let base = lastSynced[keys.recordKey(type: .thoughtMeta, entityID: idString)],
                case .thoughtMeta(let meta)? = try? SyncPayload.decode(base.baseContent, supporting: config.payloadVersion) {
@@ -562,6 +568,52 @@ actor SyncEngine {
         var work = Applying()
         var blocked = Set<UUID>()
         var appliedTags: [UUID: [SyncEntity]] = [:]
+        var committed = Set<UUID>()
+
+        func settle(_ ids: Set<UUID>, _ outcome: RemoteOutcome, isFinal: Bool, into commit: inout PageCommit) {
+            let unsettled = blocked.union(outcome.rejected)
+            var freshKeys = Set<String>()
+            for item in fresh {
+                let entityID = item.payload.entityID
+                let id = freshByThought[entityID] != nil ? UUID(uuidString: entityID) : nil
+                if let id { guard ids.contains(id) else { continue } } else if !isFinal { continue }
+                freshKeys.insert(item.record.recordKey)
+                let isBlocked = id.map(unsettled.contains) ?? false
+                if isBlocked || (id.map(outcome.held.contains) ?? false) {
+                    commit.hold.append(HeldRecord(
+                        recordKey: item.record.recordKey, type: item.payload.type, entityID: entityID, seq: item.record.seq,
+                        payload: item.plaintext, blocked: isBlocked
+                    ))
+                }
+                // A blocked record gets no base, so it still counts as not applied and is tried again every cycle.
+                if isBlocked {
+                    Self.logger.error("Pulled record \(item.record.recordKey) not applied yet: a blob is missing or its images belong to another thought")
+                    continue
+                }
+                commit.records.append(SyncedRecord(
+                    recordKey: item.record.recordKey, type: item.payload.type, entityID: entityID, seq: item.record.seq,
+                    fingerprint: item.payload.fingerprint, baseHash: item.hash, baseContent: item.plaintext
+                ))
+            }
+            // A thought that was held and has now been applied gets its bases from the held records.
+            for (entityID, rows) in held {
+                guard let id = UUID(uuidString: entityID), ids.contains(id), !unsettled.contains(id), !outcome.held.contains(id) else { continue }
+                for row in rows where !freshKeys.contains(row.recordKey) {
+                    guard let payload = try? SyncPayload.decode(row.payload, supporting: config.payloadVersion) else { continue }
+                    commit.records.append(SyncedRecord(
+                        recordKey: row.recordKey, type: row.type, entityID: entityID, seq: row.seq,
+                        fingerprint: payload.fingerprint, baseHash: SyncPayload.hash(of: row.payload), baseContent: row.payload
+                    ))
+                }
+            }
+            commit.release += thoughtIDs.filter {
+                let id = UUID(uuidString: $0) ?? UUID()
+                return ids.contains(id) && !outcome.held.contains(id) && !unsettled.contains(id)
+            }
+            commit.forgetAttempts += thoughts.filter { ids.contains($0.id) && $0.deletion != nil && !unsettled.contains($0.id) }.map { $0.id.uuidString }
+            commit.requeue += Array(outcome.requeue) + appliedTags.filter { ids.contains($0.key) && !unsettled.contains($0.key) }.flatMap(\.value)
+        }
+
         for var thought in thoughts {
             let size: Int
             do {
@@ -578,7 +630,16 @@ actor SyncEngine {
                 continue
             }
             unreadableBackoff[thought.id.uuidString] = nil
-            if !work.pending.isEmpty, work.bytes + size > config.maxApplyBytes { try await flush(&work) }
+            if !work.pending.isEmpty, work.bytes + size > config.maxApplyBytes {
+                let flushed = Set(work.pending.map(\.id))
+                try await flush(&work)
+                // Committed now, cursor unchanged, so a failure in a later sub-batch finds the bases of this one and
+                // merges against them again instead of seeing the merged text as a rival edit.
+                var partial = PageCommit(cursor: try await state.cursor(), epoch: commit.epoch)
+                settle(flushed, work.outcome, isFinal: false, into: &partial)
+                try await state.commit(partial)
+                committed.formUnion(flushed)
+            }
             work.pending.append(thought)
             work.bytes += size
             // Only the tags are kept past the sub-batch, so its downloaded blobs can be released.
@@ -587,45 +648,8 @@ actor SyncEngine {
         try await flush(&work, tags: batch.tags, settings: batch.settings)
         let outcome = work.outcome
 
-        let unsettled = blocked.union(outcome.rejected)
-        var freshKeys = Set<String>()
-        for item in fresh {
-            freshKeys.insert(item.record.recordKey)
-            let entityID = item.payload.entityID
-            let id = freshByThought[entityID] != nil ? UUID(uuidString: entityID) : nil
-            let isBlocked = id.map(unsettled.contains) ?? false
-            if isBlocked || (id.map(outcome.held.contains) ?? false) {
-                commit.hold.append(HeldRecord(
-                    recordKey: item.record.recordKey, type: item.payload.type, entityID: entityID, seq: item.record.seq,
-                    payload: item.plaintext, blocked: isBlocked
-                ))
-            }
-            // A blocked record gets no base, so it still counts as not applied and is tried again every cycle.
-            if isBlocked {
-                Self.logger.error("Pulled record \(item.record.recordKey) not applied yet: a blob is missing or its images belong to another thought")
-                continue
-            }
-            commit.records.append(SyncedRecord(
-                recordKey: item.record.recordKey, type: item.payload.type, entityID: entityID, seq: item.record.seq,
-                fingerprint: item.payload.fingerprint, baseHash: item.hash, baseContent: item.plaintext
-            ))
-        }
-        // A thought that was held and has now been applied gets its bases from the held records.
-        for (entityID, rows) in held {
-            guard let id = UUID(uuidString: entityID), !unsettled.contains(id), !outcome.held.contains(id) else { continue }
-            for row in rows where !freshKeys.contains(row.recordKey) {
-                guard let payload = try? SyncPayload.decode(row.payload, supporting: config.payloadVersion) else { continue }
-                commit.records.append(SyncedRecord(
-                    recordKey: row.recordKey, type: row.type, entityID: entityID, seq: row.seq,
-                    fingerprint: payload.fingerprint, baseHash: SyncPayload.hash(of: row.payload), baseContent: row.payload
-                ))
-            }
-        }
-        commit.release = thoughtIDs.filter {
-            let id = UUID(uuidString: $0) ?? UUID()
-            return !outcome.held.contains(id) && !unsettled.contains(id)
-        }
-        commit.requeue = Array(outcome.requeue) + appliedTags.filter { !unsettled.contains($0.key) }.flatMap(\.value)
+        let remaining = Set(thoughtIDs.compactMap(UUID.init(uuidString:))).subtracting(committed)
+        settle(remaining, outcome, isFinal: true, into: &commit)
         try await state.commit(commit)
     }
 
@@ -746,6 +770,9 @@ actor SyncEngine {
         let heldIDs = Set(try await state.held(entityIDs: entries.filter { $0.entity.kind == .thought }.map(\.entity.id)).map(\.entityID))
         let parkedKeys = try await state.parkedKeys(among: entries.flatMap { Self.thoughtKeys($0.entity, keys) } + keyed.flatMap { $0.map(\.key) })
 
+        let gone = entries.indices.filter { entries[$0].entity.kind == .thought && !snapshots[$0].payloads.contains { $0.type == .thoughtContent && !$0.isDeletion } }
+        try await state.forgetAttempts(entityIDs: gone.map { entries[$0].entity.id })
+
         var chunk: [PlannedEntity] = []
         var chunkRecords = 0
         var chunkBytes = 0
@@ -833,6 +860,8 @@ actor SyncEngine {
 
     private func send(_ chunk: [PlannedEntity]) async throws -> BatchResult {
         try await upload(Set(chunk.flatMap(\.blobs)))
+        try await state.noteAttempts(chunk.flatMap(\.records).filter { $0.baseSeq == nil && $0.payload.type == .thoughtContent && !$0.payload.isDeletion }
+            .map { ($0.key, $0.payload.entityID, $0.hash, $0.plaintext) })
         for blob in chunk.flatMap(\.records).compactMap(\.blob) {
             if try await !transport.hasBlob(name: blob.name) { try await transport.putBlob(name: blob.name, data: blob.data) }
         }

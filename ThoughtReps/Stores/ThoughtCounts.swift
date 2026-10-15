@@ -97,4 +97,24 @@ enum ThoughtCounts {
             return ([], 0)
         }
     }
+
+    // MARK: Conflict copies
+
+    /// Thoughts that are conflict copies of another (`conflictOfID` set). Archived ones count: the copy is
+    /// there to be resolved either way.
+    static let conflictCopies = #Predicate<Thought> { $0.conflictOfID != nil }
+
+    /// The oldest copies first (the longest unresolved), and how many there are in all.
+    static func conflictCopies(limit: Int, in context: ModelContext) -> (thoughts: [Thought], total: Int) {
+        do {
+            let total = try context.fetchCount(FetchDescriptor<Thought>(predicate: conflictCopies))
+            var descriptor = FetchDescriptor<Thought>(predicate: conflictCopies)
+            descriptor.sortBy = [SortDescriptor(\.stateChangedAt), SortDescriptor(\.id)]
+            descriptor.fetchLimit = limit
+            return (try context.fetch(descriptor), total)
+        } catch {
+            logger.error("Conflict copy fetch failed: \(error)")
+            return ([], 0)
+        }
+    }
 }

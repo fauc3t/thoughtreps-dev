@@ -253,6 +253,8 @@ final class SyncDevice {
     /// How far this device's wall clock is from the test's.
     var clockOffset: TimeInterval
     var failSaves = 0
+    /// Saves that go through before `failSaves` starts failing.
+    var skipSaves = 0
     var store: ThoughtStore
     var engine: SyncEngine!
     private let config: SyncEngine.Configuration
@@ -290,6 +292,7 @@ final class SyncDevice {
         store.syncDefaults = defaults
         self.store = store
         self.store.save = { [unowned self] context in
+            if self.skipSaves > 0 { self.skipSaves -= 1; try context.save(); return }
             if self.failSaves > 0 {
                 self.failSaves -= 1
                 throw InjectedSaveFailure()

@@ -48,6 +48,8 @@ struct PageCommit: Sendable {
     var unpark: [String] = []
     /// Entities to push after this page; queued in the same transaction, so a crash can't lose them.
     var requeue: [SyncEntity] = []
+    /// Entities deleted remotely: the base noted for a merge is of no use any more.
+    var forgetAttempts: [String] = []
     var cursor: Int64
     var epoch: Int64
     /// Set when the page ends a from-scratch pull, to clear the resyncing flag in the same transaction.
@@ -265,6 +267,57 @@ actor SyncState {
         }
     }
 
+    /// Notes the plaintext of a record about to be pushed for the first time. If the response is lost, it is the only
+    /// trace of the version the server may now hold, and so the base for a merge when another device edits it first.
+    func noteAttempts(_ attempts: [(recordKey: String, entityID: String, hash: String, plaintext: Data)]) throws {
+        guard !attempts.isEmpty else { return }
+        try perform { database in
+            try database.transaction {
+                for attempt in attempts {
+                    try database.execute(
+                        "INSERT OR IGNORE INTO attempts(record_key, entity_id, base_hash, content) VALUES(?, ?, ?, ?)",
+                        [.text(attempt.recordKey), .text(attempt.entityID), .text(attempt.hash), .blob(attempt.plaintext)]
+                    )
+                }
+            }
+        }
+    }
+
+    /// Drops the noted attempts of entities that have nothing left to push (deleted before the first push was acknowledged).
+    func forgetAttempts(entityIDs: [String]) throws {
+        guard !entityIDs.isEmpty else { return }
+        try perform { database in
+            try database.transaction {
+                for id in entityIDs { try database.execute("DELETE FROM attempts WHERE entity_id = ?", [.text(id)]) }
+            }
+        }
+    }
+
+    func attemptCount() throws -> Int {
+        try perform { database in
+            var total = 0
+            try database.query("SELECT count(*) FROM attempts") { total = Int($0.int(0)) }
+            return total
+        }
+    }
+
+    /// The noted attempts for records that have no synced base yet.
+    func attempts(forKeys keys: [String]) throws -> [String: (hash: String, plaintext: Data)] {
+        try perform { database in
+            var found: [String: (hash: String, plaintext: Data)] = [:]
+            for start in stride(from: 0, to: keys.count, by: 500) {
+                let chunk = Array(keys[start..<min(start + 500, keys.count)])
+                let marks = Array(repeating: "?", count: chunk.count).joined(separator: ", ")
+                try database.query(
+                    "SELECT record_key, base_hash, content FROM attempts WHERE record_key IN (\(marks))", chunk.map(SQLiteValue.text)
+                ) { row in
+                    found[row.text(0)] = (row.text(1), row.data(2) ?? Data())
+                }
+            }
+            return found
+        }
+    }
+
     func record(forKey recordKey: String) throws -> SyncedRecord? {
         try perform { database in
             var found: SyncedRecord?
@@ -314,6 +367,9 @@ actor SyncState {
             try database.transaction {
                 for record in page.records {
                     try Self.write(record, in: database)
+                }
+                for entityID in page.forgetAttempts {
+                    try database.execute("DELETE FROM attempts WHERE entity_id = ?", [.text(entityID)])
                 }
                 for entityID in page.release {
                     try database.execute("DELETE FROM held WHERE entity_id = ?", [.text(entityID)])
@@ -587,7 +643,24 @@ actor SyncState {
                         """
                     )
                 }
+                // A 410 resync keeps the content last synced of each thought, as `attempts` (the base for a merge, whose
+                // seq would be stale anyway), so edits made here since still merge instead of becoming copies.
+                var kept: [(key: String, entity: String, hash: String, content: Data)] = []
+                if snapshotting {
+                    try database.query("SELECT record_key, entity_id, base_hash, base_content FROM records WHERE type = 'thought.content'") {
+                        kept.append(($0.text(0), $0.text(1), $0.text(2), $0.data(3) ?? Data()))
+                    }
+                    try database.query("SELECT record_key, entity_id, base_hash, content FROM attempts") {
+                        kept.append(($0.text(0), $0.text(1), $0.text(2), $0.data(3) ?? Data()))
+                    }
+                }
                 try Self.clearContents(of: database, keepingBlobs: keepingBlobs, keepingSnapshot: snapshotting)
+                for base in kept {
+                    try database.execute(
+                        "INSERT OR IGNORE INTO attempts(record_key, entity_id, base_hash, content) VALUES(?, ?, ?, ?)",
+                        [.text(base.key), .text(base.entity), .text(base.hash), .blob(base.content)]
+                    )
+                }
                 try database.execute("INSERT INTO meta(key, value) VALUES('vault_id', ?)", [.text(self.vaultID ?? "")])
                 if let epoch { try Self.setMeta("epoch", epoch, in: database) }
             }
@@ -757,6 +830,7 @@ actor SyncState {
         try database.execute(
             "CREATE TABLE IF NOT EXISTS parked(record_key TEXT PRIMARY KEY, seq INTEGER NOT NULL, payload BLOB NOT NULL, deleted INTEGER NOT NULL)"
         )
+        try database.execute("CREATE TABLE IF NOT EXISTS attempts(record_key TEXT PRIMARY KEY, entity_id TEXT NOT NULL DEFAULT '', base_hash TEXT NOT NULL, content BLOB NOT NULL)")
         try database.execute("CREATE TABLE IF NOT EXISTS resync_snapshot(entity_id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL)")
         try database.execute("CREATE INDEX IF NOT EXISTS held_by_entity ON held(entity_id)")
         try database.query("SELECT count(*) FROM meta") { _ in }
@@ -767,6 +841,7 @@ actor SyncState {
 
     private static func clearContents(of database: SQLiteDatabase, keepingBlobs: Bool = false, keepingSnapshot: Bool = false) throws {
         try database.execute("DELETE FROM records")
+        try database.execute("DELETE FROM attempts")
         try database.execute("DELETE FROM held")
         try database.execute("DELETE FROM parked")
         if !keepingSnapshot { try database.execute("DELETE FROM resync_snapshot") }
@@ -776,6 +851,7 @@ actor SyncState {
     }
 
     private static func write(_ record: SyncedRecord, in database: SQLiteDatabase) throws {
+        try database.execute("DELETE FROM attempts WHERE record_key = ?", [.text(record.recordKey)])
         try database.execute(
             "INSERT OR REPLACE INTO records(record_key, type, entity_id, seq, fingerprint, base_hash, base_content) VALUES(?, ?, ?, ?, ?, ?, ?)",
             [
