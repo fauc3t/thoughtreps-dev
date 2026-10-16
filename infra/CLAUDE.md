@@ -9,7 +9,7 @@ The AWS account (`041459489812`) is shared with strands prod.
 - Every stack is `ThoughtReps-prod-*`. Never modify, import from, or tear down `Strands-*`, `SimpleMail-*`, `DnsStack`, `ShortLinkDnsStack` or `CDKToolkit`.
 - **Never create or activate an SES receipt rule set.** SES has one active set per region; ours is `simple-mail-prod`, owned by strands' `SimpleMail-prod-Mail`. `MailStack` adds its rule to that set by name (`sharedReceiptRuleSetName` in `lib/env-config.ts`). No `AwsCustomResource` for `SetActiveReceiptRuleSet`.
 - Don't change the `Zone` construct id in `lib/dns-stack.ts`: a new id replaces the hosted zone, and the registrar's nameservers point at the current one. The zone and the mail bucket are `RETAIN`.
-- Deploy with `--profile thoughtreps-dev`. Use `"prod/*"`, not `--all` (doesn't reach Stage-nested stacks).
+- Deploy with `--profile thoughtreps-prod-legacy`. Use `"prod/*"`, not `--all` (doesn't reach Stage-nested stacks).
 
 ## Mail constraints (carried over from simple-mail)
 

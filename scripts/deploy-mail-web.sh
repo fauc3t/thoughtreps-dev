@@ -9,7 +9,7 @@ set -euo pipefail
 STACK_NAME="ThoughtReps-prod-Mail"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST="$REPO_ROOT/infra/mail-web/dist"
-AWS_ARGS=(--profile "${AWS_PROFILE:-thoughtreps-dev}" --region us-east-1)
+AWS_ARGS=(--profile "${AWS_PROFILE:-thoughtreps-prod-legacy}" --region us-east-1)
 
 get_output() {
   aws cloudformation describe-stacks \
