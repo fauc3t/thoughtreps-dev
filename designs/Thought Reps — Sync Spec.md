@@ -1,6 +1,6 @@
 # Thought Reps — Device Sync Spec (iPhone ↔ iPad, AWS)
 
-Status: building, updated 2026-10-16 (first draft 2026-10-10). Phase 3 (images): the blob routes are on the dev server (3a) and the Swift client uses them (3b, 2026-10-16); HEIC stays the image format. Phases 0 and 1 are done (the sync engine, against an in-process fake server); phase 2 (dev-stage server) is in progress: rounds 2a (server, jest, local runner), 2b (Swift HTTP transport, offset correction) and the local half of 2c (two-simulator `scripts/sync-integ.sh`, basic Sync lab; all done 2026-10-15) are built, the server not deployed (waiting on the AWS accounts); the dev deploy is next. The account decision (section 2) gates only phase 4. Open decisions are listed at the end.
+Status: building, updated 2026-10-16 (first draft 2026-10-10). Phases 0 to 2 are done (the sync engine, the dev-stage server, the Swift HTTP transport and the two-simulator integration script). Phase 3 (images): server rounds 3a (blob routes) and 3c (garbage collection, quota) are live on dev and prod, the client's 3b is done (2026-10-16), 3d (the client side of 3c) is pending; HEIC stays the image format. Phase 4: the account decision is made (section 2, B); round 4a (real server auth) is live on dev and deployed to prod with real auth still off. Open decisions are listed at the end.
 
 Changes on 2026-10-14: iPad has shipped (section 0); 3-way merge is in v1, with conflict copies as the fallback, marked by a new `Thought.conflictOfID` field (sections 8 and 8a); key storage on the device (section 5); clarified how the push condition and `headSeq` work (section 7); Android notes (section 13); new phasing.
 
@@ -34,7 +34,7 @@ iPad  ──┘                       ├─ DynamoDB SyncTable (accounts, vault
 - **Device registration:** keep one device registry. Share exports its device table, so a device attests once for both features.
 - **Dev stage:** a `dev` account/stage (`ThoughtReps-dev-Sync`) with a test-only auth bypass, because App Attest doesn't work in the simulator. Without it there's no way to test two simulators syncing. The bypass must never be in prod; a CDK assertion test should enforce that.
 
-## 2. Turning sync on: account or not (undecided)
+## 2. Turning sync on: account or not (decided: B, 2026-10-16)
 
 Two options. Both keep the main app account-free and both are end-to-end encrypted; they differ in what "Turn on sync" asks for.
 
@@ -44,7 +44,7 @@ Two options. Both keep the main app account-free and both are end-to-end encrypt
 - Recovery depends on the recovery code or iCloud Keychain (section 6).
 - We have no way to reach the user (lapse warnings only in the app).
 
-**B. Sign in with Apple, only when sync is turned on (leaning this way).** The account owns the vault and the subscription.
+**B. Sign in with Apple, only when sync is turned on (chosen).** The account owns the vault and the subscription.
 
 - **Joining:** the iPad usually has the same Apple ID, so joining is signing in. With the key in iCloud Keychain (section 5) there's no QR code.
 - **Contact:** we get an email, possibly an Apple private relay address: lapse warnings, support, and a recovery alert if server escrow ever exists.
@@ -66,7 +66,9 @@ Email link (later) ─┘     + subscription           ▲
 - **What B adds besides escrow:** a way to reach the user (lapse warnings, support); the subscription survives a lost key cleanly (the account owns both, so resetting the vault is trivial); a signed-in device without the key can be told "you have synced data but no key; reset it?"; a natural place to link Google later.
 - **If A is chosen,** add an optional email stored on the vault for lapse warnings only. Moving a subscription to a new vault after a lost key then goes through `originalTransactionId` from a restored purchase.
 
-The rest of this spec is written for **B**, with notes where A differs. Under A, drop the account rows and auth routes; the vault id plus device membership is the identity.
+**Decided 2026-10-16: B, built so A's path stays open.** Turning sync on signs in with Apple, which creates our own `userId`; the account owns the vault and the subscription. Every sign-in method is only an `ID#<provider>#<sub>` row mapping to that `userId`, so Google or an email link later is one more row, never a migration. A login maps to the account and vault, never to the key: K reaches a new device only by iCloud Keychain, QR or recovery code. Once the account is paying, a device can also join with the QR invite alone, without signing in (section 5), which is option A's join for devices on another Apple ID or people who'd rather not sign in.
+
+The rest of this spec is written for **B**. Notes on A describe the QR-only join, which B keeps.
 
 ## 3. Devices and membership
 
@@ -144,7 +146,8 @@ iCloud Keychain is a convenience, not a dependency: sync works with QR and the r
 | `V#<vaultId>` | `D#<keyId>` | device name, added/last-seen times |
 | `V#<vaultId>` | `R#<recordKey>` | `seq`, `deleted`, `payload` (ciphertext, inline up to 64 KB sealed, otherwise a `TRP1` pointer to a record blob in S3) |
 | `INV#<hash>` | `INV` | invite, TTL attribute |
-| `DEV#<keyId>` | `VAULT` | which vault the device belongs to |
+| `DEV#<keyId>` | `DEVICE` | the device's App Attest public key and counter, environment, and the `userId` it last signed in as |
+| `CHALLENGE#<c>` | `CHALLENGE` | one-time App Attest challenge, TTL attribute |
 
 - **Change feed:** an LSI `bySeq` sorts records by `seq`. A pull reads `HEAD` to get h, then queries `pk=V#x, seq BETWEEN since+1 AND h` (see guarantee 1).
 - **Free compaction:** an edited record gets a new `seq`, so a pull only ever returns the latest version.
@@ -289,15 +292,16 @@ This answers the open question in TODO.md.
 ## 10. Images
 
 - **Blob name:** phase 1b names blobs `HMAC(K_idx, asset id)`, not content, so a conflict copy that needs new image ids would re-upload. (Content-HMAC de-duplication is the alternative; the server never sees content either way.) The bytes are encrypted with `K_blob` and stored at `s3://…/v/<vaultId>/e/<epoch>/b/<name>` (the epoch is in the key, so an erase orphans the old blobs without touching them); names match `^[A-Za-z0-9_-]{43}$`.
-- **Large records:** a sealed record over 64 KB (`SyncLimits.maxInlinePayload`) is sealed with `sealBlob` and uploaded as a blob named by an HMAC of the record key and content hash, before the push; the server row holds a `TRP1` pointer. Superseded pointer blobs aren't collected yet (TODO.md). A blob download is capped (`getBlob(maxBytes:)`): a sealed record blob at `maxRecordBytes` plus the frame, an image or file at `maxAssetBlobBytes` (25 MB); a bigger one is refused as unreadable and holds only its thought.
+- **Large records:** a sealed record over 64 KB (`SyncLimits.maxInlinePayload`) is sealed with `sealBlob` and uploaded as a blob named by an HMAC of the record key and content hash, before the push; the server row holds a `TRP1` pointer. Superseded pointer blobs are collected by the server's garbage collection (below). A blob download is capped (`getBlob(maxBytes:)`): a sealed record blob at `maxRecordBytes` plus the frame, an image or file at `maxAssetBlobBytes` (25 MB); a bigger one is refused as unreadable and holds only its thought.
 - **Upload (built, 3a server and 3b client):** `POST /blobs/upload-urls` with the device's `epoch` and up to 100 `{name, size, sha256}` (padded base64 SHA-256). A mismatched epoch is refused (409 `epoch_changed`, checked first) like a push, so a device that missed an erase can't refill the erased vault with orphan blobs; the same epoch rides on the download URLs. The answer lists `present` names (nothing to do) and presigned PUTs for the rest. The PUT signs `content-length`, `host` and `x-amz-checksum-sha256`: the client sends the returned headers exactly plus a `Content-Length` equal to the size. A body that doesn't match the checksum is an S3 400 (BadDigest), a bad or expired signature a 403 (URLs last 900 s), a missing length a 411.
-- **Download (built):** `POST /blobs/download-urls` with `epoch` and up to 100 names → `downloads` (`name`, `url`, `size`) and `missing`. `hasBlob` is the same call (a name in `missing` is absent). Record blobs skip it (`putBlob` returns early for a present blob); image and file blobs still check first, to avoid loading bytes. One API round trip per blob today; batching is a TODO.
+- **Download (built):** `POST /blobs/download-urls` with `epoch` and up to 100 names → `downloads` (`name`, `url`, `size`) and `missing`. `hasBlob` is the same call (a name in `missing` is absent). Record blobs skip it (`putBlob` returns early for a present blob); image and file blobs still check first, to avoid loading bytes (round 3d moves this check to `upload-urls`, so old blobs get refreshed; see below). One API round trip per blob today; batching is a TODO.
 - **Storage requests are plain:** the client sends presigned S3 requests with only the signed headers, never the API's `Authorization` or `x-tr-vault`. A 403 (an expired URL) fetches a fresh URL once and retries; a second 403, a 400 or a 411 is a client bug and stops the engine like any refusal (`serverRefused`); 5xx and timeouts use the usual retry policy. A listed size over `maxBytes` is refused before downloading (`tooLarge`), and the download goes to a temp file whose size is checked against `maxBytes` before it is read into memory (the temp file is always deleted).
 - **Push and pointers:** a push whose `TRP1` pointer names a blob absent in the current epoch is refused whole with 409 `{error:"blob_missing", missingBlobs}` (nothing written); a malformed `TRP1` payload is 400. The engine uploads the record blobs again (`putBlob` returns early for blobs already present, so there is no separate existence check) and pushes once more; a second refusal ends the cycle with a recorded error (not a stop) and the next cycle starts over.
 - **Still to do:** background `URLSession` uploads, streaming through temp files, and batching (TODO.md). The 3b client uses a foreground `URLSession`.
 - **Thumbnails:** not synced; regenerated on download, as backup import already does.
 - **Pull order:** records come down, blobs download, *then* the record is applied. This keeps the IntegrityChecker invariant that image data is present.
-- **Cleanup:** the server can't tell which blobs are still in use. A device with complete state occasionally sends the list of live blob names, and the server deletes anything else older than 30 days.
+- **Cleanup (garbage collection, server built in 3c; client is round 3d):** the server can't tell which blobs are still in use. A device with complete state (cursor at head) uploads the list of live blob names (`POST /blobs/garbage-collection/live-list-url` returns a presigned PUT; one 43-character name per line, at most 1,000,000), then starts a run with `POST /blobs/garbage-collection {epoch, runId, asOfSeq}`. The worker adds the `TRP1` pointer names to the list, deletes current-epoch blobs that are not live and older than 30 days (re-checking each blob's age right before deleting), deletes every blob of an older epoch whatever its age, stops as stale if the head moves mid-run, and recomputes the vault's byte total. One run per vault per hour.
+- **Blob names repeat, so upload refreshes old blobs:** a name is an image id or a record content hash, so an old unused blob can be needed again. `upload-urls` self-copies (server side, nothing uploaded) any present blob older than 15 days before reporting it `present`, at most once per blob per 15 days. The client must therefore check existence with `upload-urls`, not `download-urls`.
 - **Bucket:** unversioned, scoped by vault prefix, no `ListBucket` for the Lambdas. Same pattern as the export bucket.
 - **Large files (phase 3):** files may grow from 5 MB to 25-50 MB later. Phase 3 should stream blobs to temp files rather than hold them in memory, and revisit `FileAttachment.maxBytes`, share-extension memory, multipart/background S3 uploads, and a per-vault quota (ties into subscription pricing).
 - **Format (decided 2026-10-16):** images stay HEIC and blobs sync the stored bytes as they are. HEIC is fine on Apple and Android but most browsers can't decode it; a future web client can convert to JPEG (section 13).
@@ -306,27 +310,28 @@ This answers the open question in TODO.md.
 
 | Route | Purpose |
 |---|---|
-| `POST /auth/apple` | Sign in with Apple identity token (verified against Apple's published keys) + App Attest assertion → session token; creates the account on first use |
-| `POST /session` | App Attest assertion → session token (refresh for an already-signed-in device) |
-| `POST /vaults` | Create the account's vault (needs a subscription; see 12) |
+| `POST /devices/app-attest/challenge`, `POST /devices/app-attest/register` | Single-use challenge, then register the device's App Attest key (attestation). Named after the mechanism; Play Integrity would get sibling routes |
+| `POST /accounts/sign-in-with-apple` | App Attest assertion + Apple identity token (nonce = sha256hex of a fresh challenge) → `{userId, vaultId \| null, session}`; first use creates our own `userId` and the `ID#apple#<sub>` row atomically (email stored only if Apple sends one) |
+| `POST /sessions/app-attest` | Assertion alone → fresh session (refresh for an already-linked device) |
+| `POST /vaults` | Bearer. `{kAuthVerifier}` (base64 SHA-256 of `K_auth`) → 201, or 409 `vault_exists`; adds the calling device as the vault's first `D#` row (subscription check comes later; see 12) |
 | `POST /vaults/{id}/invites` | Create a pairing invite (QR fallback) |
 | `POST /pair` | Join a vault with an invite or a `K_auth` proof |
 | `GET/DELETE /vaults/{id}/devices[/{keyId}]` | List or remove devices |
 | `POST /push` | `{epoch, records:[{key, baseSeq, deleted, payload}]}` → `{headSeq, seqs}`, 409 `{error:"conflict", conflicts}` (a record moved), or 409 `{error:"epoch_changed", epochChanged:true, epoch}` (the vault's epoch isn't `epoch`; nothing written). 409 `{error:"blob_missing", missingBlobs}` when a `TRP1` pointer names a blob absent in this epoch (nothing written; checked after size, before the compare-and-swap). 413 `too_large` for more than 99 records, more than 2 MB of payload, or an inline payload over 64 KiB sealed (checked after the epoch). Duplicate keys and a malformed pointer are 400. |
 | `GET /pull?since=&limit=500` | → `{records, nextSeq, headSeq, more, epoch}`; `limit` defaults to 500 and is capped there, and a page is bounded to about 4 MB of encoded JSON (Lambda's 6 MB response cap). Pull never refuses for staleness. `headSeq` is h, the head read before the query (guarantee 1). `nextSeq` is the last record's seq when `more`, otherwise h. The client's cursor becomes `nextSeq`, never `headSeq`, and `more` with a `nextSeq` that hasn't moved is an error. |
 | `GET /head` | `{headSeq, epoch}`, a cheap poll |
-| `POST /blobs/upload-urls`, `/blobs/download-urls` | Presigned blob transfer (built, shapes in section 10) |
-| `POST /blobs/gc` | Blob cleanup (not built) |
+| `POST /blobs/upload-urls`, `/blobs/download-urls` | Presigned blob transfer (shapes in section 10; upload reserves quota and refreshes old blobs) |
+| `POST /blobs/garbage-collection/live-list-url`, `POST /blobs/garbage-collection` | Presigned PUT for the live list; start a run. Errors: 409 `epoch_changed`, 409 `live_list_missing`, 400 bad size, 409 `garbage_collection_stale` (head moved past `asOfSeq`), 429 `garbage_collection_rate_limited`, 503 `busy` (worker invoke failed; retry) |
 | `POST /entitlement` | Signed App Store transaction from the device → verified and stored on the account |
 | `DELETE /account` | Delete the account, vault, records and blobs ("Delete sync data"; also "Erase on all devices") |
 | `POST /appstore/notifications` | App Store Server Notifications v2 |
 
 - **Wire conventions (built in 2a):** every body carries `serverTime` (ms). Statuses: 400 `bad_request`, 401 `unauthorized`, 404, 413 `too_large`, 503 `busy` (a `HEAD` read cancelled by an in-flight push; retry).
 - **Large records:** a record over 64 KiB goes up as a blob and the push carries a `TRP1` pointer (the server accepts pointers since 3a; an inline payload over 64 KiB is still 413).
-- **Dev routes:** `POST /dev/vaults` and `POST /dev/vaults/{id}/erase`, behind an `Authorization: Dev <secret>` + `x-tr-vault` bypass with the secret in SSM. Prod has no bypass and answers 401 until phase 4's real auth.
+- **Dev routes:** `POST /dev/vaults` and `POST /dev/vaults/{id}/erase`, behind an `Authorization: Dev <secret>` + `x-tr-vault` bypass with the secret in SSM. The bypass is dev only. Real auth is on where `realAuthEnabled` is set (dev yes, prod no); prod answers 401 to everything until it is flipped. Prod accepts only production App Attest keys; dev also accepts development keys (Xcode builds).
 - **No pruning:** tombstones stay forever (see section 9).
-- **Session tokens:** HMAC, about 1 hour, bound to `userId`, `keyId` and `vaultId`. Push and pull send a bearer token, avoiding a challenge round trip on every call.
-- **Limits:** per-route throttles, payload size caps, a storage quota per vault (for example 10 GB of images), and the same status-code vocabulary as the export link.
+- **Session tokens:** HMAC, about 1 hour, bound to `userId`, `keyId` and `vaultId`. Every sync route takes it as `Authorization: Bearer`, and the vault comes only from the token. Each vault request also reads the device's `D#` row, so removing a device takes effect on its next request, not at token expiry. A second device on an account gets a vaultless token until 4b's pairing. `identity_token_invalid` is retryable with a fresh challenge.
+- **Limits:** per-route throttles, payload size caps, a storage quota of 10 GiB per vault (built in 3c: `upload-urls` reserves declared sizes and refuses with 413 `quota_exceeded {usedBytes, limitBytes}`; the counter may overcount until the next garbage collection run, never undercounts, and resets on epoch change), and the same status-code vocabulary as the export link.
 
 ## 12. Subscription, email and account deletion
 
@@ -402,8 +407,8 @@ Each phase merges to main behind a DEBUG-only flag; nothing is user-visible unti
 | 0 | **Schema prep (before the freeze)** | `Thought.conflictOfID` in `SchemaV1`, the backup record, the import merge (state group), an IntegrityChecker rule, a regenerated `default.store` fixture, randomized tests. No UI. | Tests pass; a backup round-trips the field | ½ day |
 | 1 | **Sync engine, no network** (split into rounds 1a, 1b, 1c; **1a done 2026-10-14**: `sync.sqlite`, outbox and hooks, record codec and crypto, `SyncReconciler`; **1b done 2026-10-14**: engine, fake server, `applyRemote`, skew clock, deletions, 409, first-sync paging, in-memory image store; review fixes and the large-record blob path also done; **1c done 2026-10-15**: `ContentMerge`, conflict copies, `attempts` bases, convergence tests; **phase 1 complete**) | `ThoughtReps/Sync/`: `sync.sqlite` (cursor, outbox, base content), outbox hooks in every `ThoughtStore` writer, `applyRemote` sharing `performImport`'s merge, `ContentMerge` (3-way merge, section 8a), conflict copies, the skew-safe clock, `SyncReconciler`, first-sync paging. All against an in-process fake server implementing the push/pull/CAS contract. | Convergence tests pass (N stores, concurrent edits, dropped responses, save failures, clock skew); merge table and property tests pass; IntegrityChecker and SearchIndexChecker stay clean | 3 weeks |
 | 2 | **Server, dev stage, text only** (split into rounds; **2a done 2026-10-15**: server, jest, local runner; not deployed, waiting on the AWS accounts. **2b done 2026-10-15**: the Swift HTTP transport, contract tests against both the fake and the local server, `serverTime` offset correction. **2c**: `scripts/sync-integ.sh` with two simulators against the local server (scenarios: the deleted-while-open screens) and a basic DEBUG Sync lab screen **done 2026-10-15**; the dev deploy is pending the accounts) | `ThoughtReps-dev-Sync` (in `thoughtreps-aws`): DynamoDB table with the `bySeq` LSI, push (transaction + CAS), pull, `/head`, the test-only auth bypass. | Two simulators sync text against dev; jest covers ordering, CAS conflicts; a CDK test proves the bypass isn't in prod | 1.5 weeks |
-| 3 | **Images** (**3a server done 2026-10-16**, deployed to dev: blob bucket, upload and download routes, pointer checks. **3b client done 2026-10-16**: `HTTPSyncTransport` blob calls over presigned S3, `blob_missing` recovery, held thoughts released; background `URLSession`, temp-file streaming and batching remain, see TODO.md) | Blob bucket, presigned upload and download, HMAC blob names, accepting `TRP1` large records (the server refuses them with 413 until then), background `URLSession`, blob-before-record ordering, blob cleanup; thoughts held as `Status.waitingForBlobs` in 2b (images, files, records over 64 KiB) keep their meta waiting too, so release both together | Images sync both ways, upload once, and are never missing on the receiving side | 1 week |
-| 4 | **Identity and keys** | Sign in with Apple (or vault creation under A), App Attest sessions, Keychain key (synced and local items, section 5), QR pairing that also links the account, recovery code, `K_auth` join, device list and removal, erase choices, "Delete sync data". The "Needs a look" timeline section and resolve sheet. Prod stack deployed. | A real iPhone and iPad pair, join and recover; the full Sync lab runs on both | 2 weeks |
+| 3 | **Images** (**3a server done 2026-10-16**, live on dev and prod: blob bucket, upload and download routes, pointer checks. **3b client done 2026-10-16**: `HTTPSyncTransport` blob calls over presigned S3, `blob_missing` recovery, held thoughts released; background `URLSession`, temp-file streaming and batching remain, see TODO.md. **3c done server-side 2026-10-16**, live on dev and prod: blob garbage collection and a per-vault quota; client side pending as round 3d) | Blob bucket, presigned upload and download, HMAC blob names, accepting `TRP1` large records (the server refuses them with 413 until then), background `URLSession`, blob-before-record ordering, blob garbage collection and a per-vault quota; thoughts held as `Status.waitingForBlobs` in 2b (images, files, records over 64 KiB) keep their meta waiting too, so release both together | Images sync both ways, upload once, and are never missing on the receiving side | 1 week |
+| 4 | **Identity and keys** (**4a done server-side 2026-10-16**, live on dev, deployed to prod with real auth off: App Attest, Sign in with Apple, sessions, `POST /vaults`; **4b**: invites, `/pair` by invite or `K_auth` proof, device list and removal, `DELETE /account`, erase on all devices; **4c**: the Swift client, which needs a real device for App Attest) | Sign in with Apple (or vault creation under A), App Attest sessions, Keychain key (synced and local items, section 5), QR pairing that also links the account, recovery code, `K_auth` join, device list and removal, erase choices, "Delete sync data". The "Needs a look" timeline section and resolve sheet. Prod stack deployed. | A real iPhone and iPad pair, join and recover; the full Sync lab runs on both | 2 weeks |
 | 5 | **Subscription** | StoreKit 2 subscription, `appAccountToken`, `/entitlement` JWS check, App Store Server Notifications v2, deleting data 30 days after a lapse, restore purchases | Sandbox subscribe, renew, lapse and restore all behave correctly | 1 week |
 | 6 | **Launch prep** | Privacy manifests, `privacy.ts`, App Store privacy answers, help article (including conflict copies), `INTEGRATIONS.md`, CLAUDE.md network rule, App Review items, TestFlight with real device pairs | Testers sync real libraries for a week with no divergence | 1 week + beta |
 
@@ -419,7 +424,7 @@ Each phase merges to main behind a DEBUG-only flag; nothing is user-visible unti
 
 ## Open decisions
 
-1. **Account when sync is turned on (B, Sign in with Apple) or no account (A)?** Leaning B, still thinking it over. Needed before phase 4.
+1. ~~**Account when sync is turned on (B, Sign in with Apple) or no account (A)?**~~ Decided 2026-10-16: B, with sign-ins mapped to our own `userId` and QR-only join kept (section 2).
 2. **Subscription add-on, or included?** Recommended: an add-on, so the paid-once app stays whole.
 3. **Reminders per device, off by default on new devices?** Recommended: yes.
 4. **iCloud Keychain key storage defaulted on?** Recommended: yes, with an explanation.
