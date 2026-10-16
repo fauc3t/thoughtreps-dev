@@ -24,6 +24,7 @@ All in one `cdk.Stage` named `prod` (`infra/lib/app-stage.ts`).
 - Hosted zone `thoughtreps.com`, id `Z06229403C4P8HR6DYOGE`.
 - Nameservers: `ns-502.awsdns-62.com`, `ns-698.awsdns-23.net`, `ns-1437.awsdns-51.org`, `ns-1574.awsdns-04.co.uk`.
 - The domain is registered outside AWS; these nameservers are set at the registrar by hand. Check with `dig NS thoughtreps.com +short`. Delegation must be live before Landing/Mail deploy (ACM and SES verification need it).
+- **Hand-added records for the new prod account** (2026-10-16, change `C0159161EOZ06E0ELXAT`, no stack owns them): the 3 Easy DKIM CNAMEs of the new account's own `thoughtreps.com` SES identity (`ThoughtReps-prod-Mail` in `~/dev/thoughtreps-aws`, account `038635648573`): `pvpbta3dsbj6g6xxoeog6wxkixsta6sv`, `l3smzygfuzlwdcfgmixkyiybhfhp5hhw` and `dbx4y4lodglgxytwdgif345i7sm5mrpn` `._domainkey.thoughtreps.com`, each pointing at `<token>.dkim.amazonses.com`. They sit beside this account's own 3 DKIM CNAMEs; both identities share `bounce.thoughtreps.com` and `_dmarc`. When the zone moves to the prod account, don't copy these 3 or the `bounce` MX/TXT (CDK creates them there); see thoughtreps-aws README, "Moving the zone to prod".
 
 ### Mail (`hello@`, `social@`, `repsbot@`, `nickhorn@thoughtreps.com`)
 
