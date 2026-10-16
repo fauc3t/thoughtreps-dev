@@ -187,15 +187,6 @@ struct HTTPSyncTransportTests {
         await #expect(throws: SyncTransportError.unavailable) { try await transport.head() }
     }
 
-    @Test func blobCallsAreUnsupported() async throws {
-        let transport = transport { _ in .json(200, "{}") }
-        #expect(!transport.supportsBlobs)
-        await #expect(throws: SyncTransportError.unsupported) { try await transport.putBlob(name: "n", data: Data(), epoch: 1) }
-        await #expect(throws: SyncTransportError.unsupported) { try await transport.getBlob(name: "n", maxBytes: 10) }
-        await #expect(throws: SyncTransportError.unsupported) { try await transport.hasBlob(name: "n", epoch: 1) }
-        #expect(requests.isEmpty)
-    }
-
     @Test func everyResponseFeedsTheClockOffset() async throws {
         let suite = "HTTPSyncTransportTests-\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))

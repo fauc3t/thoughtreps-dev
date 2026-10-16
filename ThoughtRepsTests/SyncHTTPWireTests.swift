@@ -20,10 +20,20 @@ struct SyncHTTPWireTests {
         "error-too-large": "7a52e6f92cce730e6a487738600fe3d785806351e8eed45683ebc92b6fc5fa72",
         "error-busy": "36e34e3971d8c342d573a99f07fd4f21fedf7792ebfbc859e93e58b10a237546",
         "error-unauthorized": "3e191a8e87092c34cb1e684ccfc87baaa5f7406f72030355ae0fba347d8deb41",
+        "blob-upload-urls-request": "592430bc961209c0d4e5b2012e09fef17ce0255d9172a4cbc2b397bdcb6e6d30",
+        "blob-upload-urls-response": "8b2b49114a584c448d053fe759f37f333f587e22a9cd4808cf847a93a941e41e",
+        "blob-download-urls-request": "fce9161d08a359c90f9cf467eba938016db75706a67512a499b3eb493495e73e",
+        "blob-download-urls-response": "1d4b7e1efeb476d51db2c2dca56657ccb1157a4f429c1c2a9491acc382f3c1d7",
+        "push-pointer-request": "6f924da9f8e67955f5aa1b48ab8005ca41ca7251ec883a900abda4afdb9915f3",
+        "push-pointer-missing-blob": "1df8fae7a2c5aecc069d72d87fd7e43e7cdf4e3efd96210e57380510bef7a32b",
         "dev-create-vault": "af9876009c1900091aabef5efb03b618fc33be4418b501ff4912f74e842f2ec8",
         "dev-erase-vault": "022ca820a818a48eeb6528cbd2c92e97798008ccfeccb1bcf429e0addefb7042",
     ]
+    static let requestFixtures: Set<String> = ["push-request", "push-pointer-request", "blob-upload-urls-request", "blob-download-urls-request"]
     static let serverTime: Int64 = 1_768_478_400_000
+    static let blobA = "ERERERERERERERERERERERERERERERERERERERERERE"
+    static let blobB = "IiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiI"
+    static let blobC = "MzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzM"
     static let keyA = "Q-Y85gZYeFMCw5FLlo5pPem-fdXn9BQl7fi8MEJti1Q"
     static let keyB = "cEqYZBq5_keBcdVD0vHgqpHZEhaFzkzXXaEcZU7T4eY"
 
@@ -94,8 +104,48 @@ struct SyncHTTPWireTests {
     }
 
     @Test func everyResponseFixtureCarriesTheServerTime() throws {
-        for name in Self.hashes.keys where name != "push-request" {
+        for name in Self.hashes.keys where !Self.requestFixtures.contains(name) {
             #expect(try decode(SyncHTTPWireV1.TimeOnly.self, name).serverTime == Self.serverTime, "\(name)")
         }
+    }
+
+    func expectReEncodesToTheFixture<T: Codable>(_ value: T, _ name: String) throws {
+        let encoded = try JSONSerialization.jsonObject(with: JSONEncoder().encode(value)) as? NSDictionary
+        let fixture = try JSONSerialization.jsonObject(with: bytes(name)) as? NSDictionary
+        #expect(encoded != nil && encoded == fixture, "\(name)")
+    }
+
+    @Test func blobUploadURLs() throws {
+        let request = try decode(SyncHTTPWireV1.BlobUploadURLsRequest.self, "blob-upload-urls-request")
+        #expect(request.epoch == 1)
+        #expect(request.blobs.map(\.name) == [Self.blobA, Self.blobB] && request.blobs.map(\.size) == [184_233, 9_120])
+        #expect(request.blobs[0].sha256 == "ypeBEsobvcr6wjGzmiPcTaeG7/gUfE5yuYB3ha/uSLs=" && request.blobs.allSatisfy { $0.sha256.count == 44 })
+        try expectReEncodesToTheFixture(request, "blob-upload-urls-request")
+
+        let response = try decode(SyncHTTPWireV1.BlobUploadURLsResponse.self, "blob-upload-urls-response")
+        #expect(response.uploads.map(\.name) == [Self.blobA] && response.present == [Self.blobB] && response.serverTime == Self.serverTime)
+        #expect(response.uploads[0].headers == ["x-amz-checksum-sha256": "ypeBEsobvcr6wjGzmiPcTaeG7/gUfE5yuYB3ha/uSLs="])
+        #expect(response.uploads[0].url.hasPrefix("https://") && response.uploads[0].url.contains("X-Amz-Signature="))
+    }
+
+    @Test func blobDownloadURLs() throws {
+        let request = try decode(SyncHTTPWireV1.BlobDownloadURLsRequest.self, "blob-download-urls-request")
+        #expect(request == SyncHTTPWireV1.BlobDownloadURLsRequest(epoch: 1, names: [Self.blobA, Self.blobB, Self.blobC]))
+        try expectReEncodesToTheFixture(request, "blob-download-urls-request")
+
+        let response = try decode(SyncHTTPWireV1.BlobDownloadURLsResponse.self, "blob-download-urls-response")
+        #expect(response.downloads.map(\.name) == [Self.blobA, Self.blobB] && response.downloads.map(\.size) == [184_233, 9_120])
+        #expect(response.missing == [Self.blobC] && response.serverTime == Self.serverTime)
+        #expect(response.downloads.allSatisfy { $0.url.hasPrefix("https://") })
+    }
+
+    @Test func aPointerPushAndItsMissingBlobAnswer() throws {
+        let request = try decode(SyncHTTPWireV1.PushRequest.self, "push-pointer-request")
+        #expect(request.epoch == 1 && request.records.map(\.key) == ["rec-big"] && request.records[0].baseSeq == nil)
+        #expect(SyncCrypto.blobName(inPointer: request.records[0].payload) == Self.blobA)
+        try expectReEncodesToTheFixture(request, "push-pointer-request")
+
+        let missing = try decode(SyncHTTPWireV1.ErrorBody.self, "push-pointer-missing-blob")
+        #expect(missing.error == "blob_missing" && missing.missingBlobs == [Self.blobC] && missing.conflicts == nil && missing.epochChanged == nil)
     }
 }

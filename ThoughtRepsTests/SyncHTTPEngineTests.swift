@@ -12,8 +12,20 @@ struct NoBlobTransport: SyncTransport {
     func pull(after cursor: Int64, limit: Int) async throws -> PullPage { try await base.pull(after: cursor, limit: limit) }
     func head() async throws -> SyncHead { try await base.head() }
     func putBlob(name: String, data: Data, epoch: Int64) async throws { throw SyncTransportError.unsupported }
-    func getBlob(name: String, maxBytes: Int) async throws -> Data { throw SyncTransportError.unsupported }
+    func getBlob(name: String, epoch: Int64, maxBytes: Int) async throws -> Data { throw SyncTransportError.unsupported }
     func hasBlob(name: String, epoch: Int64) async throws -> Bool { throw SyncTransportError.unsupported }
+}
+
+/// The fake, except that a blob fetch finds the vault erased elsewhere.
+struct EpochFlipOnGetTransport: SyncTransport {
+    let base: FakeSyncServer
+
+    func push(_ records: [PushRecord], epoch: Int64) async throws -> PushResult { try await base.push(records, epoch: epoch) }
+    func pull(after cursor: Int64, limit: Int) async throws -> PullPage { try await base.pull(after: cursor, limit: limit) }
+    func head() async throws -> SyncHead { try await base.head() }
+    func putBlob(name: String, data: Data, epoch: Int64) async throws { try await base.putBlob(name: name, data: data, epoch: epoch) }
+    func getBlob(name: String, epoch: Int64, maxBytes: Int) async throws -> Data { throw SyncTransportError.epochChanged(server: epoch + 8) }
+    func hasBlob(name: String, epoch: Int64) async throws -> Bool { try await base.hasBlob(name: name, epoch: epoch) }
 }
 
 /// Answers every call the way the server does to a request it will never accept.
@@ -27,7 +39,7 @@ actor RefusingTransport: SyncTransport {
     func pull(after cursor: Int64, limit: Int) async throws -> PullPage { throw refusal() }
     func head() async throws -> SyncHead { throw refusal() }
     func putBlob(name: String, data: Data, epoch: Int64) async throws { throw refusal() }
-    func getBlob(name: String, maxBytes: Int) async throws -> Data { throw refusal() }
+    func getBlob(name: String, epoch: Int64, maxBytes: Int) async throws -> Data { throw refusal() }
     func hasBlob(name: String, epoch: Int64) async throws -> Bool { throw refusal() }
 
     private func refusal() -> SyncTransportError {
@@ -117,6 +129,52 @@ struct SyncHTTPEngineTests {
         #expect(try b.thought(big.id)?.body.count == 300_000)
         #expect(try b.thought(pictured.id) != nil)
         try await b.expectClean()
+    }
+
+    @Test func aPointerBlobThatVanishesBeforeThePushIsUploadedAgain() async throws {
+        let a = try await SyncDevice("A", server: server)
+        let b = try await SyncDevice("B", server: server)
+        let big = a.store.create(body: SyncLargeRecordTests.bigBody(300_000), now: a.now(at(0)))
+        await server.loseBlobsBeforeNextPointerPushes()
+        let status = await a.sync()
+        #expect(status.lastError == nil && status.attention == nil)
+        #expect(try await a.state.outboxCount() == 0)
+        #expect(await server.blobPuts.values.contains(2), "the record blob was uploaded a second time")
+        await b.sync()
+        #expect(try b.thought(big.id)?.body.count == 300_000)
+        let pushes = await server.recordPushes
+        #expect(try await a.state.outboxCount() == 0, "the re-push queued no echo")
+        #expect(try await b.state.outboxCount() == 0)
+        await a.sync()
+        await b.sync()
+        #expect(await server.recordPushes == pushes)
+    }
+
+    @Test func aPointerBlobThatKeepsVanishingEndsTheCycleAndIsRetriedNextCycle() async throws {
+        let a = try await SyncDevice("A", server: server)
+        let b = try await SyncDevice("B", server: server)
+        let big = a.store.create(body: SyncLargeRecordTests.bigBody(300_000), now: a.now(at(0)))
+        await server.loseBlobsBeforeNextPointerPushes(2)
+        let failed = await a.sync()
+        #expect(failed.lastError != nil && failed.attention == nil, "a recoverable failure, not a stop")
+        #expect(try await a.state.outboxCount() == 1)
+        let recovered = await a.sync()
+        #expect(recovered.lastError == nil)
+        #expect(try await a.state.outboxCount() == 0)
+        await b.sync()
+        #expect(try b.thought(big.id)?.body.count == 300_000)
+    }
+
+    @Test func anEpochChangeOnAPullSideBlobFetchStopsTheEngine() async throws {
+        let a = try await SyncDevice("A", server: server)
+        a.store.create(body: SyncLargeRecordTests.bigBody(300_000), now: a.now(at(0)))
+        let image = newImage(6)
+        a.store.create(body: "picture " + ImageToken.token(for: image.id), images: [image], now: a.now(at(1)))
+        #expect(await a.sync().lastError == nil)
+        let b = try await SyncDevice("B", server: server, transport: EpochFlipOnGetTransport(base: server))
+        let status = await b.sync()
+        #expect(status.attention == .epochChanged(known: 1, server: 9))
+        #expect(status.phase == .stopped)
     }
 
     @Test func aRefusedRequestStopsTheEngineInsteadOfLoopingEveryCycle() async throws {

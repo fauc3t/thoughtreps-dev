@@ -1,0 +1,11 @@
+{
+  "epoch": 1,
+  "records": [
+    {
+      "key": "rec-big",
+      "baseSeq": null,
+      "deleted": false,
+      "payload": "VFJQMUVSRVJFUkVSRVJFUkVSRVJFUkVSRVJFUkVSRVJFUkVSRVJFUkVSRVJFUkU="
+    }
+  ]
+}

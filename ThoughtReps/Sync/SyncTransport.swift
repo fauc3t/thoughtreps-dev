@@ -21,6 +21,8 @@ enum PushResult: Sendable, Equatable {
     case ok(seqs: [String: Int64], headSeq: Int64)
     /// Nothing committed: these keys' rows were not at `baseSeq`.
     case conflict(keys: [String])
+    /// Nothing committed: a pointer record names these blobs and the server doesn't have them in the current epoch.
+    case blobsMissing(names: [String])
 }
 
 struct PullPage: Sendable, Equatable {
@@ -48,7 +50,7 @@ enum SyncTransportError: Error, Equatable {
     case blobMissing(String)
     /// The vault's epoch is not the one the push carried: it was erased or replaced elsewhere. Nothing was written.
     case epochChanged(server: Int64)
-    /// The server doesn't offer this call (blobs, until phase 3).
+    /// The server doesn't offer this call.
     case unsupported
     /// The server refused the request itself (400, 401, 403, 404, 410): retrying the same request can't succeed, so the
     /// engine stops (`Attention.serverRefused`) instead of trying again every cycle.
@@ -62,7 +64,7 @@ enum SyncTransportError: Error, Equatable {
 /// `headSeq + 1…` in order, so commit order matches seq order. A pull returns only the latest version of
 /// each record, ascending by seq.
 ///
-/// A push, a blob upload and a blob existence check carry the epoch the device last saw. The server checks it against
+/// A push and every blob call carry the epoch the device last saw. The server checks it against
 /// the vault's current epoch (for a push, in the same transactional write as the records) and, if it differs, writes
 /// nothing and throws `epochChanged`, so a device that missed an erase cannot refill the vault.
 ///
@@ -79,7 +81,7 @@ protocol SyncTransport: Sendable {
     func pull(after cursor: Int64, limit: Int) async throws -> PullPage
     func head() async throws -> SyncHead
     func putBlob(name: String, data: Data, epoch: Int64) async throws
-    func getBlob(name: String, maxBytes: Int) async throws -> Data
+    func getBlob(name: String, epoch: Int64, maxBytes: Int) async throws -> Data
     func hasBlob(name: String, epoch: Int64) async throws -> Bool
     /// False when the server has no blob routes: the engine then holds back what needs a blob (a record over
     /// `maxInlinePayload`, an image or a file) and syncs the rest.
@@ -103,7 +105,8 @@ enum SyncLimits {
     /// Bytes held in memory while a pulled page is applied: resolved record payloads and decoded image and file bytes. A
     /// sub-batch is cut before it passes this, so a thought bigger than it goes alone.
     static let maxApplyBytes = 25_000_000
-    /// The most one image or file blob download may be (`SyncTransport.getBlob(name:maxBytes:)`, plus the frame). Files may
-    /// later grow to 25 to 50 MB; blobs should then stream through a temp file instead of memory (phase 3).
+    /// The most one image or file blob download may be (`SyncTransport.getBlob(name:maxBytes:)`, plus the frame). Blobs download to a
+    /// temp file whose size is checked before it is read into memory. Files may later grow to 25 to 50 MB; reading them should
+    /// then stream instead of mapping the whole file.
     static let maxAssetBlobBytes = 25_000_000
 }

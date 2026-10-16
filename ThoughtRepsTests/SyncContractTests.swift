@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import Testing
 @testable import ThoughtReps
@@ -189,6 +190,69 @@ enum SyncContract {
         #expect(again.seqs.isEmpty && again.headSeq == 2)
         await #expect(throws: SyncTransportError.epochChanged(server: epoch)) { try await transport.push([], epoch: epoch + 1) }
     }
+
+    /// A valid blob name (43 URL-safe characters) for `label`.
+    static func blobName(_ label: String) -> String {
+        SyncCrypto.base64URL(Data(SHA256.hash(data: Data(label.utf8))))
+    }
+
+    static func blobRoundTrip(_ subject: ContractSubject) async throws {
+        let transport = subject.transport
+        let epoch = try await transport.head().epoch
+        let name = blobName("round trip")
+        let bytes = Data((0..<4096).map { UInt8($0 % 251) })
+        #expect(try await !transport.hasBlob(name: name, epoch: epoch))
+        await #expect(throws: SyncTransportError.blobMissing(name)) { try await transport.getBlob(name: name, epoch: epoch, maxBytes: 10_000) }
+        try await transport.putBlob(name: name, data: bytes, epoch: epoch)
+        #expect(try await transport.hasBlob(name: name, epoch: epoch))
+        #expect(try await transport.getBlob(name: name, epoch: epoch, maxBytes: 10_000) == bytes)
+        try await transport.putBlob(name: name, data: bytes, epoch: epoch)
+        #expect(try await transport.getBlob(name: name, epoch: epoch, maxBytes: bytes.count) == bytes, "a second upload of a present blob is a no-op")
+        await #expect(throws: SyncTransportError.tooLarge) { try await transport.getBlob(name: name, epoch: epoch, maxBytes: bytes.count - 1) }
+        #expect(try await !transport.hasBlob(name: blobName("other"), epoch: epoch))
+    }
+
+    static func blobsFollowTheEpoch(_ subject: ContractSubject) async throws {
+        let transport = subject.transport
+        let old = try await transport.head().epoch
+        let name = blobName("epoch")
+        try await transport.putBlob(name: name, data: Data("kept until the erase".utf8), epoch: old)
+        let new = try await subject.erase()
+        await #expect(throws: SyncTransportError.epochChanged(server: new)) { try await transport.hasBlob(name: name, epoch: old) }
+        await #expect(throws: SyncTransportError.epochChanged(server: new)) { try await transport.putBlob(name: name, data: Data("x".utf8), epoch: old) }
+        await #expect(throws: SyncTransportError.epochChanged(server: new)) { try await transport.getBlob(name: name, epoch: old, maxBytes: 100) }
+        #expect(try await !transport.hasBlob(name: name, epoch: new), "an erase takes the blobs with it")
+    }
+
+    static func pointerPushes(_ subject: ContractSubject) async throws {
+        let transport = subject.transport
+        let epoch = try await transport.head().epoch
+        let name = blobName("pointer target")
+        let pointer = PushRecord(recordKey: "big", baseSeq: nil, payload: SyncCrypto.pointer(toBlob: name), deleted: false)
+        #expect(try await transport.push([record("small"), pointer], epoch: epoch) == .blobsMissing(names: [name]))
+        #expect(try await transport.head().headSeq == 0, "a push with a missing blob commits nothing")
+        try await transport.putBlob(name: name, data: Data("sealed record".utf8), epoch: epoch)
+        let ok = try await pushedOK(transport, [record("small"), pointer], epoch: epoch)
+        #expect(ok.seqs == ["small": 1, "big": 2])
+        #expect(try await pulled(transport).records.last == PulledRecord(recordKey: "big", seq: 2, payload: pointer.payload, deleted: false))
+        let new = try await subject.erase()
+        let again = PushRecord(recordKey: "big", baseSeq: nil, payload: pointer.payload, deleted: false)
+        #expect(try await transport.push([again], epoch: new) == .blobsMissing(names: [name]), "the blob did not survive the erase")
+    }
+
+    static func malformedPointers(_ subject: ContractSubject) async throws {
+        let transport = subject.transport
+        let epoch = try await transport.head().epoch
+        for payload in [Data("TRP1short".utf8), SyncCrypto.pointerMagic + Data(repeating: 0x21, count: SyncCrypto.blobNameLength)] {
+            do {
+                _ = try await transport.push([PushRecord(recordKey: "bad", baseSeq: nil, payload: payload, deleted: false)], epoch: epoch)
+                Issue.record("a malformed pointer should be refused")
+            } catch SyncTransportError.refused(let status, _) {
+                #expect(status == 400)
+            }
+        }
+        #expect(try await transport.head().headSeq == 0)
+    }
 }
 
 @Suite("Sync transport contract: fake server")
@@ -211,6 +275,10 @@ struct SyncContractFakeTests {
     @Test func epochIsCheckedBeforeSize() async throws { try await SyncContract.epochIsCheckedBeforeSize(subject()) }
     @Test func duplicateKeys() async throws { try await SyncContract.duplicateKeys(subject()) }
     @Test func emptyPush() async throws { try await SyncContract.emptyPush(subject()) }
+    @Test func blobRoundTrip() async throws { try await SyncContract.blobRoundTrip(subject()) }
+    @Test func blobsFollowTheEpoch() async throws { try await SyncContract.blobsFollowTheEpoch(subject()) }
+    @Test func pointerPushes() async throws { try await SyncContract.pointerPushes(subject()) }
+    @Test func malformedPointers() async throws { try await SyncContract.malformedPointers(subject()) }
 }
 
 /// What only the fake can show: the dev routes can't force these.
@@ -242,6 +310,10 @@ struct SyncContractHTTPTests {
     @Test func epochIsCheckedBeforeSize() async throws { try await SyncContract.epochIsCheckedBeforeSize(subject()) }
     @Test func duplicateKeys() async throws { try await SyncContract.duplicateKeys(subject()) }
     @Test func emptyPush() async throws { try await SyncContract.emptyPush(subject()) }
+    @Test func blobRoundTrip() async throws { try await SyncContract.blobRoundTrip(subject()) }
+    @Test func blobsFollowTheEpoch() async throws { try await SyncContract.blobsFollowTheEpoch(subject()) }
+    @Test func pointerPushes() async throws { try await SyncContract.pointerPushes(subject()) }
+    @Test func malformedPointers() async throws { try await SyncContract.malformedPointers(subject()) }
 
     @Test func aWrongSecretIsRefused() async throws {
         let good = try await HTTPTestServer.transport()
@@ -255,10 +327,13 @@ struct SyncContractHTTPTests {
         await #expect(throws: SyncTransportError.refused(status: 404, message: "Unknown vault")) { try await transport.head() }
     }
 
-    @Test func blobsAreUnsupported() async throws {
-        let transport = try await HTTPTestServer.transport()
-        #expect(!transport.supportsBlobs)
-        await #expect(throws: SyncTransportError.unsupported) { try await transport.hasBlob(name: "x", epoch: 1) }
+    @Test func aBlobStaysReadableAcrossTransports() async throws {
+        let first = try await HTTPTestServer.transport()
+        let second = HTTPSyncTransport(baseURL: first.baseURL, vaultID: first.vaultID, devSecret: try #require(HTTPTestServer.secret), sleep: { _ in })
+        let epoch = try await first.head().epoch
+        let name = SyncContract.blobName("shared")
+        try await first.putBlob(name: name, data: Data("from the first device".utf8), epoch: epoch)
+        #expect(try await second.getBlob(name: name, epoch: epoch, maxBytes: 100) == Data("from the first device".utf8))
     }
 
     @Test func theServerClockOffsetIsTracked() async throws {

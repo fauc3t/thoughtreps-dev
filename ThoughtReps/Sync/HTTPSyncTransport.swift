@@ -1,8 +1,13 @@
+import CryptoKit
 import Foundation
 import os
 
-/// `SyncTransport` over the sync server's HTTP API (`SyncHTTPWireV1`). The server has no blob routes until phase 3, so
-/// the blob calls throw `unsupported` and the engine holds back what needs them (`supportsBlobs`).
+/// `SyncTransport` over the sync server's HTTP API (`SyncHTTPWireV1`).
+///
+/// Blobs go straight to S3 on presigned URLs the API hands out (`blobs/upload-urls`, `blobs/download-urls`). Those
+/// requests are plain: they carry only the headers the signature covers, never the API's `Authorization` or `x-tr-vault`.
+/// An expired URL (403) is replaced by a fresh one once; a 400, 411 or a second 403 means the request itself is wrong and
+/// is refused.
 ///
 /// A 5xx, 408, 429 or a failed connection is retried up to `maxAttempts` times with a growing pause (or the server's
 /// `Retry-After`, at most `maxRetryAfter`). That is safe for a push
@@ -47,7 +52,7 @@ struct HTTPSyncTransport: SyncTransport {
         return URLSession(configuration: configuration)
     }
 
-    var supportsBlobs: Bool { false }
+    var supportsBlobs: Bool { true }
 
     // MARK: SyncTransport
 
@@ -65,6 +70,7 @@ struct HTTPSyncTransport: SyncTransport {
             if refusal.epochChanged == true || refusal.error == "epoch_changed", let epoch = refusal.epoch {
                 throw SyncTransportError.epochChanged(server: epoch)
             }
+            if refusal.error == "blob_missing" { return .blobsMissing(names: refusal.missingBlobs ?? []) }
             return .conflict(keys: refusal.conflicts ?? [])
         default:
             throw failure(response)
@@ -89,9 +95,80 @@ struct HTTPSyncTransport: SyncTransport {
         return SyncHead(headSeq: head.headSeq, epoch: head.epoch, liveRecordCount: head.liveRecordCount)
     }
 
-    func putBlob(name: String, data: Data, epoch: Int64) async throws { throw SyncTransportError.unsupported }
-    func getBlob(name: String, maxBytes: Int) async throws -> Data { throw SyncTransportError.unsupported }
-    func hasBlob(name: String, epoch: Int64) async throws -> Bool { throw SyncTransportError.unsupported }
+    func hasBlob(name: String, epoch: Int64) async throws -> Bool {
+        try await downloadURLs([name], epoch: epoch).downloads.contains { $0.name == name }
+    }
+
+    func putBlob(name: String, data: Data, epoch: Int64) async throws {
+        let blob = SyncHTTPWireV1.BlobToUpload(name: name, size: data.count, sha256: Data(SHA256.hash(data: data)).base64EncodedString())
+        var refreshed = false
+        while true {
+            let answer = try await blobAnswer(
+                SyncHTTPWireV1.BlobUploadURLsResponse.self, "blobs/upload-urls", body: SyncHTTPWireV1.BlobUploadURLsRequest(epoch: epoch, blobs: [blob])
+            )
+            if answer.present.contains(name) { return }
+            guard let upload = answer.uploads.first(where: { $0.name == name }), let url = URL(string: upload.url) else { throw SyncTransportError.unavailable }
+            var request = URLRequest(url: url)
+            request.httpMethod = "PUT"
+            for (field, value) in upload.headers { request.setValue(value, forHTTPHeaderField: field) }
+            request.setValue(String(data.count), forHTTPHeaderField: "Content-Length")
+            request.httpBody = data
+            let response = try await perform(request, observesServerTime: false)
+            switch response.status {
+            case 200...299: return
+            case 403 where !refreshed: refreshed = true
+            default: throw storageFailure(response)
+            }
+        }
+    }
+
+    func getBlob(name: String, epoch: Int64, maxBytes: Int) async throws -> Data {
+        var refreshed = false
+        while true {
+            let answer = try await downloadURLs([name], epoch: epoch)
+            guard let download = answer.downloads.first(where: { $0.name == name }), let url = URL(string: download.url) else {
+                throw answer.missing.contains(name) ? SyncTransportError.blobMissing(name) : SyncTransportError.unavailable
+            }
+            guard download.size <= maxBytes else { throw SyncTransportError.tooLarge }
+            let response = try await fetch(URLRequest(url: url), maxBytes: maxBytes)
+            switch response.status {
+            case 200: return response.data
+            case 403 where !refreshed: refreshed = true
+            // A presigned GET for a deleted key answers 404 on our bucket (measured 2026-10-16), so a persistent 403 is a bug.
+            case 404: throw SyncTransportError.blobMissing(name)
+            default: throw storageFailure(response)
+            }
+        }
+    }
+
+    private func downloadURLs(_ names: [String], epoch: Int64) async throws -> SyncHTTPWireV1.BlobDownloadURLsResponse {
+        try await blobAnswer(
+            SyncHTTPWireV1.BlobDownloadURLsResponse.self, "blobs/download-urls", body: SyncHTTPWireV1.BlobDownloadURLsRequest(epoch: epoch, names: names)
+        )
+    }
+
+    private func blobAnswer<Answer: Decodable>(_ type: Answer.Type, _ path: String, body: some Encodable) async throws -> Answer {
+        let response = try await send(path, method: "POST", body: try JSONEncoder().encode(body))
+        switch response.status {
+        case 200:
+            return try decode(type, response)
+        case 409:
+            let refusal = try decode(SyncHTTPWireV1.ErrorBody.self, response)
+            if refusal.epochChanged == true || refusal.error == "epoch_changed", let epoch = refusal.epoch {
+                throw SyncTransportError.epochChanged(server: epoch)
+            }
+            throw failure(response)
+        default:
+            throw failure(response)
+        }
+    }
+
+    /// S3 answers a bad checksum or length (400, 411) or a signature that fails on a fresh URL (403) with a body that
+    /// isn't ours. None of those can succeed on a retry.
+    private func storageFailure(_ response: Response) -> SyncTransportError {
+        guard [400, 403, 411].contains(response.status) else { return .unavailable }
+        return .refused(status: response.status, message: "Blob storage refused the request")
+    }
 
     // MARK: HTTP
 
@@ -117,27 +194,57 @@ struct HTTPSyncTransport: SyncTransport {
             request.httpBody = body
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         }
-        var attempt = 0
-        while true {
-            attempt += 1
+        return try await perform(request, observesServerTime: true)
+    }
+
+    /// `request` is sent as is. Only a call to our API reads `serverTime` off the answer.
+    private func perform(_ request: URLRequest, observesServerTime: Bool) async throws -> Response {
+        try await withRetries {
             let sentAt = now()
+            let (data, response) = try await session.data(for: request)
+            guard let http = response as? HTTPURLResponse else { return nil }
+            if observesServerTime { observeServerTime(data, sentAt: sentAt, receivedAt: now()) }
+            return Response(status: http.statusCode, data: data, retryAfter: http.value(forHTTPHeaderField: "Retry-After").flatMap(TimeInterval.init))
+        }
+    }
+
+    /// A GET of a presigned URL, downloaded to a temp file (deleted afterwards). The body is read into memory only for a
+    /// 200 whose announced and actual size are within `maxBytes`; otherwise `tooLarge`.
+    private func fetch(_ request: URLRequest, maxBytes: Int) async throws -> Response {
+        try await withRetries {
+            let (file, response) = try await session.download(for: request)
+            defer { try? FileManager.default.removeItem(at: file) }
+            guard let http = response as? HTTPURLResponse else { return nil }
+            var result = Response(status: http.statusCode, data: Data(), retryAfter: http.value(forHTTPHeaderField: "Retry-After").flatMap(TimeInterval.init))
+            guard http.statusCode == 200 else { return result }
+            guard http.expectedContentLength <= maxBytes else { throw SyncTransportError.tooLarge }
+            let size = try FileManager.default.attributesOfItem(atPath: file.path)[.size] as? Int ?? 0
+            guard size <= maxBytes else { throw SyncTransportError.tooLarge }
+            result.data = try Data(contentsOf: file, options: .mappedIfSafe)
+            return result
+        }
+    }
+
+    /// Runs `attempt` until it answers with something other than a transient status, at most `maxAttempts` times.
+    private func withRetries(_ attempt: () async throws -> Response?) async throws -> Response {
+        var attempts = 0
+        while true {
+            attempts += 1
             var result: Response?
             do {
-                let (data, response) = try await session.data(for: request)
-                if let http = response as? HTTPURLResponse {
-                    observeServerTime(data, sentAt: sentAt, receivedAt: now())
-                    result = Response(status: http.statusCode, data: data, retryAfter: http.value(forHTTPHeaderField: "Retry-After").flatMap(TimeInterval.init))
-                }
+                result = try await attempt()
             } catch is CancellationError {
                 throw CancellationError()
             } catch let error as URLError where error.code == .cancelled {
                 throw CancellationError()
+            } catch let error as SyncTransportError {
+                throw error
             } catch {
                 Self.logger.error("Sync request failed: \(error)")
             }
             if let result, !result.isTransient { return result }
-            guard attempt < maxAttempts else { throw SyncTransportError.unavailable }
-            let pause = result?.retryAfter.map { min(max($0, 0), Self.maxRetryAfter) } ?? Double(500 << (attempt - 1)) / 1000
+            guard attempts < maxAttempts else { throw SyncTransportError.unavailable }
+            let pause = result?.retryAfter.map { min(max($0, 0), Self.maxRetryAfter) } ?? Double(500 << (attempts - 1)) / 1000
             try await sleep(.seconds(pause))
         }
     }

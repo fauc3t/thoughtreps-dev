@@ -36,6 +36,7 @@ actor FakeSyncServer: SyncTransport {
     private(set) var events: [Event] = []
 
     private var dropPushResponses = 0
+    private var pointerPushesToSabotage = 0
     private var failCountdown: Int?
     private var beforeNextPush: (@Sendable () async -> Void)?
     private var afterNextPullQuery: (@Sendable () async -> Void)?
@@ -49,6 +50,11 @@ actor FakeSyncServer: SyncTransport {
     /// The next push commits, then fails as if the response was lost.
     func dropNextPushResponse() {
         dropPushResponses += 1
+    }
+
+    /// The blobs vanish just before each of the next `count` pushes that carries a pointer (the server's check then refuses it).
+    func loseBlobsBeforeNextPointerPushes(_ count: Int = 1) {
+        pointerPushesToSabotage = count
     }
 
     /// After `calls` more successful calls, the next one fails before doing anything.
@@ -141,6 +147,18 @@ actor FakeSyncServer: SyncTransport {
         guard records.count <= SyncLimits.maxRecordsPerPush, records.reduce(0, { $0 + $1.payload.count }) <= SyncLimits.maxBytesPerPush,
               records.allSatisfy({ $0.payload.count <= SyncLimits.maxInlinePayload })
         else { throw SyncTransportError.tooLarge }
+        if pointerPushesToSabotage > 0, records.contains(where: { SyncCrypto.blobName(inPointer: $0.payload) != nil }) {
+            pointerPushesToSabotage -= 1
+            blobs = [:]
+        }
+        var missingBlobs: [String] = []
+        for record in records where record.payload.starts(with: SyncCrypto.pointerMagic) {
+            guard let name = SyncCrypto.blobName(inPointer: record.payload) else {
+                throw SyncTransportError.refused(status: 400, message: "Malformed pointer")
+            }
+            if blobs[name] == nil, !missingBlobs.contains(name) { missingBlobs.append(name) }
+        }
+        guard missingBlobs.isEmpty else { return .blobsMissing(names: missingBlobs) }
         let failed = records.filter { record in
             guard let row = rows[record.recordKey] else { return false }
             return row.seq != record.baseSeq
@@ -190,6 +208,7 @@ actor FakeSyncServer: SyncTransport {
 
     /// Seeds a blob as the vault's current epoch would accept it.
     func putBlob(name: String, data: Data) async throws {
+        blobs[name] = nil
         try await putBlob(name: name, data: data, epoch: epoch)
     }
 
@@ -199,13 +218,18 @@ actor FakeSyncServer: SyncTransport {
             epochRejections += 1
             throw SyncTransportError.epochChanged(server: epoch)
         }
+        if blobs[name] != nil { return }
         blobs[name] = data
         blobPuts[name, default: 0] += 1
         events.append(.putBlob(name))
     }
 
-    func getBlob(name: String, maxBytes: Int) async throws -> Data {
+    func getBlob(name: String, epoch blobEpoch: Int64, maxBytes: Int) async throws -> Data {
         try begin()
+        guard blobEpoch == epoch else {
+            epochRejections += 1
+            throw SyncTransportError.epochChanged(server: epoch)
+        }
         blobGets += 1
         guard let data = blobs[name] else { throw SyncTransportError.blobMissing(name) }
         guard data.count <= maxBytes else { throw SyncTransportError.tooLarge }

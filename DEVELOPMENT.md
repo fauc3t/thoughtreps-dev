@@ -71,7 +71,7 @@ TEST_RUNNER_THOUGHTREPS_SYNC_TEST_SECRET=dev-secret \
 xcodebuild test -scheme ThoughtReps -destination 'platform=iOS Simulator,name=<simulator>'
 ```
 
-Each test makes its own vault with a random id.
+Each test makes its own vault with a random id. The blob cases (upload, present, download round trip, missing, pointer pushes and `blob_missing`) go through the runner's stand-in presigned URLs at `<origin>/_blobs/<ticket>`, which enforce the same length and checksum rules as S3.
 
 **Two simulators.** A DEBUG build starts syncing when all four launch variables are set (any missing and it only fills the outbox):
 
