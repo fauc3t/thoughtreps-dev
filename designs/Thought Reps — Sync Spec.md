@@ -34,7 +34,7 @@ iPad  ──┘                       ├─ DynamoDB SyncTable (accounts, vault
 - **Device registration:** keep one device registry. Share exports its device table, so a device attests once for both features.
 - **Dev stage:** a `dev` account/stage (`ThoughtReps-dev-Sync`) with a test-only auth bypass, because App Attest doesn't work in the simulator. Without it there's no way to test two simulators syncing. The bypass must never be in prod; a CDK assertion test should enforce that.
 
-## 2. Turning sync on: account or not (undecided)
+## 2. Turning sync on: account or not (decided: B, 2026-10-16)
 
 Two options. Both keep the main app account-free and both are end-to-end encrypted; they differ in what "Turn on sync" asks for.
 
@@ -44,7 +44,7 @@ Two options. Both keep the main app account-free and both are end-to-end encrypt
 - Recovery depends on the recovery code or iCloud Keychain (section 6).
 - We have no way to reach the user (lapse warnings only in the app).
 
-**B. Sign in with Apple, only when sync is turned on (leaning this way).** The account owns the vault and the subscription.
+**B. Sign in with Apple, only when sync is turned on (chosen).** The account owns the vault and the subscription.
 
 - **Joining:** the iPad usually has the same Apple ID, so joining is signing in. With the key in iCloud Keychain (section 5) there's no QR code.
 - **Contact:** we get an email, possibly an Apple private relay address: lapse warnings, support, and a recovery alert if server escrow ever exists.
@@ -66,7 +66,9 @@ Email link (later) ─┘     + subscription           ▲
 - **What B adds besides escrow:** a way to reach the user (lapse warnings, support); the subscription survives a lost key cleanly (the account owns both, so resetting the vault is trivial); a signed-in device without the key can be told "you have synced data but no key; reset it?"; a natural place to link Google later.
 - **If A is chosen,** add an optional email stored on the vault for lapse warnings only. Moving a subscription to a new vault after a lost key then goes through `originalTransactionId` from a restored purchase.
 
-The rest of this spec is written for **B**, with notes where A differs. Under A, drop the account rows and auth routes; the vault id plus device membership is the identity.
+**Decided 2026-10-16: B, built so A's path stays open.** Turning sync on signs in with Apple, which creates our own `userId`; the account owns the vault and the subscription. Every sign-in method is only an `ID#<provider>#<sub>` row mapping to that `userId`, so Google or an email link later is one more row, never a migration. A login maps to the account and vault, never to the key: K reaches a new device only by iCloud Keychain, QR or recovery code. Once the account is paying, a device can also join with the QR invite alone, without signing in (section 5), which is option A's join for devices on another Apple ID or people who'd rather not sign in.
+
+The rest of this spec is written for **B**. Notes on A describe the QR-only join, which B keeps.
 
 ## 3. Devices and membership
 
@@ -416,7 +418,7 @@ Each phase merges to main behind a DEBUG-only flag; nothing is user-visible unti
 
 ## Open decisions
 
-1. **Account when sync is turned on (B, Sign in with Apple) or no account (A)?** Leaning B, still thinking it over. Needed before phase 4.
+1. ~~**Account when sync is turned on (B, Sign in with Apple) or no account (A)?**~~ Decided 2026-10-16: B, with sign-ins mapped to our own `userId` and QR-only join kept (section 2).
 2. **Subscription add-on, or included?** Recommended: an add-on, so the paid-once app stays whole.
 3. **Reminders per device, off by default on new devices?** Recommended: yes.
 4. **iCloud Keychain key storage defaulted on?** Recommended: yes, with an explanation.
