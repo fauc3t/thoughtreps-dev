@@ -41,3 +41,8 @@
 - Sync: `noteAttempts` keeps the first attempt (INSERT OR IGNORE), so after a lost push response plus another edit, the merge base is older than the last push and a clean merge can come out as a spurious conflict copy (nothing lost).
 - Sync (2c): `scripts/sync-integ.sh` uses fixed simulator names ("TR Sync A"/"TR Sync B") and one port, so two runs at once collide.
 - Sync (2c): the DEBUG Sync lab screen (`SyncLabView.swift`) hasn't been reviewed by a human on a device yet.
+- Sync (round 4c, client for server 4a; see `designs/Thought Reps — Sync Spec.md`, section 11): mirror the 15 new wire fixtures from `thoughtreps-aws` (`infra/lambda/sync/fixtures/wire-v1/`: device-challenge-response, device-register-request/response, sign-in-with-apple-request/response, session-request/response, vault-create-request/response, error-vault-exists, error-assertion-invalid, error-challenge-invalid, error-attestation-invalid, error-identity-token-invalid, error-forbidden) byte for byte into `ThoughtRepsTests/Fixtures/SyncWireV1/`.
+- Sync (4c): App Attest key registration and assertion signing in the sync client (real device only), and Sign in with Apple when sync is turned on.
+- Sync (4c): bearer session handling: refresh before the 1 hour expiry, and on a 401 refresh once and retry.
+- Sync (4c): retry `identity_token_invalid` with a fresh challenge.
+- Sync (4b): the server's `linkDevice` re-links a device to whichever Apple ID last signed in on it, so a device signing in as a different Apple ID silently moves accounts; decide during pairing.
