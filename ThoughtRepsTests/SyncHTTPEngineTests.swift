@@ -9,7 +9,7 @@ struct NoBlobTransport: SyncTransport {
 
     var supportsBlobs: Bool { false }
     func push(_ records: [PushRecord], epoch: Int64) async throws -> PushResult { try await base.push(records, epoch: epoch) }
-    func pull(after cursor: Int64, limit: Int, fullResync: Bool) async throws -> PullResult { try await base.pull(after: cursor, limit: limit, fullResync: fullResync) }
+    func pull(after cursor: Int64, limit: Int) async throws -> PullPage { try await base.pull(after: cursor, limit: limit) }
     func head() async throws -> SyncHead { try await base.head() }
     func putBlob(name: String, data: Data, epoch: Int64) async throws { throw SyncTransportError.unsupported }
     func getBlob(name: String, maxBytes: Int) async throws -> Data { throw SyncTransportError.unsupported }
@@ -18,10 +18,13 @@ struct NoBlobTransport: SyncTransport {
 
 /// Answers every call the way the server does to a request it will never accept.
 actor RefusingTransport: SyncTransport {
+    let status: Int
     private(set) var calls = 0
 
+    init(status: Int = 401) { self.status = status }
+
     func push(_ records: [PushRecord], epoch: Int64) async throws -> PushResult { throw refusal() }
-    func pull(after cursor: Int64, limit: Int, fullResync: Bool) async throws -> PullResult { throw refusal() }
+    func pull(after cursor: Int64, limit: Int) async throws -> PullPage { throw refusal() }
     func head() async throws -> SyncHead { throw refusal() }
     func putBlob(name: String, data: Data, epoch: Int64) async throws { throw refusal() }
     func getBlob(name: String, maxBytes: Int) async throws -> Data { throw refusal() }
@@ -29,7 +32,7 @@ actor RefusingTransport: SyncTransport {
 
     private func refusal() -> SyncTransportError {
         calls += 1
-        return .refused(status: 401, message: "Unauthorized")
+        return .refused(status: status, message: "Unauthorized")
     }
 }
 
@@ -129,6 +132,14 @@ struct SyncHTTPEngineTests {
         #expect(await a.engine.syncIfHeadMoved() == false)
         #expect(await refusing.calls == calls, "a stopped engine makes no more requests")
         #expect(try await a.state.outboxCount() > 0)
+    }
+
+    @Test func aGoneAnswerStopsTheEngineLikeAnyRefusal() async throws {
+        let a = try await SyncDevice("A", server: server, transport: RefusingTransport(status: 410))
+        a.store.create(body: "one", now: a.now(at(0)))
+        let status = await a.sync()
+        #expect(status.attention == .serverRefused(status: 410, message: "Unauthorized"))
+        #expect(status.phase == .stopped)
     }
 
     @Test func aRefusedHeadCheckStopsTheEngineToo() async throws {

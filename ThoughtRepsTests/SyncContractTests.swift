@@ -26,8 +26,7 @@ enum HTTPTestServer {
     }
 }
 
-/// Every scenario is written once against `SyncTransport` and run against both servers. The 410 path needs a prune,
-/// which can't be forced remotely, so it is in `SyncContractFakeOnlyTests`.
+/// Every scenario is written once against `SyncTransport` and run against both servers.
 enum SyncContract {
     static func payload(_ text: String) -> Data { Data(text.utf8) }
 
@@ -35,12 +34,8 @@ enum SyncContract {
         PushRecord(recordKey: key, baseSeq: base, payload: deleted ? Data() : payload(text.isEmpty ? key : text), deleted: deleted)
     }
 
-    static func pulled(_ transport: any SyncTransport, after cursor: Int64 = 0, limit: Int = 500, fullResync: Bool = false) async throws -> PullPage {
-        guard case .page(let page) = try await transport.pull(after: cursor, limit: limit, fullResync: fullResync) else {
-            Issue.record("expected a page, got 410")
-            throw SyncTransportError.unavailable
-        }
-        return page
+    static func pulled(_ transport: any SyncTransport, after cursor: Int64 = 0, limit: Int = 500) async throws -> PullPage {
+        try await transport.pull(after: cursor, limit: limit)
     }
 
     static func pushedOK(_ transport: any SyncTransport, _ records: [PushRecord], epoch: Int64) async throws -> (seqs: [String: Int64], headSeq: Int64) {
@@ -121,7 +116,7 @@ enum SyncContract {
         await #expect(throws: SyncTransportError.epochChanged(server: new)) { try await transport.push([record("b")], epoch: old) }
         let head = try await transport.head()
         #expect(head.epoch == new && head.liveRecordCount == 0)
-        let page = try await pulled(transport, fullResync: true)
+        let page = try await pulled(transport)
         #expect(page.epoch == new && page.records.isEmpty)
         let ok = try await pushedOK(transport, [record("b")], epoch: new)
         #expect(ok.seqs["b"] == head.headSeq + 1, "seqs never repeat across an erase")
@@ -140,7 +135,7 @@ enum SyncContract {
         #expect(third.records.map(\.seq) == [5] && !third.hasMore && third.nextSeq == 5)
         let exact = try await pulled(transport, limit: 5)
         #expect(exact.records.count == 5 && !exact.hasMore && exact.nextSeq == 5)
-        let scratch = try await pulled(transport, limit: 3, fullResync: true)
+        let scratch = try await pulled(transport, limit: 3)
         #expect(scratch.records.map(\.seq) == [1, 2, 3] && scratch.hasMore && scratch.nextSeq == 3)
     }
 
@@ -218,24 +213,9 @@ struct SyncContractFakeTests {
     @Test func emptyPush() async throws { try await SyncContract.emptyPush(subject()) }
 }
 
-/// The 410 needs a prune, which the dev routes can't do, so it is only checked against the fake (the server side is
-/// covered by `prune.test.ts` and `pull.test.ts` in `thoughtreps-aws`).
+/// What only the fake can show: the dev routes can't force these.
 @Suite("Sync transport contract: fake server only")
 struct SyncContractFakeOnlyTests {
-    @Test func aCursorBeforeThePrunedSeqIsGoneUntilAFullResync() async throws {
-        let server = FakeSyncServer()
-        let epoch = await server.epoch
-        _ = try await SyncContract.pushedOK(server, [SyncContract.record("a"), SyncContract.record("b"), SyncContract.record("c")], epoch: epoch)
-        _ = try await SyncContract.pushedOK(server, [SyncContract.record("a", base: 1, deleted: true)], epoch: epoch)
-        await server.prune(tombstonesBelow: 5)
-        #expect(try await server.pull(after: 2, limit: 500, fullResync: false) == .gone)
-        let page = try await SyncContract.pulled(server, after: 0, limit: 500, fullResync: true)
-        #expect(page.records.map(\.recordKey) == ["b", "c"])
-        let later = try await SyncContract.pulled(server, after: page.nextSeq, fullResync: true)
-        #expect(later.records.isEmpty, "the later pages of a full resync never 410")
-        #expect(try await server.pull(after: page.nextSeq, limit: 500, fullResync: false) == .gone, "a plain pull from a cursor below the pruned seq does")
-    }
-
     @Test func aBadKeyIsRefusedLikeTheServerDoes() async throws {
         let server = FakeSyncServer()
         let epoch = await server.epoch

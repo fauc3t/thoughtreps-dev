@@ -71,24 +71,15 @@ struct HTTPSyncTransport: SyncTransport {
         }
     }
 
-    func pull(after cursor: Int64, limit: Int, fullResync: Bool) async throws -> PullResult {
-        let query = [
-            URLQueryItem(name: "since", value: String(cursor)), URLQueryItem(name: "limit", value: String(limit)),
-            URLQueryItem(name: "fullResync", value: fullResync ? "true" : "false"),
-        ]
+    func pull(after cursor: Int64, limit: Int) async throws -> PullPage {
+        let query = [URLQueryItem(name: "since", value: String(cursor)), URLQueryItem(name: "limit", value: String(limit))]
         let response = try await send("pull", method: "GET", query: query)
-        switch response.status {
-        case 200:
-            let page = try decode(SyncHTTPWireV1.PullPage.self, response)
-            return .page(PullPage(
-                records: page.records.map { PulledRecord(recordKey: $0.key, seq: $0.seq, payload: $0.payload, deleted: $0.deleted) },
-                nextSeq: page.nextSeq, headSeq: page.headSeq, epoch: page.epoch, hasMore: page.more
-            ))
-        case 410:
-            return .gone
-        default:
-            throw failure(response)
-        }
+        guard response.status == 200 else { throw failure(response) }
+        let page = try decode(SyncHTTPWireV1.PullPage.self, response)
+        return PullPage(
+            records: page.records.map { PulledRecord(recordKey: $0.key, seq: $0.seq, payload: $0.payload, deleted: $0.deleted) },
+            nextSeq: page.nextSeq, headSeq: page.headSeq, epoch: page.epoch, hasMore: page.more
+        )
     }
 
     func head() async throws -> SyncHead {
@@ -173,12 +164,12 @@ struct HTTPSyncTransport: SyncTransport {
         }
     }
 
-    /// The error for a status the call has no other meaning for: 413 is `tooLarge`; 400, 401, 403 and 404 are the server
+    /// The error for a status the call has no other meaning for: 413 is `tooLarge`; 400, 401, 403, 404 and 410 are the server
     /// saying this request will never work (a bad request, a refused secret, an unknown vault), which retrying can't fix.
     /// Anything else is treated as a failed call.
     private func failure(_ response: Response) -> SyncTransportError {
         if response.status == 413 { return .tooLarge }
-        guard [400, 401, 403, 404].contains(response.status) else { return .unavailable }
+        guard [400, 401, 403, 404, 410].contains(response.status) else { return .unavailable }
         let body = try? JSONDecoder().decode(SyncHTTPWireV1.ErrorBody.self, from: response.data)
         return .refused(status: response.status, message: body?.message ?? body?.error ?? "")
     }

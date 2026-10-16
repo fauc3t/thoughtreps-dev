@@ -25,9 +25,6 @@ protocol SyncLocalStore: Sendable {
     /// Which of the blobs `contents` reference the store doesn't hold.
     func missingBlobs(for contents: [ThoughtContentRecord]) async throws -> Set<BlobRef>
     func apply(_ batch: RemoteBatch, now: Date) async -> RemoteOutcome
-    /// After a full resync: deletes the thoughts whose content still has the fingerprint they were last synced with
-    /// (`expected`, by id), since the server has dropped their deletion. A thought edited here since is kept. False if a save failed.
-    func discardUnchanged(_ expected: [String: String], now: Date) async -> Bool
     /// Queues whatever the store has that `sync.sqlite` doesn't show as synced.
     func reconcile() async
 }
@@ -166,22 +163,6 @@ final class ThoughtSyncLocal: SyncLocalStore {
 
     func apply(_ batch: RemoteBatch, now: Date) async -> RemoteOutcome {
         store.applyRemote(batch, now: now)
-    }
-
-    func discardUnchanged(_ expected: [String: String], now: Date) async -> Bool {
-        let ids = expected.keys.compactMap(UUID.init(uuidString:))
-        let found: [Thought]
-        do {
-            found = try context.fetch(FetchDescriptor<Thought>(predicate: #Predicate { ids.contains($0.id) }))
-        } catch {
-            Self.logger.error("Resync lookup failed: \(error)")
-            return false
-        }
-        var allSaved = true
-        for thought in found where expected[thought.id.uuidString] == SyncFingerprint.content(updatedAt: thought.updatedAt) {
-            if !store.delete(thought, now: now) { allSaved = false }
-        }
-        return allSaved
     }
 
     func reconcile() async {

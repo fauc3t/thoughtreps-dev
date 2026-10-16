@@ -14,7 +14,6 @@ final class RaceLocal: SyncLocalStore, @unchecked Sendable {
     func blobBytes(_ refs: [BlobRef]) async throws -> [BlobRef: Data] { await maybe(); return try await inner.blobBytes(refs) }
     func missingBlobs(for contents: [ThoughtContentRecord]) async throws -> Set<BlobRef> { await maybe(); return try await inner.missingBlobs(for: contents) }
     func apply(_ batch: RemoteBatch, now: Date) async -> RemoteOutcome { await maybe(); return await inner.apply(batch, now: now) }
-    func discardUnchanged(_ expected: [String: String], now: Date) async -> Bool { await maybe(); return await inner.discardUnchanged(expected, now: now) }
     func reconcile() async { await maybe(); await inner.reconcile() }
 }
 
@@ -29,10 +28,10 @@ struct SyncCycleRaceTests {
         try await converge(seed: seed, harsh: false)
     }
 
-    /// The same, with the transport failing calls, the server pruning tombstones (so a pull answers 410), and a write landing
+    /// The same, with the transport failing calls and a write landing
     /// inside the transport's push call itself, between the snapshot and the acknowledgement.
     @Test(arguments: seeds)
-    func convergesWithWritesInsidePushesFailuresAnd410s(seed: UInt64) async throws {
+    func convergesWithWritesInsidePushesAndFailures(seed: UInt64) async throws {
         try await converge(seed: seed, harsh: true)
     }
 
@@ -93,7 +92,6 @@ struct SyncCycleRaceTests {
             if Int.random(in: 0..<6, using: &rng) == 0 { await server.dropNextPushResponse() }
             if harsh {
                 if Int.random(in: 0..<5, using: &rng) == 0 { await server.failNextCall(after: Int.random(in: 0..<5, using: &rng)) }
-                if Int.random(in: 0..<7, using: &rng) == 0 { await server.prune(tombstonesBelow: await server.headSeq + 1) }
                 if Int.random(in: 0..<3, using: &rng) == 0 {
                     await server.beforeNextPush { await interfere() }
                 }

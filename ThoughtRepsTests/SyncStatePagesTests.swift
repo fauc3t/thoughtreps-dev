@@ -48,54 +48,18 @@ struct SyncStatePagesTests {
         #expect(try await state.outbox(limit: 10).first { $0.entity == .thought(id) }?.generation == 2)
     }
 
-    @Test func aSecondResetKeepsTheUnresolvedSnapshot() async throws {
-        let state = try await enabled()
-        try await state.commit(PageCommit(records: [syncedRecord("k1", entityID: "e1")], cursor: 1, epoch: 1))
-        try await state.resetSyncProgress(keepingEpoch: true, snapshotting: true)
-        try await state.commit(PageCommit(records: [syncedRecord("k2", entityID: "e2")], cursor: 2, epoch: 1))
-        try await state.resetSyncProgress(keepingEpoch: true, snapshotting: true)
-        #expect(try await state.missingFromServer(after: nil, limit: 10).map(\.id) == ["e1"])
-        try await state.replaceResyncSnapshot([])
-        #expect(try await state.hasResyncSnapshot() == false)
-    }
-
-    @Test func blobsAreRememberedAndSurviveAResyncReset() async throws {
+    @Test func blobsAreRememberedAndAResetForgetsThemWithTheRest() async throws {
         let state = try await enabled()
         try await state.markBlobsUploaded(["x", "y"])
         #expect(try await state.uploadedBlobs(among: ["x", "z"]) == ["x"])
         try await state.commit(PageCommit(records: [syncedRecord("a")], hold: [held("m")], cursor: 9, epoch: 3))
-        try await state.resetSyncProgress(keepingBlobs: true, keepingEpoch: true)
+        try await state.resetSyncProgress()
         #expect(try await state.cursor() == 0)
         #expect(try await state.recordCount() == 0)
         #expect(try await state.heldCount() == 0)
-        #expect(try await state.epoch() == 3)
-        #expect(try await state.uploadedBlobs(among: ["x", "y"]) == ["x", "y"])
-        try await state.resetSyncProgress()
         #expect(try await state.epoch() == nil)
         #expect(try await state.uploadedBlobs(among: ["x"]).isEmpty)
         #expect(try await state.configuredVaultID() == "vault-1")
-    }
-
-    @Test func aSnapshottingResetKeepsEachSyncedContentAsAnAttemptAndTheSyncedOneWins() async throws {
-        let state = try await enabled()
-        try await state.noteAttempts([("older", "e0", "h0", Data("attempt only".utf8)), ("k1", "e1", "stale", Data("stale attempt".utf8))])
-        try await state.commit(PageCommit(
-            records: [
-                syncedRecord("k1", entityID: "e1", content: "synced one"), syncedRecord("m1", type: .thoughtMeta, entityID: "e1", content: "meta"),
-            ],
-            cursor: 3, epoch: 1
-        ))
-        try await state.noteAttempts([("k1", "e1", "stale", Data("stale attempt".utf8))])
-        try await state.resetSyncProgress(keepingEpoch: true, snapshotting: true)
-        #expect(try await state.recordCount() == 0)
-        let kept = try await state.attempts(forKeys: ["older", "k1", "m1"])
-        #expect(kept["older"]?.plaintext == Data("attempt only".utf8))
-        #expect(kept["k1"]?.plaintext == Data("synced one".utf8))
-        #expect(kept["k1"]?.hash == SyncPayload.hash(of: Data("synced one".utf8)))
-        #expect(kept["m1"] == nil, "only thought content is kept as a merge base")
-
-        try await state.resetSyncProgress(keepingEpoch: true)
-        #expect(try await state.attemptCount() == 0, "without a snapshot nothing is kept")
     }
 
     @Test func recordsCanBeReadWithoutTheirContent() async throws {

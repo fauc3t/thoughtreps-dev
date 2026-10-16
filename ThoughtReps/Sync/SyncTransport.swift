@@ -35,12 +35,6 @@ struct PullPage: Sendable, Equatable {
     var hasMore: Bool
 }
 
-enum PullResult: Sendable, Equatable {
-    case page(PullPage)
-    /// 410: the cursor is older than what the server still holds; do a full resync.
-    case gone
-}
-
 struct SyncHead: Sendable, Equatable {
     var headSeq: Int64
     var epoch: Int64
@@ -56,7 +50,7 @@ enum SyncTransportError: Error, Equatable {
     case epochChanged(server: Int64)
     /// The server doesn't offer this call (blobs, until phase 3).
     case unsupported
-    /// The server refused the request itself (400, 401, 404 and other 4xx): retrying the same request can't succeed, so the
+    /// The server refused the request itself (400, 401, 403, 404, 410): retrying the same request can't succeed, so the
     /// engine stops (`Attention.serverRefused`) instead of trying again every cycle.
     case refused(status: Int, message: String)
 }
@@ -72,10 +66,6 @@ enum SyncTransportError: Error, Equatable {
 /// the vault's current epoch (for a push, in the same transactional write as the records) and, if it differs, writes
 /// nothing and throws `epochChanged`, so a device that missed an erase cannot refill the vault.
 ///
-/// A pull from before the pruned seq answers 410, because deletions older than that are gone and the client
-/// may have missed them. `fullResync` says the client is pulling everything from scratch (a new device, or one
-/// starting over after a 410), so it can't have missed anything and the cursor of its later pages must not 410.
-///
 /// A pull page's `nextSeq` (when nothing is left) is the head the server read just before the query (a
 /// `TransactGetItems` read of the vault's head row), and the query is capped at it, so every record at or below it is in
 /// this page or an earlier one and a push that lands afterwards can't be skipped by moving the cursor to `nextSeq`.
@@ -86,7 +76,7 @@ enum SyncTransportError: Error, Equatable {
 /// (the `Content-Length`) or the download passes the limit.
 protocol SyncTransport: Sendable {
     func push(_ records: [PushRecord], epoch: Int64) async throws -> PushResult
-    func pull(after cursor: Int64, limit: Int, fullResync: Bool) async throws -> PullResult
+    func pull(after cursor: Int64, limit: Int) async throws -> PullPage
     func head() async throws -> SyncHead
     func putBlob(name: String, data: Data, epoch: Int64) async throws
     func getBlob(name: String, maxBytes: Int) async throws -> Data

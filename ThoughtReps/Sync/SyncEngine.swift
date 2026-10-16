@@ -10,9 +10,7 @@ import os
 /// - Every outbox entry is pushed unless its plaintext hash equals the base hash: that is also how a write
 ///   whose response was lost is recognized (the pull brings it back as the base).
 /// - A 409 means a record moved: pull, apply, and push again with the new bases, a few times at most.
-/// - A 410 means the cursor is older than the server keeps: forget the progress, queue everything local
-///   and pull everything; merging is by id and clock, so nothing is duplicated. A thought this device had synced
-///   that the server no longer has was deleted elsewhere: `resolveResync` deletes it unless it was edited here since.
+/// - The server keeps deletion tombstones forever, so a pull from any cursor is complete. A 410 is a refusal like any other.
 /// - A changed epoch (the vault was erased elsewhere), seen by a pull or refused by a push, stops syncing and shows up as
 ///   `Status.attention`. Nothing is uploaded again until the user decides what to do with this device's copy.
 /// - A pulled page moves the cursor to the page's `nextSeq`, never to the server's head, which a push can pass between the
@@ -89,7 +87,6 @@ actor SyncEngine {
     enum Failure: Error, Equatable, CustomStringConvertible {
         case applyFailed
         case tooManyConflicts
-        case goneAfterResync
         case invalidRecord(String)
         case missingSeq(String)
         case blobUnreadable(String)
@@ -100,7 +97,6 @@ actor SyncEngine {
             switch self {
             case .applyFailed: "applying remote changes failed"
             case .tooManyConflicts: "too many conflicts"
-            case .goneAfterResync: "the server answered 410 to a full resync"
             case .invalidRecord(let key): "record \(key) is not valid"
             case .missingSeq(let key): "no seq for \(key)"
             case .blobUnreadable(let name): "blob \(name) is not readable"
@@ -213,8 +209,7 @@ actor SyncEngine {
                 try await reapplyParked()
                 try await retryPointers()
                 try await retryBlocked()
-                _ = try await pull()
-                try await resolveResync()
+                try await pull()
                 update { $0.phase = .pushing }
                 try await push()
                 update {
@@ -312,34 +307,18 @@ actor SyncEngine {
         return .readable(Decoded(record: record, payload: payload, plaintext: opened.plaintext, hash: SyncPayload.hash(of: opened.plaintext)))
     }
 
-    /// Pulls until caught up. True if a 410 made it start over.
-    private func pull() async throws -> Bool {
-        var startedOver = false
-        var fromScratch = try await state.cursor() == 0
-        if try await state.isResyncing() {
-            fromScratch = true
-        } else if fromScratch {
-            try await state.beginResync()
-            // A `sync.sqlite` rebuilt mid-session has lost its outbox, so whatever isn't synced is queued again.
-            await local.reconcile()
-        }
+    /// Pulls until caught up.
+    private func pull() async throws {
+        // A `sync.sqlite` rebuilt mid-session has lost its outbox, so whatever isn't synced is queued again.
+        if try await state.cursor() == 0 { await local.reconcile() }
         while true {
             let cursor = try await state.cursor()
-            switch try await transport.pull(after: cursor, limit: config.pullLimit, fullResync: fromScratch) {
-            case .gone:
-                guard !startedOver else { throw Failure.goneAfterResync }
-                startedOver = true
-                fromScratch = true
-                try await state.resetSyncProgress(keepingBlobs: true, keepingEpoch: true, snapshotting: true)
-                try await state.beginResync()
-                await local.reconcile()
-            case .page(let page):
-                guard !page.hasMore || page.nextSeq > cursor else { throw Failure.pullStalled(cursor) }
-                try await apply(page, after: cursor)
-                if !page.hasMore {
-                    update { $0.headSeq = max(cursor, page.nextSeq) }
-                    return startedOver
-                }
+            let page = try await transport.pull(after: cursor, limit: config.pullLimit)
+            guard !page.hasMore || page.nextSeq > cursor else { throw Failure.pullStalled(cursor) }
+            try await apply(page, after: cursor)
+            if !page.hasMore {
+                update { $0.headSeq = max(cursor, page.nextSeq) }
+                return
             }
         }
     }
@@ -368,7 +347,7 @@ actor SyncEngine {
             // Earlier sub-batches leave the cursor where it was: if the page fails midway it is fetched again, and what
             // was applied is skipped by its base hash.
             if !decoded.isEmpty, bytes + size > config.maxApplyBytes {
-                try await applyBatch(decoded, park: parks, cursor: cursor, epoch: page.epoch, endsResync: false)
+                try await applyBatch(decoded, park: parks, cursor: cursor, epoch: page.epoch)
                 decoded = []
                 parks = []
                 bytes = 0
@@ -392,16 +371,15 @@ actor SyncEngine {
             case .parked(let parked): parks.append(parked)
             }
         }
-        try await applyBatch(decoded, park: parks, cursor: finalCursor, epoch: page.epoch, endsResync: !page.hasMore)
+        try await applyBatch(decoded, park: parks, cursor: finalCursor, epoch: page.epoch)
     }
 
     private static func parked(_ record: PulledRecord, needsUpdate: Bool = false) -> ParkedRecord {
         ParkedRecord(recordKey: record.recordKey, seq: record.seq, payload: record.payload, deleted: record.deleted, needsUpdate: needsUpdate)
     }
 
-    private func applyBatch(_ decoded: [Decoded], park: [ParkedRecord], cursor: Int64, epoch: Int64, endsResync: Bool) async throws {
+    private func applyBatch(_ decoded: [Decoded], park: [ParkedRecord], cursor: Int64, epoch: Int64) async throws {
         var commit = PageCommit(cursor: cursor, epoch: epoch)
-        commit.endsResync = endsResync
         commit.park = park
         commit.unpark = decoded.map(\.record.recordKey)
         try await process(decoded, retrying: [], commit: &commit)
@@ -567,37 +545,6 @@ actor SyncEngine {
                 Self.logger.error("Held thought \(id) not applied this cycle: \(error)")
             }
         }
-    }
-
-    /// After a full resync: a thought this device had synced that the server no longer has was deleted elsewhere and its
-    /// tombstone pruned. Unless it was edited here since, it goes; one never synced is simply uploaded.
-    private func resolveResync() async throws {
-        guard try await state.hasResyncSnapshot() else { return }
-        let parked = try await state.parkedKeys()
-        var unresolved: [(id: String, fingerprint: String)] = []
-        var after: String?
-        while true {
-            let page = try await state.missingFromServer(after: after, limit: 200)
-            guard let last = page.last else { break }
-            after = last.id
-            // The server has these, but this version couldn't take them in yet (parked, blocked or held), so they have
-            // no record here. They stay in the snapshot until they apply.
-            let held = Set(try await state.held(entityIDs: page.map(\.id)).map(\.entityID))
-            var deletable: [String: String] = [:]
-            for candidate in page {
-                let isWaiting = held.contains(candidate.id)
-                    || parked.contains(keys.recordKey(type: .thoughtContent, entityID: candidate.id))
-                    || parked.contains(keys.recordKey(type: .thoughtMeta, entityID: candidate.id))
-                if isWaiting {
-                    unresolved.append(candidate)
-                } else {
-                    deletable[candidate.id] = candidate.fingerprint
-                }
-            }
-            guard await local.discardUnchanged(deletable, now: clockNow()) else { throw Failure.applyFailed }
-            try await state.forgetAttempts(entityIDs: Array(deletable.keys))
-        }
-        try await state.replaceResyncSnapshot(unresolved)
     }
 
     private struct BlobFailure: Error {
@@ -858,10 +805,7 @@ actor SyncEngine {
                 conflicts += 1
                 guard conflicts <= config.maxConflictRetries else { throw Failure.tooManyConflicts }
                 update { $0.phase = .pulling }
-                if try await pull() {
-                    try await resolveResync()
-                    after = nil
-                }
+                try await pull()
                 update { $0.phase = .pushing }
             }
             await refreshPending()

@@ -1,5 +1,0 @@
-{
-  "error": "gone",
-  "message": "The cursor is older than the server keeps; start a full resync",
-  "serverTime": 1768478400000
-}

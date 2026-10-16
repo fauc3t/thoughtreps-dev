@@ -184,7 +184,7 @@ struct SyncLargeRecordTests {
         #expect(await server.blobGets == afterFirst)
     }
 
-    @Test func aPointerWhoseBlobIsMissingSurvivesAFullResync() async throws {
+    @Test func aPointerWhoseBlobIsMissingKeepsItsThoughtUntilTheBlobReturns() async throws {
         let a = try await SyncDevice("A", server: server)
         let b = try await SyncDevice("B", server: server)
         let big = a.store.create(body: Self.bigBody(200_000), now: a.now(at(1)))
@@ -193,7 +193,6 @@ struct SyncLargeRecordTests {
         a.store.update(try #require(try a.thought(big.id)), body: Self.bigBody(210_000), blocks: [], intervalDays: nil, now: a.now(at(3)))
         await a.sync()
         let saved = await server.removeAllBlobs()
-        await server.prune(tombstonesBelow: await server.headSeq + 1)
         #expect(await b.sync().lastError == nil)
         #expect(try b.thought(big.id) != nil)
         await server.restoreBlobs(saved)

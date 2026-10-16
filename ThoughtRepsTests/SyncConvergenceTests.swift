@@ -148,9 +148,6 @@ struct SyncConvergenceTests {
             case 18:
                 device.store.pruneOrphanTags()
                 description = "pruneOrphanTags"
-            case 19:
-                if Int.random(in: 0..<3, using: &rng) == 0 { await server.prune(tombstonesBelow: await server.headSeq + 1) }
-                description = "server prunes tombstones"
             default:
                 // A sync, sometimes with the server or a save misbehaving.
                 switch Int.random(in: 0..<6, using: &rng) {
@@ -187,7 +184,7 @@ struct SyncConvergenceTests {
         }
         let ids = Set(try devices[0].thoughts().map(\.id))
         if !editsAnyThought {
-            #expect(ids.isDisjoint(with: deleted), "seed \(seed): a deleted thought came back, even after the server pruned its tombstone")
+            #expect(ids.isDisjoint(with: deleted), "seed \(seed): a deleted thought came back")
         }
         #expect(await server.liveThoughtIDs(keys: devices[0].keys, vaultID: SyncDevice.vaultID) == ids, "seed \(seed): the server holds the same thoughts")
     }

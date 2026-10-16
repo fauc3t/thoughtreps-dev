@@ -13,7 +13,6 @@ final class ReconcileCountingLocal: SyncLocalStore, @unchecked Sendable {
     func snapshots(of entities: [SyncEntity]) async throws -> [SyncSnapshot] { try await inner.snapshots(of: entities) }
     func blobBytes(_ refs: [BlobRef]) async throws -> [BlobRef: Data] { try await inner.blobBytes(refs) }
     func missingBlobs(for contents: [ThoughtContentRecord]) async throws -> Set<BlobRef> { try await inner.missingBlobs(for: contents) }
-    func discardUnchanged(_ expected: [String: String], now: Date) async -> Bool { await inner.discardUnchanged(expected, now: now) }
     func apply(_ batch: RemoteBatch, now: Date) async -> RemoteOutcome { await inner.apply(batch, now: now) }
     func reconcile() async {
         count.withLock { $0 += 1 }
@@ -35,7 +34,6 @@ final class BeforeSnapshotsLocal: SyncLocalStore, @unchecked Sendable {
     }
     func blobBytes(_ refs: [BlobRef]) async throws -> [BlobRef: Data] { try await inner.blobBytes(refs) }
     func missingBlobs(for contents: [ThoughtContentRecord]) async throws -> Set<BlobRef> { try await inner.missingBlobs(for: contents) }
-    func discardUnchanged(_ expected: [String: String], now: Date) async -> Bool { await inner.discardUnchanged(expected, now: now) }
     func apply(_ batch: RemoteBatch, now: Date) async -> RemoteOutcome { await inner.apply(batch, now: now) }
     func reconcile() async { await inner.reconcile() }
 }

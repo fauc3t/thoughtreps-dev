@@ -109,14 +109,14 @@ struct HTTPSyncTransportTests {
         #expect(requests.first?.httpMethod == "POST")
     }
 
-    @Test func aPullAsksForTheCursorLimitAndFullResync() async throws {
+    @Test func aPullAsksForTheCursorAndLimit() async throws {
         let transport = transport { _ in .json(200, #"{"records":[{"key":"a","seq":5,"deleted":false,"payload":"aGk="}],"nextSeq":5,"headSeq":7,"more":true,"epoch":2,"serverTime":1}"#) }
-        let result = try await transport.pull(after: 4, limit: 200, fullResync: true)
+        let result = try await transport.pull(after: 4, limit: 200)
         let query = URLComponents(url: try #require(requests.first?.url), resolvingAgainstBaseURL: false)?.queryItems?.reduce(into: [String: String]()) { $0[$1.name] = $1.value }
-        #expect(query == ["since": "4", "limit": "200", "fullResync": "true"])
-        #expect(result == .page(PullPage(
+        #expect(query == ["since": "4", "limit": "200"])
+        #expect(result == PullPage(
             records: [PulledRecord(recordKey: "a", seq: 5, payload: Data("hi".utf8), deleted: false)], nextSeq: 5, headSeq: 7, epoch: 2, hasMore: true
-        )))
+        ))
     }
 
     @Test func aConflictBodyIsAResultAndAnEpochBodyIsAnError() async throws {
@@ -127,12 +127,10 @@ struct HTTPSyncTransportTests {
         await #expect(throws: SyncTransportError.epochChanged(server: 4)) { try await epoch.push([record], epoch: 1) }
     }
 
-    @Test func goneTooLargeAndRefusedMapToTheirCases() async throws {
-        let gone = transport { _ in .json(410, #"{"error":"gone","message":"x","serverTime":1}"#) }
-        #expect(try await gone.pull(after: 1, limit: 10, fullResync: false) == .gone)
+    @Test func tooLargeAndRefusedMapToTheirCases() async throws {
         let large = transport { _ in .json(413, #"{"error":"too_large","message":"Push is too large","serverTime":1}"#) }
         await #expect(throws: SyncTransportError.tooLarge) { try await large.push([], epoch: 1) }
-        for (status, code) in [(400, "bad_request"), (401, "unauthorized"), (404, "not_found")] {
+        for (status, code) in [(400, "bad_request"), (401, "unauthorized"), (404, "not_found"), (410, "gone")] {
             let refused = transport { _ in .json(status, #"{"error":"\#(code)","message":"nope","serverTime":1}"#) }
             await #expect(throws: SyncTransportError.refused(status: status, message: "nope")) { try await refused.head() }
             #expect(requests.count == 1, "\(status) is not retried")

@@ -16,7 +16,6 @@ struct SyncHTTPWireTests {
         "push-epoch-changed": "a9fc8185d1791347ce6169cfba4886eedcebd8600bd81010f8fb64ebf2016a56",
         "pull-page-more": "ead5245082402b57d778e9a9129e4b930cae60b7b3041afe4e172d267556228f",
         "pull-page-last": "7e48ce73c26f879234162a7bd203fbfb74ca1182659301dcd189ab8b696b0a49",
-        "pull-gone": "582071a554e00bc554a03c8e5faadbc36d1ad91a12ab47239423802926963973",
         "head": "aa452e7164e0958c1769837c22a9ae58b51f20434ae5ed129021d720c992e95d",
         "error-too-large": "7a52e6f92cce730e6a487738600fe3d785806351e8eed45683ebc92b6fc5fa72",
         "error-busy": "36e34e3971d8c342d573a99f07fd4f21fedf7792ebfbc859e93e58b10a237546",
@@ -83,7 +82,7 @@ struct SyncHTTPWireTests {
 
     @Test func headAndErrors() throws {
         #expect(try decode(SyncHTTPWireV1.Head.self, "head") == SyncHTTPWireV1.Head(headSeq: 9, epoch: 1, liveRecordCount: 2, serverTime: Self.serverTime))
-        for (name, code) in [("pull-gone", "gone"), ("error-too-large", "too_large"), ("error-busy", "busy"), ("error-unauthorized", "unauthorized")] {
+        for (name, code) in [("error-too-large", "too_large"), ("error-busy", "busy"), ("error-unauthorized", "unauthorized")] {
             let body = try decode(SyncHTTPWireV1.ErrorBody.self, name)
             #expect(body.error == code && body.message?.isEmpty == false && body.serverTime == Self.serverTime, "\(name)")
         }

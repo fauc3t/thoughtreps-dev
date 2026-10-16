@@ -4,8 +4,8 @@ import Testing
 @testable import ThoughtReps
 
 @MainActor
-@Suite("Sync parked records, resync and remote deletions")
-struct SyncParkedAndResyncTests {
+@Suite("Sync parked records and remote deletions")
+struct SyncParkedAndDeletionTests {
     let server = FakeSyncServer()
     let t0 = Date(timeIntervalSince1970: 1_790_000_000)
 
@@ -52,11 +52,10 @@ struct SyncParkedAndResyncTests {
         #expect(try await b.state.parkedVersionTried() == 2)
     }
 
-    @Test func aFromScratchPullInterruptedPartwayResumesAndFinishes() async throws {
+    @Test func aFirstPullInterruptedPartwayResumesAndFinishes() async throws {
         let a = try await SyncDevice("A", server: server)
         for i in 0..<20 { a.store.create(body: "t\(i)", now: a.now(at(Double(i)))) }
         await a.sync()
-        await server.prune(tombstonesBelow: await server.headSeq + 1)
         let b = try await SyncDevice("B", server: server, config: .paged(pull: 2))
         var attempts = 0
         while try b.thoughts().count < 20, attempts < 40 {
@@ -65,34 +64,8 @@ struct SyncParkedAndResyncTests {
             attempts += 1
         }
         #expect(try b.thoughts().count == 20)
-        #expect(try await b.state.isResyncing() == false)
         await server.clearFailures()
         #expect(await b.sync().lastError == nil)
-    }
-
-    @Test func a410InsidePushResolvesTheResyncToo() async throws {
-        let a = try await SyncDevice("A", server: server)
-        let b = try await SyncDevice("B", server: server)
-        let shared = a.store.create(body: "shared", now: a.now(at(1)))
-        let doomed = a.store.create(body: "doomed", now: a.now(at(2)))
-        try await syncToQuiescence([a, b], server: server)
-        #expect(try b.thought(doomed.id) != nil)
-
-        a.store.delete(doomed, now: a.now(at(10)))
-        await a.sync()
-        b.store.update(try #require(try b.thought(shared.id)), body: "edited on B", blocks: [], intervalDays: nil, now: b.now(at(20)))
-        let server = server
-        let sharedID = shared.id
-        await server.beforeNextPush { @Sendable in
-            await MainActor.run { a.store.update(try! #require(try a.thought(sharedID)), body: "edited on A", blocks: [], intervalDays: nil, now: a.now(at(30))) }
-            await a.sync()
-            await server.prune(tombstonesBelow: await server.headSeq + 1)
-        }
-        await b.sync()
-        try await syncToQuiescence([a, b], server: server)
-        #expect(try b.thought(doomed.id) == nil)
-        #expect(try a.thought(doomed.id) == nil)
-        #expect(Set(try a.thoughts().map(\.id)) == Set(try b.thoughts().map(\.id)))
     }
 
     @Test func aRemoteDeletionRaisesAnExistingTombstoneAndNothingFlipsBack() async throws {

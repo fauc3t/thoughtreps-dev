@@ -5,8 +5,8 @@ import os
 @testable import ThoughtReps
 
 /// An in-process server that implements the `SyncTransport` contract exactly (all-or-nothing pushes, per-record
-/// compare-and-swap on the seq, seqs assigned in order, pulls of the latest version only, 410 below the pruned
-/// seq), with controls to make it misbehave.
+/// compare-and-swap on the seq, seqs assigned in order, pulls of the latest version only, tombstones kept
+/// forever), with controls to make it misbehave.
 actor FakeSyncServer: SyncTransport {
     struct Row: Equatable {
         var seq: Int64
@@ -22,7 +22,6 @@ actor FakeSyncServer: SyncTransport {
     private(set) var rows: [String: Row] = [:]
     private(set) var headSeq: Int64 = 0
     private(set) var epoch: Int64 = 1
-    private(set) var prunedBeforeSeq: Int64 = 0
     private(set) var blobs: [String: Data] = [:]
 
     private(set) var pushCalls = 0
@@ -84,12 +83,6 @@ actor FakeSyncServer: SyncTransport {
         epoch += 1
     }
 
-    /// Drops tombstones older than `seq` and makes a pull from before it answer 410.
-    func prune(tombstonesBelow seq: Int64) {
-        rows = rows.filter { !($0.value.deleted && $0.value.seq < seq) }
-        prunedBeforeSeq = max(prunedBeforeSeq, seq)
-    }
-
     /// Takes every blob off the server and hands them back.
     func removeAllBlobs() -> [String: Data] {
         defer { blobs = [:] }
@@ -109,10 +102,6 @@ actor FakeSyncServer: SyncTransport {
 
     func bumpEpoch() {
         epoch += 1
-    }
-
-    func forget(recordKeys: [String]) {
-        for key in recordKeys { rows[key] = nil }
     }
 
     // MARK: Contract
@@ -176,11 +165,10 @@ actor FakeSyncServer: SyncTransport {
         return .ok(seqs: seqs, headSeq: headSeq)
     }
 
-    func pull(after cursor: Int64, limit: Int, fullResync: Bool) async throws -> PullResult {
+    func pull(after cursor: Int64, limit: Int) async throws -> PullPage {
         try begin()
         pullCalls += 1
-        if !fullResync, cursor < prunedBeforeSeq { return .gone }
-        if stallingPulls { return .page(PullPage(records: [], nextSeq: cursor, headSeq: headSeq, epoch: epoch, hasMore: true)) }
+        if stallingPulls { return PullPage(records: [], nextSeq: cursor, headSeq: headSeq, epoch: epoch, hasMore: true) }
         let snapshotHead = headSeq
         let newer = rows.filter { $0.value.seq > cursor }.sorted { $0.value.seq < $1.value.seq }
         let page = newer.prefix(limit).map { PulledRecord(recordKey: $0.key, seq: $0.value.seq, payload: $0.value.payload, deleted: $0.value.deleted) }
@@ -189,9 +177,9 @@ actor FakeSyncServer: SyncTransport {
             afterNextPullQuery = nil
             await hook()
         }
-        return .page(PullPage(
+        return PullPage(
             records: page, nextSeq: hasMore ? (page.last?.seq ?? cursor) : snapshotHead, headSeq: headSeq, epoch: epoch, hasMore: hasMore
-        ))
+        )
     }
 
     func head() async throws -> SyncHead {
@@ -479,7 +467,6 @@ final class CountingLocal: SyncLocalStore, @unchecked Sendable {
     func snapshots(of entities: [SyncEntity]) async throws -> [SyncSnapshot] { try await inner.snapshots(of: entities) }
     func blobBytes(_ refs: [BlobRef]) async throws -> [BlobRef: Data] { try await inner.blobBytes(refs) }
     func missingBlobs(for contents: [ThoughtContentRecord]) async throws -> Set<BlobRef> { try await inner.missingBlobs(for: contents) }
-    func discardUnchanged(_ expected: [String: String], now: Date) async -> Bool { await inner.discardUnchanged(expected, now: now) }
     func reconcile() async { await inner.reconcile() }
 
     func apply(_ batch: RemoteBatch, now: Date) async -> RemoteOutcome {

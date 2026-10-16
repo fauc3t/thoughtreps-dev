@@ -238,18 +238,6 @@ struct SyncConflictTests {
         #expect(try await a.state.attemptCount() == 0)
     }
 
-    @Test func aFullResyncLeavesNoNotedBaseForAThoughtItDiscarded() async throws {
-        let all = try await devices()
-        let (a, b) = (all[0], all[1])
-        let id = try await shared("plain", on: all)
-        a.store.delete(try #require(try a.thought(id)), now: a.now(at(100)))
-        await a.sync()
-        await server.prune(tombstonesBelow: await server.headSeq + 1)
-        await b.sync()
-        #expect(try b.thought(id) == nil)
-        #expect(try await b.state.attemptCount() == 0)
-    }
-
     @Test func aThoughtDeletedBeforeItsFirstPushWasAcknowledgedLeavesNoNotedAttempt() async throws {
         let a = try await devices()[0]
         let id = a.store.create(body: "gone", now: a.now(at(0))).id
@@ -282,14 +270,13 @@ struct SyncConflictTests {
         try expectSame(all)
     }
 
-    @Test func aFullResyncAfterBothSidesEditedMergesNonOverlappingEditsWithoutACopy() async throws {
+    @Test func bothSidesEditingDifferentLinesMergesWithoutACopy() async throws {
         let all = try await devices()
         let (a, b) = (all[0], all[1])
         let id = try await shared("one\ntwo\nthree\nfour\nfive", on: all)
         try edit(b, id, body: "one\ntwo\nthree\nfour\nFIVE", at: 100)
         try edit(a, id, body: "ONE\ntwo\nthree\nfour\nfive", at: 200)
         await a.sync()
-        await server.prune(tombstonesBelow: await server.headSeq + 1)
         let status = await b.sync()
         #expect(status.lastError == nil)
         try await syncToQuiescence(all, server: server)

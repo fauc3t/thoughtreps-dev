@@ -236,30 +236,25 @@ struct SyncEngineTests {
         try expectSame(a, b)
     }
 
-    // MARK: Resync, epoch, failures
+    // MARK: Catching up, epoch, failures
 
-    @Test func aGoneCursorStartsOverWithoutLosingOrDuplicatingAnything() async throws {
+    @Test func aDeviceThatWasAwayCatchesUpWithoutLosingOrDuplicatingAnything() async throws {
         let (a, b) = try await pair()
         let shared = a.store.create(body: "shared", now: a.now(at(0)))
         let doomed = a.store.create(body: "doomed", now: a.now(at(0)))
         await a.sync()
         await b.sync()
-        let bCursor = try await b.state.cursor()
-        // While B is away, A deletes a thought B never had a tombstone for, and the server forgets old tombstones.
+        // While B is away, A deletes a thought and makes another.
         a.store.delete(doomed, now: a.now(at(10)))
         let other = a.store.create(body: "from A", now: a.now(at(11)))
         await a.sync()
-        await server.prune(tombstonesBelow: await server.headSeq + 1)
         // B edits one thought and makes another, offline.
         b.store.update(try #require(try b.thought(shared.id)), body: "shared, edited on B", blocks: [], intervalDays: nil, now: b.now(at(20)))
         let created = b.store.create(body: "from B", now: b.now(at(21)))
-        #expect(bCursor < (await server.prunedBeforeSeq))
 
         let status = await b.sync()
         #expect(status.lastError == nil)
-        #expect(await server.pullCalls > 0)
-        // B never saw the deletion; after its full resync it drops `doomed` itself (the server forgot it, B never edited it) and the
-        // rest goes out, so everyone ends up without it.
+        // B pulls A's tombstone and drops `doomed`, and its own changes go out, so everyone ends up without it.
         try await syncToQuiescence([a, b], server: server)
         let survivors = Set([shared.id, other.id, created.id])
         #expect(Set(try a.thoughts().map(\.id)) == survivors)

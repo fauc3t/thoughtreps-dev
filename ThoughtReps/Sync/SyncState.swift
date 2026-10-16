@@ -55,8 +55,6 @@ struct PageCommit: Sendable {
     var forgetAttempts: [String] = []
     var cursor: Int64
     var epoch: Int64
-    /// Set when the page ends a from-scratch pull, to clear the resyncing flag in the same transaction.
-    var endsResync = false
 }
 
 struct OutboxEntry: Sendable, Equatable {
@@ -69,7 +67,7 @@ struct OutboxEntry: Sendable, Equatable {
 /// What sync knows about this device's copy of the library, in a SQLite file of its own beside the
 /// SwiftData store: the pull cursor, the outbox of entities to push, and what was last synced for each
 /// record. Derived data, never the source of truth: if the file is lost, `SyncReconciler` queues
-/// everything again and the engine does a full resync.
+/// everything again and the engine pulls everything.
 ///
 /// Sync is on only once a vault is configured. While it is off the file doesn't exist and `enqueue`
 /// returns at once. Like `SearchIndex`, writes arrive through a fire-and-forget `enqueue` that the actor
@@ -410,7 +408,6 @@ actor SyncState {
                 }
                 try Self.setMeta("cursor", String(page.cursor), in: database)
                 try Self.setMeta("epoch", String(page.epoch), in: database)
-                if page.endsResync { try database.execute("DELETE FROM meta WHERE key = 'resyncing'") }
             }
         }
         if !page.requeue.isEmpty { gate.withLock { $0.observer }?() }
@@ -470,14 +467,6 @@ actor SyncState {
         )
     }
 
-    func parkedKeys() throws -> Set<String> {
-        try perform { database in
-            var keys = Set<String>()
-            try database.query("SELECT record_key FROM parked") { keys.insert($0.text(0)) }
-            return keys
-        }
-    }
-
     /// Which of `keys` are parked.
     func parkedKeys(among keys: [String]) throws -> Set<String> {
         try perform { database in
@@ -528,45 +517,6 @@ actor SyncState {
             var total = 0
             try database.query("SELECT count(*) FROM parked") { total = Int($0.int(0)) }
             return total
-        }
-    }
-
-    // MARK: Resync snapshot
-
-    /// The synced thoughts that the server doesn't have after a full pull, by id after `after`, each with the content
-    /// fingerprint it was last synced with. Only meaningful while a snapshot from `resetSyncProgress(snapshotting:)` is kept.
-    func missingFromServer(after: String?, limit: Int) throws -> [(id: String, fingerprint: String)] {
-        try perform { database in
-            var found: [(id: String, fingerprint: String)] = []
-            try database.query(
-                """
-                SELECT s.entity_id, s.fingerprint FROM resync_snapshot s
-                WHERE s.entity_id > ? AND NOT EXISTS (SELECT 1 FROM records r WHERE r.type = 'thought.content' AND r.entity_id = s.entity_id)
-                ORDER BY s.entity_id LIMIT ?
-                """,
-                [.text(after ?? ""), .int(Int64(limit))]
-            ) { found.append((id: $0.text(0), fingerprint: $0.text(1))) }
-            return found
-        }
-    }
-
-    func hasResyncSnapshot() throws -> Bool {
-        try perform { database in
-            var total = 0
-            try database.query("SELECT count(*) FROM resync_snapshot") { total = Int($0.int(0)) }
-            return total > 0
-        }
-    }
-
-    /// Keeps only `rows` in the snapshot: the thoughts whose fate can't be decided yet.
-    func replaceResyncSnapshot(_ rows: [(id: String, fingerprint: String)]) throws {
-        try perform { database in
-            try database.transaction {
-                try database.execute("DELETE FROM resync_snapshot")
-                for row in rows {
-                    try database.execute("INSERT INTO resync_snapshot(entity_id, fingerprint) VALUES(?, ?)", [.text(row.id), .text(row.fingerprint)])
-                }
-            }
         }
     }
 
@@ -628,57 +578,17 @@ actor SyncState {
         try perform { try Self.meta("epoch", in: $0).flatMap { Int64($0) } }
     }
 
-    /// A from-scratch pull has begun and its last page hasn't been committed: the next pull must ask for a full
-    /// resync again, since the cursor alone (above 0) would make a pruned server answer 410.
-    func isResyncing() throws -> Bool {
-        try perform { try Self.meta("resyncing", in: $0) != nil }
-    }
-
-    func beginResync() throws {
-        try perform { try Self.setMeta("resyncing", "1", in: $0) }
-    }
-
     func setEpoch(_ epoch: Int64) throws {
         try perform { try Self.setMeta("epoch", String(epoch), in: $0) }
     }
 
-    /// Forgets the cursor, every synced record, held record and the outbox, and the epoch unless `keepingEpoch`.
-    /// Uploaded blobs are kept with `keepingBlobs` (the server doesn't drop blobs when it prunes records).
+    /// Forgets the cursor, every synced record, held record and the outbox, and the epoch.
     /// A reconcile must follow, or nothing is queued to push. The vault stays configured.
-    ///
-    /// With `snapshotting`, the thoughts that were synced (and the content fingerprint each was synced with) are first
-    /// copied aside, so that after the full pull the engine can tell a thought the server pruned a deletion for
-    /// from one it never had. Without it, the snapshot is dropped too.
-    func resetSyncProgress(keepingBlobs: Bool = false, keepingEpoch: Bool = false, snapshotting: Bool = false) throws {
+    func resetSyncProgress() throws {
         try perform { database in
-            let epoch = keepingEpoch ? try Self.meta("epoch", in: database) : nil
             try database.transaction {
-                var hasSnapshot = false
-                try database.query("SELECT 1 FROM resync_snapshot LIMIT 1") { _ in hasSnapshot = true }
-                // A snapshot that is still unresolved (a second 410 mid-resync) is the better record; `records` is partial now.
-                if snapshotting, !hasSnapshot {
-                    try database.execute(
-                        """
-                        INSERT INTO resync_snapshot(entity_id, fingerprint)
-                        SELECT entity_id, fingerprint FROM records WHERE type = 'thought.content' AND fingerprint LIKE 'c%'
-                        """
-                    )
-                }
-                // A 410 resync keeps the content last synced of each thought, as `attempts` (the base for a merge, whose
-                // seq would be stale anyway), so edits made here since still merge instead of becoming copies. The synced
-                // version replaces an older attempt for the same record.
-                if snapshotting {
-                    try database.execute(
-                        """
-                        INSERT OR REPLACE INTO attempts(record_key, entity_id, base_hash, content)
-                        SELECT record_key, entity_id, base_hash, base_content FROM records
-                        WHERE type = 'thought.content' AND base_content IS NOT NULL
-                        """
-                    )
-                }
-                try Self.clearContents(of: database, keepingBlobs: keepingBlobs, keepingSnapshot: snapshotting, keepingAttempts: snapshotting)
+                try Self.clearContents(of: database)
                 try database.execute("INSERT INTO meta(key, value) VALUES('vault_id', ?)", [.text(self.vaultID ?? "")])
-                if let epoch { try Self.setMeta("epoch", epoch, in: database) }
             }
         }
     }
@@ -852,7 +762,6 @@ actor SyncState {
             """
         )
         try database.execute("CREATE TABLE IF NOT EXISTS attempts(record_key TEXT PRIMARY KEY, entity_id TEXT NOT NULL DEFAULT '', base_hash TEXT NOT NULL, content BLOB NOT NULL)")
-        try database.execute("CREATE TABLE IF NOT EXISTS resync_snapshot(entity_id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL)")
         try database.execute("CREATE INDEX IF NOT EXISTS held_by_entity ON held(entity_id)")
         try database.query("SELECT count(*) FROM meta") { _ in }
         try database.query("SELECT count(*) FROM records") { _ in }
@@ -860,17 +769,14 @@ actor SyncState {
         return database
     }
 
-    private static func clearContents(
-        of database: SQLiteDatabase, keepingBlobs: Bool = false, keepingSnapshot: Bool = false, keepingAttempts: Bool = false
-    ) throws {
+    private static func clearContents(of database: SQLiteDatabase) throws {
         try database.execute("DELETE FROM records")
-        if !keepingAttempts { try database.execute("DELETE FROM attempts") }
+        try database.execute("DELETE FROM attempts")
         try database.execute("DELETE FROM held")
         try database.execute("DELETE FROM parked")
-        if !keepingSnapshot { try database.execute("DELETE FROM resync_snapshot") }
         try database.execute("DELETE FROM outbox")
         try database.execute("DELETE FROM meta")
-        if !keepingBlobs { try database.execute("DELETE FROM blobs") }
+        try database.execute("DELETE FROM blobs")
     }
 
     private static func write(_ record: SyncedRecord, in database: SQLiteDatabase) throws {

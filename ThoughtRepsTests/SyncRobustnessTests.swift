@@ -238,9 +238,9 @@ struct SyncRobustnessTests {
         try await b.expectClean()
     }
 
-    // MARK: 410 and deletions
+    // MARK: Deletions
 
-    @Test func aFullResyncDeletesWhatWasDeletedElsewhereUnlessItWasEditedHere() async throws {
+    @Test func aPullDeletesWhatWasDeletedElsewhereUnlessItWasEditedHere() async throws {
         let (a, b) = try await pair()
         let plain = a.store.create(body: "plain", now: a.now(at(0)))
         let edited = a.store.create(body: "edited", now: a.now(at(0)))
@@ -253,7 +253,6 @@ struct SyncRobustnessTests {
         a.store.delete(plain, now: a.now(at(100)))
         a.store.delete(edited, now: a.now(at(100)))
         await a.sync()
-        await server.prune(tombstonesBelow: await server.headSeq + 1)
 
         // B was away. A view isn't an edit; a content change is; a thought B never synced just goes up.
         b.store.markViewed(try #require(try b.thought(plainID)), now: b.now(at(200)))
