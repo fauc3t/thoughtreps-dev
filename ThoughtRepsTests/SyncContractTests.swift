@@ -240,6 +240,27 @@ enum SyncContract {
         #expect(try await transport.push([again], epoch: new) == .blobsMissing(names: [name]), "the blob did not survive the erase")
     }
 
+    static let liveList = Data((blobName("kept one") + "\n" + blobName("kept two") + "\n").utf8)
+
+    static func garbageCollectionRun(_ subject: ContractSubject) async throws {
+        let transport = subject.transport
+        let epoch = try await transport.head().epoch
+        let ok = try await pushedOK(transport, [record("a"), record("b")], epoch: epoch)
+        #expect(try await transport.startGarbageCollection(liveList: liveList, epoch: epoch, asOfSeq: ok.headSeq - 1) == .stale, "a list built at another head")
+        #expect(try await transport.startGarbageCollection(liveList: liveList, epoch: epoch, asOfSeq: ok.headSeq + 1) == .stale)
+        #expect(try await transport.startGarbageCollection(liveList: liveList, epoch: epoch, asOfSeq: ok.headSeq) == .started)
+    }
+
+    static func garbageCollectionFollowsTheEpoch(_ subject: ContractSubject) async throws {
+        let transport = subject.transport
+        let old = try await transport.head().epoch
+        let new = try await subject.erase()
+        await #expect(throws: SyncTransportError.epochChanged(server: new)) {
+            try await transport.startGarbageCollection(liveList: liveList, epoch: old, asOfSeq: 0)
+        }
+        #expect(try await transport.startGarbageCollection(liveList: Data(), epoch: new, asOfSeq: 0) == .started, "an empty list is a list")
+    }
+
     static func malformedPointers(_ subject: ContractSubject) async throws {
         let transport = subject.transport
         let epoch = try await transport.head().epoch
@@ -279,6 +300,8 @@ struct SyncContractFakeTests {
     @Test func blobsFollowTheEpoch() async throws { try await SyncContract.blobsFollowTheEpoch(subject()) }
     @Test func pointerPushes() async throws { try await SyncContract.pointerPushes(subject()) }
     @Test func malformedPointers() async throws { try await SyncContract.malformedPointers(subject()) }
+    @Test func garbageCollectionRun() async throws { try await SyncContract.garbageCollectionRun(subject()) }
+    @Test func garbageCollectionFollowsTheEpoch() async throws { try await SyncContract.garbageCollectionFollowsTheEpoch(subject()) }
 }
 
 /// What only the fake can show: the dev routes can't force these.
@@ -314,6 +337,19 @@ struct SyncContractHTTPTests {
     @Test func blobsFollowTheEpoch() async throws { try await SyncContract.blobsFollowTheEpoch(subject()) }
     @Test func pointerPushes() async throws { try await SyncContract.pointerPushes(subject()) }
     @Test func malformedPointers() async throws { try await SyncContract.malformedPointers(subject()) }
+    @Test func garbageCollectionRun() async throws { try await SyncContract.garbageCollectionRun(subject()) }
+    @Test func garbageCollectionFollowsTheEpoch() async throws { try await SyncContract.garbageCollectionFollowsTheEpoch(subject()) }
+
+    @Test func aSecondRunSoonAfterTheFirstIsRateLimited() async throws {
+        let transport = try await HTTPTestServer.transport()
+        let epoch = try await transport.head().epoch
+        #expect(try await transport.startGarbageCollection(liveList: SyncContract.liveList, epoch: epoch, asOfSeq: 0) == .started)
+        guard case .rateLimited(let seconds) = try await transport.startGarbageCollection(liveList: SyncContract.liveList, epoch: epoch, asOfSeq: 0) else {
+            Issue.record("expected the second run to be rate limited")
+            return
+        }
+        #expect(seconds >= 1)
+    }
 
     @Test func aWrongSecretIsRefused() async throws {
         let good = try await HTTPTestServer.transport()

@@ -111,13 +111,14 @@ struct SyncFirstSyncTests {
         await a.sync()
         #expect(await a.engine.status.headSeq == (await server.headSeq), "A has pulled up to the head, its own first push included")
         let pulls = await server.pullCalls
+        let heads = await server.headCalls
         let sleeper = ManualSleeper()
         let triggers = SyncTriggers(engine: a.engine, sleep: { try await sleeper.sleep($0) })
         await triggers.start(observing: a.state)
         await waitUntil("the head loop to sleep") { await sleeper.waiting == 1 }
 
         await sleeper.advance(by: .seconds(30))
-        await waitUntil("a head check") { await server.headCalls == 1 }
+        await waitUntil("a head check") { await server.headCalls == heads + 1 }
         await waitUntil("the head loop to sleep again") { await sleeper.waiting == 1 }
         try await Task.sleep(for: .milliseconds(50))
         #expect(await server.pullCalls == pulls, "the head didn't move, so no cycle")

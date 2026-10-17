@@ -32,6 +32,8 @@ actor SyncEngine {
         var blobsPerRead = 8
         var maxApplyBytes = SyncLimits.maxApplyBytes
         var maxAssetBlobBytes = SyncLimits.maxAssetBlobBytes
+        /// A library with more images and files than this skips garbage collection.
+        var maxLiveListNames = SyncLimits.maxLiveListNames
         /// The newest payload version this build reads; records past it are parked until the app is updated.
         var payloadVersion = SyncPayload.currentVersion
         /// What this build can read, as one number: parked records are tried again when it changes, so it must be bumped
@@ -82,6 +84,16 @@ actor SyncEngine {
         /// record over `maxInlinePayload`. The whole thought waits, so its meta changes (pin, archive, snooze) wait with
         /// it until the transport has blobs. Retried every cycle, without a request.
         var waitingForBlobs = 0
+        /// Queued thoughts whose blobs the server refused because the vault is over its storage limit. Retried every cycle, so
+        /// they go out once space is freed; everything else still syncs.
+        var quotaExceededThoughts = 0
+        /// The usage the server last reported with a refusal; nil while no thought is held for it.
+        var blobQuota: BlobQuota?
+    }
+
+    struct BlobQuota: Sendable, Equatable {
+        var usedBytes: Int64
+        var limitBytes: Int64
     }
 
     enum Failure: Error, Equatable, CustomStringConvertible {
@@ -129,6 +141,11 @@ actor SyncEngine {
     private var oversizedEntities: Set<SyncEntity> = []
     private var blobHeldEntities: Set<SyncEntity> = []
     private var missingAttachmentEntities: Set<SyncEntity> = []
+    private var quotaHeldEntities: Set<SyncEntity> = []
+    private var lastQuota: BlobQuota?
+    /// Set once a hold for the storage limit has asked for a run, until no thought is held: a hold that outlasts the run
+    /// waits for the next week's run instead of asking every cycle. Kept in memory.
+    private var quotaHitNoted = false
     /// Record keys whose record was over `maxRecordBytes`, with the fingerprint it had then: skipped (not encoded and
     /// sealed again) until the fingerprint changes. Kept in memory.
     private var oversizedFingerprints: [String: String] = [:]
@@ -187,7 +204,7 @@ actor SyncEngine {
                 stop(.epochChanged(known: known, server: head.epoch))
                 return false
             }
-            let heldBack = waitingEntities.union(oversizedEntities).union(missingAttachmentEntities).union(blobHeldEntities).count
+            let heldBack = waitingEntities.union(oversizedEntities).union(missingAttachmentEntities).union(blobHeldEntities).union(quotaHeldEntities).count
             let hasPushable = try await state.outboxCount() > heldBack
             guard head.headSeq != status.headSeq || status.lastError != nil || hasPushable else { return false }
         } catch SyncTransportError.refused(let status, let message) {
@@ -219,6 +236,7 @@ actor SyncEngine {
                     $0.lastError = nil
                     $0.cycles += 1
                 }
+                await collectGarbageIfDue()
             } catch let failure as AttentionFailure {
                 stop(failure.attention)
             } catch SyncTransportError.refused(let status, let message) {
@@ -789,16 +807,22 @@ actor SyncEngine {
         oversizedEntities = []
         blobHeldEntities = []
         missingAttachmentEntities = []
+        quotaHeldEntities = []
+        lastQuota = nil
         defer {
             let waiting = waitingEntities.count
             let oversized = oversizedEntities.count
             let missing = missingAttachmentEntities.count
             let blobHeld = blobHeldEntities.count
+            let overQuota = quotaHeldEntities.count
+            let quota = lastQuota
             update {
                 $0.waitingForBlobs = blobHeld
                 $0.waitingThoughts = waiting
                 $0.oversizedThoughts = oversized
                 $0.missingAttachments = missing
+                $0.quotaExceededThoughts = overQuota
+                $0.blobQuota = overQuota > 0 ? quota : nil
             }
         }
         while true {
@@ -961,8 +985,15 @@ actor SyncEngine {
             planned.removeAll { entity in needsBlobs.contains { $0.entry.entity == entity.entry.entity } }
             guard !planned.isEmpty else { return .done }
         }
-        let missing = try await upload(Set(planned.flatMap(\.blobs)), epoch: epoch)
+        let uploads = try await upload(Set(planned.flatMap(\.blobs)), epoch: epoch)
+        let missing = uploads.missing
         var chunk = planned
+        if !uploads.overQuota.isEmpty {
+            let held = chunk.filter { !uploads.overQuota.isDisjoint(with: $0.blobs) }
+            quotaHeldEntities.formUnion(held.map(\.entry.entity))
+            chunk.removeAll { !uploads.overQuota.isDisjoint(with: $0.blobs) }
+            guard !chunk.isEmpty else { return .done }
+        }
         if !missing.isEmpty {
             // Only the thoughts whose attachments are gone wait. Dropping the reference would tell the server (and so the
             // other devices) that the attachment no longer exists, and they would delete a copy they still have.
@@ -971,9 +1002,10 @@ actor SyncEngine {
             chunk.removeAll { !missing.isDisjoint(with: $0.blobs) }
             guard !chunk.isEmpty else { return .done }
         }
+        chunk = try await uploadRecordBlobs(of: chunk, epoch: epoch)
+        guard !chunk.isEmpty else { return .done }
         try await state.noteAttempts(chunk.flatMap(\.records).filter { $0.baseSeq == nil && $0.payload.type == .thoughtContent && !$0.payload.isDeletion }
             .map { ($0.key, $0.payload.entityID, $0.hash, $0.plaintext) })
-        try await uploadRecordBlobs(of: chunk, epoch: epoch)
         let wire = chunk.flatMap(\.records).map {
             PushRecord(recordKey: $0.key, baseSeq: $0.baseSeq, payload: $0.sealed, deleted: $0.payload.isDeletion)
         }
@@ -982,7 +1014,8 @@ actor SyncEngine {
             var pushed = try await transport.push(wire, epoch: epoch)
             if case .blobsMissing = pushed {
                 // A pointer's blob vanished after it was uploaded: upload again, and push once more.
-                try await uploadRecordBlobs(of: chunk, epoch: epoch)
+                let reuploaded = try await uploadRecordBlobs(of: chunk, epoch: epoch)
+                guard reuploaded.count == chunk.count else { return reuploaded.isEmpty ? .done : try await send(reuploaded, epoch: epoch) }
                 pushed = try await transport.push(wire, epoch: epoch)
             }
             result = pushed
@@ -1016,44 +1049,99 @@ actor SyncEngine {
         }
     }
 
-    private func uploadRecordBlobs(of chunk: [PlannedEntity], epoch: Int64) async throws {
-        for blob in chunk.flatMap(\.records).compactMap(\.blob) {
-            try await transport.putBlob(name: blob.name, data: blob.data, epoch: epoch)
+    /// Uploads the blobs behind the chunk's pointers. A thought whose blob would pass the vault's storage limit is held for
+    /// the cycle (`Status.quotaExceededThoughts`) and left out of what is returned.
+    private func uploadRecordBlobs(of chunk: [PlannedEntity], epoch: Int64) async throws -> [PlannedEntity] {
+        var uploaded: [PlannedEntity] = []
+        for entity in chunk {
+            do {
+                for blob in entity.records.compactMap(\.blob) {
+                    try await transport.putBlob(name: blob.name, data: blob.data, epoch: epoch)
+                }
+                uploaded.append(entity)
+            } catch SyncTransportError.quotaExceeded(let used, let limit) {
+                quotaHeldEntities.insert(entity.entry.entity)
+                lastQuota = BlobQuota(usedBytes: used, limitBytes: limit)
+            }
         }
+        return uploaded
     }
 
-    /// Uploads the blobs the server doesn't have, each once: the ones `sync.sqlite` shows as uploaded are skipped,
-    /// and the server is asked about the rest before sending bytes. Returns the blobs this device has no bytes for.
-    private func upload(_ refs: Set<BlobRef>, epoch: Int64) async throws -> Set<BlobRef> {
-        guard !refs.isEmpty else { return [] }
-        let named = Dictionary(refs.map { (keys.blobName(kind: $0.kind, id: $0.id), $0) }, uniquingKeysWith: { first, _ in first })
-        let done = try await state.uploadedBlobs(among: Array(named.keys))
-        let todo = named.filter { !done.contains($0.key) }.sorted { $0.key < $1.key }
+    /// Sends every blob through `putBlob`, which skips the ones the server already has and has the server re-upload the ones
+    /// it is about to age out, so each push of a thought reads and seals its blobs again. Returns the blobs this device has
+    /// no bytes for and the ones the server's storage limit refused.
+    private func upload(_ refs: Set<BlobRef>, epoch: Int64) async throws -> (missing: Set<BlobRef>, overQuota: Set<BlobRef>) {
+        guard !refs.isEmpty else { return ([], []) }
+        let todo = refs.map { (name: keys.blobName(kind: $0.kind, id: $0.id), ref: $0) }.sorted { $0.name < $1.name }
         var missing = Set<BlobRef>()
-        var uploaded: [String] = []
-        for group in stride(from: 0, to: todo.count, by: config.blobsPerRead).map({ Array(todo[$0..<min($0 + config.blobsPerRead, todo.count)]) }) {
-            var bytes: [BlobRef: Data] = [:]
-            var needed: [(name: String, ref: BlobRef)] = []
+        var overQuota = Set<BlobRef>()
+        for start in stride(from: 0, to: todo.count, by: config.blobsPerRead) {
+            let group = Array(todo[start..<min(start + config.blobsPerRead, todo.count)])
+            let bytes = try await local.blobBytes(group.map(\.ref))
             for (name, ref) in group {
-                if try await transport.hasBlob(name: name, epoch: epoch) {
-                    uploaded.append(name)
-                } else {
-                    needed.append((name, ref))
-                }
-            }
-            if !needed.isEmpty { bytes = try await local.blobBytes(needed.map(\.ref)) }
-            for (name, ref) in needed {
                 guard let data = bytes[ref] else {
                     missing.insert(ref)
                     continue
                 }
                 let sealed = try SyncCrypto.sealBlob(data, vaultID: vaultID, name: name, keys: keys)
-                try await transport.putBlob(name: name, data: sealed, epoch: epoch)
-                uploaded.append(name)
+                do {
+                    try await transport.putBlob(name: name, data: sealed, epoch: epoch)
+                } catch SyncTransportError.quotaExceeded(let used, let limit) {
+                    overQuota.insert(ref)
+                    lastQuota = BlobQuota(usedBytes: used, limitBytes: limit)
+                }
             }
-            try await state.markBlobsUploaded(uploaded)
-            uploaded = []
         }
-        return missing
+        return (missing, overQuota)
+    }
+
+    // MARK: Garbage collection
+
+    /// After a cycle that went through, asks the server to delete the vault's blobs nothing uses any more, at most once every
+    /// `SyncLimits.garbageCollectionInterval`. The server deletes whatever the live list leaves out, so it is only sent
+    /// when this device has everything the vault has: nothing queued, held or parked, and nothing pulled since. Whatever the
+    /// server answers, the attempt is noted and syncing goes on; the next clean cycle tries again.
+    private func collectGarbageIfDue() async {
+        guard transport.supportsBlobs, status.attention == nil else { return }
+        let now = clockNow()
+        do {
+            if quotaHeldEntities.isEmpty {
+                quotaHitNoted = false
+            } else if !quotaHitNoted {
+                try await state.noteBlobQuotaHit(at: now)
+                quotaHitNoted = true
+            }
+            guard try await state.garbageCollectionLog().isDue(at: now), let epoch = try await state.epoch() else { return }
+            // Thoughts held only for the storage limit stay queued but don't block: the run is what frees the space.
+            guard try await state.outboxCount() - quotaHeldEntities.count == 0, try await state.parkedCount() == 0,
+                  try await state.heldCount() == 0 else { return }
+            let cursor = try await state.cursor()
+            let head = try await transport.head()
+            guard head.epoch == epoch, head.headSeq == cursor else { return }
+            guard let refs = try await local.allBlobRefs(limit: config.maxLiveListNames) else {
+                Self.logger.error("Garbage collection skipped: more than \(self.config.maxLiveListNames) images and files")
+                try await state.recordGarbageCollection(.tooManyBlobs, at: now)
+                return
+            }
+            let list = Self.liveList(names: refs.map { keys.blobName(kind: $0.kind, id: $0.id) })
+            switch try await transport.startGarbageCollection(liveList: list, epoch: epoch, asOfSeq: cursor) {
+            case .started: try await state.recordGarbageCollection(.started, at: now)
+            case .stale: try await state.recordGarbageCollection(.stale, at: now)
+            case .liveListMissing: try await state.recordGarbageCollection(.liveListMissing, at: now)
+            case .rateLimited(let seconds): try await state.recordGarbageCollection(.rateLimited, at: now, retryAfter: TimeInterval(seconds))
+            }
+        } catch is CancellationError {
+            return
+        } catch SyncTransportError.epochChanged(let server) {
+            if let known = try? await state.epoch() { stop(.epochChanged(known: known, server: server)) }
+        } catch {
+            Self.logger.error("Garbage collection not started: \(error)")
+            try? await state.recordGarbageCollection(.failed, at: now)
+        }
+    }
+
+    /// One 43-character blob name per line, sorted and without repeats, every line ending in a newline.
+    static func liveList(names: [String]) -> Data {
+        Data(Set(names).sorted().map { $0 + "\n" }.joined().utf8)
     }
 }

@@ -57,6 +57,45 @@ struct PageCommit: Sendable {
     var epoch: Int64
 }
 
+enum GarbageCollectionOutcome: String, Sendable, Equatable {
+    case started
+    case stale
+    case liveListMissing
+    case rateLimited
+    /// The call failed or the server refused it. Never stops syncing.
+    case failed
+    /// More blobs than a live list may name (`SyncLimits.maxLiveListNames`); nothing was sent.
+    case tooManyBlobs
+}
+
+/// When garbage collection last ran or was tried on this device, for spacing the runs and for the Sync lab.
+struct GarbageCollectionLog: Sendable, Equatable {
+    /// When the server last accepted a run; the next one waits `SyncLimits.garbageCollectionInterval` from here.
+    var lastStartedAt: Date?
+    /// The server's rate limit: no attempt before this.
+    var retryNotBefore: Date?
+    var lastAttemptAt: Date?
+    var lastOutcome: GarbageCollectionOutcome?
+    /// When the server first refused an upload for the storage limit since the last accepted run: a run is wanted at once,
+    /// to free space, instead of after the week.
+    var quotaHitAt: Date?
+}
+
+extension GarbageCollectionLog {
+    /// Whether a run may be asked for at `now`. Never before the server's rate limit has passed, nor within
+    /// `SyncLimits.garbageCollectionRetryGap` of an attempt the server didn't accept (each attempt uploads the whole list).
+    /// Then due at once after a storage limit refusal, else a week after the last accepted run. A clock set back behind the
+    /// last attempt or run counts as past it, so a wrong date can't block a run for good.
+    func isDue(at now: Date) -> Bool {
+        if let retryNotBefore, now < retryNotBefore { return false }
+        if let lastAttemptAt, lastOutcome != .started, now >= lastAttemptAt,
+           now.timeIntervalSince(lastAttemptAt) < SyncLimits.garbageCollectionRetryGap { return false }
+        if quotaHitAt != nil { return true }
+        guard let lastStartedAt else { return true }
+        return now < lastStartedAt || now.timeIntervalSince(lastStartedAt) >= SyncLimits.garbageCollectionInterval
+    }
+}
+
 struct OutboxEntry: Sendable, Equatable {
     var entity: SyncEntity
     /// Bumped by every enqueue of the same entity; `markSynced` dequeues only the generation it pushed.
@@ -538,27 +577,47 @@ actor SyncState {
         }
     }
 
-    // MARK: Blobs
+    // MARK: Garbage collection
 
-    /// Which of the blob names have been uploaded.
-    func uploadedBlobs(among names: [String]) throws -> Set<String> {
+    func garbageCollectionLog() throws -> GarbageCollectionLog {
         try perform { database in
-            var found = Set<String>()
-            for start in stride(from: 0, to: names.count, by: 500) {
-                let chunk = Array(names[start..<min(start + 500, names.count)])
-                let marks = Array(repeating: "?", count: chunk.count).joined(separator: ", ")
-                try database.query("SELECT name FROM blobs WHERE name IN (\(marks))", chunk.map(SQLiteValue.text)) { found.insert($0.text(0)) }
+            func date(_ key: String) throws -> Date? {
+                try Self.meta(key, in: database).flatMap(TimeInterval.init).map { Date(timeIntervalSince1970: $0) }
             }
-            return found
+            return GarbageCollectionLog(
+                lastStartedAt: try date("garbage_collection_started"), retryNotBefore: try date("garbage_collection_not_before"),
+                lastAttemptAt: try date("garbage_collection_attempt"),
+                lastOutcome: try Self.meta("garbage_collection_outcome", in: database).flatMap(GarbageCollectionOutcome.init(rawValue:)),
+                quotaHitAt: try date("garbage_collection_quota_hit")
+            )
         }
     }
 
-    func markBlobsUploaded(_ names: [String]) throws {
+    /// Notes an attempt at `date`. `retryAfter` is the server's rate limit; a started run clears any earlier one.
+    func recordGarbageCollection(_ outcome: GarbageCollectionOutcome, at date: Date, retryAfter: TimeInterval? = nil) throws {
         try perform { database in
             try database.transaction {
-                for name in names {
-                    try database.execute("INSERT OR IGNORE INTO blobs(name) VALUES(?)", [.text(name)])
+                try Self.setMeta("garbage_collection_attempt", String(date.timeIntervalSince1970), in: database)
+                try Self.setMeta("garbage_collection_outcome", outcome.rawValue, in: database)
+                if outcome == .started {
+                    // The server's worker may still end the run unfinished (stale); the client can't see that, so a started
+                    // run counts as done and the week's wait begins.
+                    try Self.setMeta("garbage_collection_started", String(date.timeIntervalSince1970), in: database)
+                    try database.execute("DELETE FROM meta WHERE key = ?", [.text("garbage_collection_quota_hit")])
+                    try database.execute("DELETE FROM meta WHERE key = ?", [.text("garbage_collection_not_before")])
                 }
+                if let retryAfter {
+                    try Self.setMeta("garbage_collection_not_before", String(date.addingTimeInterval(retryAfter).timeIntervalSince1970), in: database)
+                }
+            }
+        }
+    }
+
+    /// Notes that the server refused an upload for the storage limit; only the first since the last accepted run counts.
+    func noteBlobQuotaHit(at date: Date) throws {
+        try perform { database in
+            if try Self.meta("garbage_collection_quota_hit", in: database) == nil {
+                try Self.setMeta("garbage_collection_quota_hit", String(date.timeIntervalSince1970), in: database)
             }
         }
     }
@@ -744,7 +803,6 @@ actor SyncState {
             throw SQLiteError(code: SQLITE_SCHEMA, message: "sync state schema version \(version)")
         }
         // Tables added after the first version; a file of an older schema never gets here (it is rebuilt above, being derived state).
-        try database.execute("CREATE TABLE IF NOT EXISTS blobs(name TEXT PRIMARY KEY)")
         try database.execute(
             """
             CREATE TABLE IF NOT EXISTS held(
@@ -776,7 +834,6 @@ actor SyncState {
         try database.execute("DELETE FROM parked")
         try database.execute("DELETE FROM outbox")
         try database.execute("DELETE FROM meta")
-        try database.execute("DELETE FROM blobs")
     }
 
     private static func write(_ record: SyncedRecord, in database: SQLiteDatabase) throws {

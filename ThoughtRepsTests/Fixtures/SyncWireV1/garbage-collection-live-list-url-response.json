@@ -1,0 +1,8 @@
+{
+  "runId": "0123456789abcdef0123456789abcdef",
+  "url": "https://thoughtreps-dev-sync-blobbucket-example.s3.us-east-1.amazonaws.com/garbage-collection/vault-1/0123456789abcdef0123456789abcdef?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=EXAMPLE%2F20260115%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20260115T120000Z&X-Amz-Expires=900&X-Amz-Signature=0000000000000000000000000000000000000000000000000000000000000000&X-Amz-SignedHeaders=content-length%3Bhost%3Bx-amz-checksum-sha256",
+  "headers": {
+    "x-amz-checksum-sha256": "eM8Q83Na+fcfFU85+p70pzU33vxFqx9t5EpWcrBTr60="
+  },
+  "serverTime": 1768478400000
+}

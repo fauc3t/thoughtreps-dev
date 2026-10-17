@@ -14,6 +14,19 @@ actor FakeSyncServer: SyncTransport {
         var payload: Data
     }
 
+    struct GarbageCollectionCall: Equatable {
+        var liveList: Data
+        var epoch: Int64
+        var asOfSeq: Int64
+        var headSeq: Int64
+        /// The blobs the vault's records used when the call came in, if the server was told to look (`watchBlobReferences`).
+        var inUse: Set<String>?
+        /// The blobs the vault's pointer records name, likewise.
+        var pointerBlobs: Set<String>?
+
+        var names: [String] { String(decoding: liveList, as: UTF8.self).split(separator: "\n").map(String.init) }
+    }
+
     enum Event: Equatable {
         case push([String])
         case putBlob(String)
@@ -34,6 +47,9 @@ actor FakeSyncServer: SyncTransport {
     private(set) var blobPuts: [String: Int] = [:]
     private(set) var blobGets = 0
     private(set) var events: [Event] = []
+    private(set) var garbageCollections: [GarbageCollectionCall] = []
+    private(set) var blobPutAttempts = 0
+    private(set) var hasBlobCalls = 0
 
     private var dropPushResponses = 0
     private var pointerPushesToSabotage = 0
@@ -41,6 +57,10 @@ actor FakeSyncServer: SyncTransport {
     private var beforeNextPush: (@Sendable () async -> Void)?
     private var afterNextPullQuery: (@Sendable () async -> Void)?
     private var stallingPulls = false
+    private var garbageCollectionAnswers: [GarbageCollectionStart] = []
+    private var blobQuotaBytes: Int?
+    private var garbageCollectionFailure: SyncTransportError?
+    private var referenceWatcher: (keys: SyncKeys, vaultID: String)?
 
     var liveRecordCount: Int { rows.values.filter { !$0.deleted }.count }
     var callCount: Int { pushCalls + pullCalls + headCalls }
@@ -81,6 +101,29 @@ actor FakeSyncServer: SyncTransport {
     func stallPulls(_ stalling: Bool = true) {
         stallingPulls = stalling
     }
+
+    /// The next garbage collection requests get these answers in turn; after that the server answers like the real one
+    /// (started, or stale when its head isn't the `asOfSeq`).
+    func answerGarbageCollection(_ answers: GarbageCollectionStart...) {
+        garbageCollectionAnswers = answers
+    }
+
+    /// The next garbage collection request fails with `error`.
+    func failGarbageCollection(with error: SyncTransportError) {
+        garbageCollectionFailure = error
+    }
+
+    /// Each garbage collection call records which blobs the vault's records used at that moment.
+    func watchBlobReferences(keys: SyncKeys, vaultID: String) {
+        referenceWatcher = (keys, vaultID)
+    }
+
+    /// New blobs are refused once the stored bytes would pass `limit` (nil: no limit).
+    func limitBlobBytes(to limit: Int?) {
+        blobQuotaBytes = limit
+    }
+
+    var storedBlobBytes: Int { blobs.values.reduce(0) { $0 + $1.count } }
 
     /// The vault is erased: every record and blob is gone and the epoch moves on.
     func erase() {
@@ -218,7 +261,11 @@ actor FakeSyncServer: SyncTransport {
             epochRejections += 1
             throw SyncTransportError.epochChanged(server: epoch)
         }
+        blobPutAttempts += 1
         if blobs[name] != nil { return }
+        if let limit = blobQuotaBytes, storedBlobBytes + data.count > limit {
+            throw SyncTransportError.quotaExceeded(usedBytes: Int64(storedBlobBytes), limitBytes: Int64(limit))
+        }
         blobs[name] = data
         blobPuts[name, default: 0] += 1
         events.append(.putBlob(name))
@@ -236,8 +283,27 @@ actor FakeSyncServer: SyncTransport {
         return data
     }
 
+    func startGarbageCollection(liveList: Data, epoch callEpoch: Int64, asOfSeq: Int64) async throws -> GarbageCollectionStart {
+        try begin()
+        guard callEpoch == epoch else {
+            epochRejections += 1
+            throw SyncTransportError.epochChanged(server: epoch)
+        }
+        if let failure = garbageCollectionFailure {
+            garbageCollectionFailure = nil
+            throw failure
+        }
+        let references = referenceWatcher.map { blobReferences(keys: $0.keys, vaultID: $0.vaultID) }
+        garbageCollections.append(GarbageCollectionCall(
+            liveList: liveList, epoch: callEpoch, asOfSeq: asOfSeq, headSeq: headSeq, inUse: references?.inUse, pointerBlobs: references?.pointers
+        ))
+        if !garbageCollectionAnswers.isEmpty { return garbageCollectionAnswers.removeFirst() }
+        return asOfSeq == headSeq ? .started : .stale
+    }
+
     func hasBlob(name: String, epoch blobEpoch: Int64) async throws -> Bool {
         try begin()
+        hasBlobCalls += 1
         guard blobEpoch == epoch else {
             epochRejections += 1
             throw SyncTransportError.epochChanged(server: epoch)
@@ -248,6 +314,26 @@ actor FakeSyncServer: SyncTransport {
 
 /// Decodes the thoughts the server holds, to compare with a device's.
 extension FakeSyncServer {
+    /// The image and file blobs the vault's current content records reference, and the record blobs its pointers name.
+    func blobReferences(keys: SyncKeys, vaultID: String) -> (inUse: Set<String>, pointers: Set<String>) {
+        var inUse = Set<String>()
+        var pointers = Set<String>()
+        for (key, row) in rows where !row.deleted {
+            var frame = row.payload
+            if let name = SyncCrypto.blobName(inPointer: frame), let sealed = blobs[name],
+               let inner = try? SyncCrypto.openBlob(sealed, vaultID: vaultID, name: name, keys: keys) {
+                pointers.insert(name)
+                frame = inner
+            }
+            guard let opened = try? SyncCrypto.open(frame, vaultID: vaultID, recordKey: key, keys: keys),
+                  case .thoughtContent(let content)? = try? SyncPayload.decode(opened.plaintext)
+            else { continue }
+            for image in content.images + content.blocks.flatMap(\.images) { inUse.insert(keys.blobName(kind: .image, id: image.id)) }
+            for file in content.blocks.compactMap(\.file) { inUse.insert(keys.blobName(kind: .file, id: file.id)) }
+        }
+        return (inUse, pointers)
+    }
+
     func liveThoughtIDs(keys: SyncKeys, vaultID: String) -> Set<UUID> {
         var ids = Set<UUID>()
         for (key, row) in rows where !row.deleted {
@@ -263,6 +349,17 @@ extension FakeSyncServer {
         }
         return ids
     }
+}
+
+/// A wall clock a test moves by hand, for the engine's `now`.
+final class TestClock: @unchecked Sendable {
+    private let current: OSAllocatedUnfairLock<Date>
+
+    init(_ start: Date) { current = OSAllocatedUnfairLock(initialState: start) }
+
+    var now: Date { current.withLock { $0 } }
+    func advance(by seconds: TimeInterval) { current.withLock { $0 = $0.addingTimeInterval(seconds) } }
+    func set(_ date: Date) { current.withLock { $0 = date } }
 }
 
 /// A virtual clock for `SyncTriggers`: `sleep` parks until `advance` moves time past its deadline.
@@ -380,7 +477,9 @@ final class SyncDevice {
     var context: ModelContext { container.mainContext }
 
     /// A fresh engine over the same state, as after a relaunch.
-    func makeEngine(config: SyncEngine.Configuration? = nil, wrap: (SyncLocalStore) -> SyncLocalStore = { $0 }) {
+    func makeEngine(
+        config: SyncEngine.Configuration? = nil, wrap: (SyncLocalStore) -> SyncLocalStore = { $0 }, now: @escaping @Sendable () -> Date = { .now }
+    ) {
         let container = container
         let state = state
         let local = ThoughtSyncLocal(store: store, reconcile: { [self] in
@@ -391,7 +490,7 @@ final class SyncDevice {
         })
         engine = SyncEngine(
             transport: transport, state: state, local: wrap(local), keys: keys, vaultID: vault, codec: Self.testCodec,
-            config: config ?? self.config
+            config: config ?? self.config, now: now
         )
     }
 
@@ -492,6 +591,7 @@ final class CountingLocal: SyncLocalStore, @unchecked Sendable {
     func blobBytes(_ refs: [BlobRef]) async throws -> [BlobRef: Data] { try await inner.blobBytes(refs) }
     func missingBlobs(for contents: [ThoughtContentRecord]) async throws -> Set<BlobRef> { try await inner.missingBlobs(for: contents) }
     func reconcile() async { await inner.reconcile() }
+    func allBlobRefs(limit: Int) async throws -> [BlobRef]? { try await inner.allBlobRefs(limit: limit) }
 
     func apply(_ batch: RemoteBatch, now: Date) async -> RemoteOutcome {
         thoughtsPerApply.withLock { $0.append(batch.thoughts.count) }

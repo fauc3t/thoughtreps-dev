@@ -25,6 +25,8 @@ protocol SyncLocalStore: Sendable {
     /// Which of the blobs `contents` reference the store doesn't hold.
     func missingBlobs(for contents: [ThoughtContentRecord]) async throws -> Set<BlobRef>
     func apply(_ batch: RemoteBatch, now: Date) async -> RemoteOutcome
+    /// Every image and file the store holds, archived thoughts' included, or nil when there are more than `limit`.
+    func allBlobRefs(limit: Int) async throws -> [BlobRef]?
     /// Queues whatever the store has that `sync.sqlite` doesn't show as synced.
     func reconcile() async
 }
@@ -65,6 +67,25 @@ actor SyncBlobReader {
         }
         return found
     }
+
+    /// Ids only, in batches: no thought is loaded and the image bytes stay in external storage.
+    func allRefs(limit: Int) throws -> [BlobRef]? {
+        let context = ModelContext(modelContainer)
+        let imageCount = try context.fetchCount(FetchDescriptor<ImageAsset>())
+        let fileCount = try context.fetchCount(FetchDescriptor<FileAsset>())
+        guard imageCount + fileCount <= limit else { return nil }
+        var refs: [BlobRef] = []
+        refs.reserveCapacity(imageCount + fileCount)
+        var images = FetchDescriptor<ImageAsset>()
+        images.propertiesToFetch = [\.id]
+        try context.enumerate(images, batchSize: Self.refBatchSize) { refs.append(BlobRef(kind: .image, id: $0.id)) }
+        var files = FetchDescriptor<FileAsset>()
+        files.propertiesToFetch = [\.id]
+        try context.enumerate(files, batchSize: Self.refBatchSize) { refs.append(BlobRef(kind: .file, id: $0.id)) }
+        return refs
+    }
+
+    private static let refBatchSize = 2000
 }
 
 @MainActor
@@ -138,6 +159,11 @@ final class ThoughtSyncLocal: SyncLocalStore {
         let container = container
         // Built in a detached task so the actor's context isn't created on the main thread.
         return try await Task.detached { try await SyncBlobReader(modelContainer: container).bytes(for: refs) }.value
+    }
+
+    nonisolated func allBlobRefs(limit: Int) async throws -> [BlobRef]? {
+        let container = container
+        return try await Task.detached { try await SyncBlobReader(modelContainer: container).allRefs(limit: limit) }.value
     }
 
     func missingBlobs(for contents: [ThoughtContentRecord]) async throws -> Set<BlobRef> {

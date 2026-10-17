@@ -112,6 +112,62 @@ enum SyncHTTPWireV1 {
         var size: Int
     }
 
+    /// `size` is the live list's byte count (a multiple of 44) and `sha256` its SHA-256 in padded standard base64.
+    struct LiveListURLRequest: Codable, Equatable {
+        var epoch: Int64
+        var size: Int
+        var sha256: String
+    }
+
+    /// A presigned PUT for the live list, the same shape as a `BlobUpload`'s but with the run it belongs to. `headers` must
+    /// be sent exactly as given.
+    struct LiveListURLResponse: Codable, Equatable {
+        var runId: String
+        var url: String
+        var headers: [String: String]
+        var serverTime: Int64?
+    }
+
+    /// `asOfSeq` is the head the live list was built at; the server refuses (stale) if its head has moved.
+    struct StartGarbageCollectionRequest: Codable, Equatable {
+        var epoch: Int64
+        var runId: String
+        var asOfSeq: Int64
+    }
+
+    struct StartGarbageCollectionResponse: Codable, Equatable {
+        var runId: String
+        var serverTime: Int64?
+    }
+
+    /// 409 `garbage_collection_stale`: the head moved since the list was built.
+    struct GarbageCollectionStale: Codable, Equatable {
+        var error: String
+        var headSeq: Int64
+        var serverTime: Int64?
+    }
+
+    /// 409 `live_list_missing`: the list was not at the presigned URL when the run started.
+    struct LiveListMissing: Codable, Equatable {
+        var error: String
+        var serverTime: Int64?
+    }
+
+    /// 429 `garbage_collection_rate_limited`.
+    struct GarbageCollectionRateLimited: Codable, Equatable {
+        var error: String
+        var retryAfterSeconds: Int
+        var serverTime: Int64?
+    }
+
+    /// 413 `quota_exceeded`, from `blobs/upload-urls`: nothing was signed.
+    struct QuotaExceeded: Codable, Equatable {
+        var error: String
+        var usedBytes: Int64
+        var limitBytes: Int64
+        var serverTime: Int64?
+    }
+
     struct CreateVault: Codable, Equatable {
         var vaultId: String
         var epoch: Int64

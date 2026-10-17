@@ -21,6 +21,28 @@ enum SyncLabText {
         }
     }
 
+    /// The last garbage collection attempt: what happened and when, plus the earliest time the server allows another.
+    static func garbageCollection(_ log: GarbageCollectionLog) -> String {
+        guard let outcome = log.lastOutcome, let at = log.lastAttemptAt else { return "Never" }
+        let name = switch outcome {
+        case .started: "Started"
+        case .stale: "Stale, will retry"
+        case .liveListMissing: "Live list missing, will retry"
+        case .rateLimited: "Rate limited"
+        case .failed: "Failed, will retry"
+        case .tooManyBlobs: "Skipped, too many blobs"
+        }
+        var text = "\(name) at \(at.formatted(date: .abbreviated, time: .standard))"
+        if let retry = log.retryNotBefore, retry > at { text += ", not before \(retry.formatted(date: .omitted, time: .standard))" }
+        return text
+    }
+
+    static func quota(_ quota: SyncEngine.BlobQuota?) -> String {
+        guard let quota else { return "Not exceeded" }
+        let format = { (bytes: Int64) in ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file) }
+        return "\(format(quota.usedBytes)) of \(format(quota.limitBytes)) used"
+    }
+
     static func offset(_ seconds: TimeInterval) -> String {
         String(format: "%+.3f s", seconds)
     }
@@ -38,6 +60,7 @@ final class SyncLabModel {
         var outbox = 0
         var held = 0
         var parked = 0
+        var garbageCollection = GarbageCollectionLog()
     }
 
     private(set) var snapshot = Snapshot()
@@ -54,6 +77,7 @@ final class SyncLabModel {
         next.outbox = (try? await state.outboxCount()) ?? 0
         next.held = (try? await state.heldCount()) ?? 0
         next.parked = (try? await state.parkedCount()) ?? 0
+        next.garbageCollection = (try? await state.garbageCollectionLog()) ?? GarbageCollectionLog()
         snapshot = next
         lastSync = SyncDebugSession.lastSuccessfulSync
     }
@@ -112,6 +136,11 @@ struct SyncLabView: View {
                 LabeledContent("Outbox", value: "\(model.snapshot.outbox)")
                 LabeledContent("Held for blobs", value: "\(model.snapshot.held)")
                 LabeledContent("Parked", value: "\(model.snapshot.parked)")
+                if let status = model.snapshot.status {
+                    LabeledContent("Held for storage limit", value: "\(status.quotaExceededThoughts)")
+                    LabeledContent("Storage", value: SyncLabText.quota(status.blobQuota))
+                }
+                LabeledContent("Garbage collection", value: SyncLabText.garbageCollection(model.snapshot.garbageCollection))
                 LabeledContent("Last successful sync", value: model.lastSync.map { $0.formatted(date: .omitted, time: .standard) } ?? "Never")
                 LabeledContent("Server clock offset", value: SyncLabText.offset(model.offset))
             }

@@ -55,6 +55,20 @@ enum SyncTransportError: Error, Equatable {
     /// The server refused the request itself (400, 401, 403, 404, 410): retrying the same request can't succeed, so the
     /// engine stops (`Attention.serverRefused`) instead of trying again every cycle.
     case refused(status: Int, message: String)
+    /// Storing this blob would pass the vault's byte limit (413 `quota_exceeded`). Nothing was uploaded; the engine holds the
+    /// thought that needs it and tries again every cycle, and everything else still syncs.
+    case quotaExceeded(usedBytes: Int64, limitBytes: Int64)
+}
+
+/// How the server answered a request to start a garbage collection run. Each refusal is routine: the engine records it
+/// and tries again later.
+enum GarbageCollectionStart: Sendable, Equatable {
+    case started
+    /// The server's head isn't the `asOfSeq` the list was built at.
+    case stale
+    /// The list wasn't at the upload URL when the run started.
+    case liveListMissing
+    case rateLimited(retryAfterSeconds: Int)
 }
 
 /// What the sync engine needs from a server. `HTTPSyncTransport` implements it; `FakeSyncServer` does in tests.
@@ -74,6 +88,10 @@ enum SyncTransportError: Error, Equatable {
 /// Whatever lands after that head is left for the next pull. The client never moves its cursor to a head it read
 /// elsewhere (`head()`), and a page that has more records must have a `nextSeq` past the cursor it was asked from.
 ///
+/// `startGarbageCollection` uploads the live list (every blob name this device's thoughts use) and asks the server to
+/// delete the vault's other blobs that are past its grace period. The list must be complete, so the engine asks only when
+/// its picture of the vault is whole.
+///
 /// `getBlob` must not read more than `maxBytes`: it throws `tooLarge` for a bigger blob, as soon as the size is known
 /// (the `Content-Length`) or the download passes the limit.
 protocol SyncTransport: Sendable {
@@ -83,6 +101,7 @@ protocol SyncTransport: Sendable {
     func putBlob(name: String, data: Data, epoch: Int64) async throws
     func getBlob(name: String, epoch: Int64, maxBytes: Int) async throws -> Data
     func hasBlob(name: String, epoch: Int64) async throws -> Bool
+    func startGarbageCollection(liveList: Data, epoch: Int64, asOfSeq: Int64) async throws -> GarbageCollectionStart
     /// False when the server has no blob routes: the engine then holds back what needs a blob (a record over
     /// `maxInlinePayload`, an image or a file) and syncs the rest.
     var supportsBlobs: Bool { get }
@@ -90,6 +109,10 @@ protocol SyncTransport: Sendable {
 
 extension SyncTransport {
     var supportsBlobs: Bool { true }
+
+    func startGarbageCollection(liveList: Data, epoch: Int64, asOfSeq: Int64) async throws -> GarbageCollectionStart {
+        throw SyncTransportError.unsupported
+    }
 }
 
 enum SyncLimits {
@@ -109,4 +132,12 @@ enum SyncLimits {
     /// temp file whose size is checked before it is read into memory. Files may later grow to 25 to 50 MB; reading them should
     /// then stream instead of mapping the whole file.
     static let maxAssetBlobBytes = 25_000_000
+    /// The most blob names a garbage collection live list may hold (the server's `MAX_LIVE_LIST_NAMES`). A library with more
+    /// images and files skips garbage collection.
+    static let maxLiveListNames = 1_000_000
+    /// How long a device waits after the server accepts a garbage collection run before asking for another.
+    static let garbageCollectionInterval: TimeInterval = 7 * 24 * 3600
+    /// The least wait after a garbage collection attempt the server didn't accept, so a failing run isn't rebuilt and
+    /// uploaded every cycle.
+    static let garbageCollectionRetryGap: TimeInterval = 3600
 }

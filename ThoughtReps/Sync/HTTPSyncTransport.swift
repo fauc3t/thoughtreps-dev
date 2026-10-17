@@ -107,18 +107,45 @@ struct HTTPSyncTransport: SyncTransport {
                 SyncHTTPWireV1.BlobUploadURLsResponse.self, "blobs/upload-urls", body: SyncHTTPWireV1.BlobUploadURLsRequest(epoch: epoch, blobs: [blob])
             )
             if answer.present.contains(name) { return }
-            guard let upload = answer.uploads.first(where: { $0.name == name }), let url = URL(string: upload.url) else { throw SyncTransportError.unavailable }
-            var request = URLRequest(url: url)
-            request.httpMethod = "PUT"
-            for (field, value) in upload.headers { request.setValue(value, forHTTPHeaderField: field) }
-            request.setValue(String(data.count), forHTTPHeaderField: "Content-Length")
-            request.httpBody = data
-            let response = try await perform(request, observesServerTime: false)
+            guard let upload = answer.uploads.first(where: { $0.name == name }) else { throw SyncTransportError.unavailable }
+            let response = try await putToStorage(data, url: upload.url, headers: upload.headers)
             switch response.status {
             case 200...299: return
             case 403 where !refreshed: refreshed = true
             default: throw storageFailure(response)
             }
+        }
+    }
+
+    func startGarbageCollection(liveList: Data, epoch: Int64, asOfSeq: Int64) async throws -> GarbageCollectionStart {
+        let request = SyncHTTPWireV1.LiveListURLRequest(epoch: epoch, size: liveList.count, sha256: Data(SHA256.hash(data: liveList)).base64EncodedString())
+        var refreshed = false
+        while true {
+            let target = try await blobAnswer(SyncHTTPWireV1.LiveListURLResponse.self, "blobs/garbage-collection/live-list-url", body: request)
+            let response = try await putToStorage(liveList, url: target.url, headers: target.headers)
+            switch response.status {
+            case 200...299: return try await requestGarbageCollectionRun(runID: target.runId, epoch: epoch, asOfSeq: asOfSeq)
+            case 403 where !refreshed: refreshed = true
+            default: throw storageFailure(response)
+            }
+        }
+    }
+
+    /// A 429 here is an answer, not a transient failure: waiting a few seconds can't clear a limit of minutes.
+    private func requestGarbageCollectionRun(runID: String, epoch: Int64, asOfSeq: Int64) async throws -> GarbageCollectionStart {
+        let body = SyncHTTPWireV1.StartGarbageCollectionRequest(epoch: epoch, runId: runID, asOfSeq: asOfSeq)
+        let response = try await send("blobs/garbage-collection", method: "POST", body: try JSONEncoder().encode(body), answersRateLimit: true)
+        if (200...299).contains(response.status) { return .started }
+        let refusal = try? JSONDecoder().decode(SyncHTTPWireV1.ErrorBody.self, from: response.data)
+        if refusal?.epochChanged == true || refusal?.error == "epoch_changed", let epoch = refusal?.epoch {
+            throw SyncTransportError.epochChanged(server: epoch)
+        }
+        switch (response.status, refusal?.error) {
+        case (_, "live_list_missing"?): return .liveListMissing
+        case (409, "garbage_collection_stale"?): return .stale
+        case (429, "garbage_collection_rate_limited"?):
+            return .rateLimited(retryAfterSeconds: try decode(SyncHTTPWireV1.GarbageCollectionRateLimited.self, response).retryAfterSeconds)
+        default: throw failure(response)
         }
     }
 
@@ -158,9 +185,25 @@ struct HTTPSyncTransport: SyncTransport {
                 throw SyncTransportError.epochChanged(server: epoch)
             }
             throw failure(response)
+        case 413:
+            if let quota = try? JSONDecoder().decode(SyncHTTPWireV1.QuotaExceeded.self, from: response.data), quota.error == "quota_exceeded" {
+                throw SyncTransportError.quotaExceeded(usedBytes: quota.usedBytes, limitBytes: quota.limitBytes)
+            }
+            throw failure(response)
         default:
             throw failure(response)
         }
+    }
+
+    /// A PUT of `data` to a presigned URL, with the signed headers and nothing else.
+    private func putToStorage(_ data: Data, url: String, headers: [String: String]) async throws -> Response {
+        guard let url = URL(string: url) else { throw SyncTransportError.unavailable }
+        var request = URLRequest(url: url)
+        request.httpMethod = "PUT"
+        for (field, value) in headers { request.setValue(value, forHTTPHeaderField: field) }
+        request.setValue(String(data.count), forHTTPHeaderField: "Content-Length")
+        request.httpBody = data
+        return try await perform(request, observesServerTime: false)
     }
 
     /// S3 answers a bad checksum or length (400, 411) or a signature that fails on a fresh URL (403) with a body that
@@ -180,7 +223,7 @@ struct HTTPSyncTransport: SyncTransport {
         var isTransient: Bool { status == 408 || status == 429 || (500...599).contains(status) }
     }
 
-    func send(_ path: String, method: String, query: [URLQueryItem] = [], body: Data? = nil) async throws -> Response {
+    func send(_ path: String, method: String, query: [URLQueryItem] = [], body: Data? = nil, answersRateLimit: Bool = false) async throws -> Response {
         var components = URLComponents(url: baseURL.appendingPathComponent(path), resolvingAgainstBaseURL: false)
         if !query.isEmpty { components?.queryItems = query }
         guard let url = components?.url else { throw SyncTransportError.refused(status: 0, message: "bad URL") }
@@ -194,12 +237,12 @@ struct HTTPSyncTransport: SyncTransport {
             request.httpBody = body
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         }
-        return try await perform(request, observesServerTime: true)
+        return try await perform(request, observesServerTime: true, answersRateLimit: answersRateLimit)
     }
 
     /// `request` is sent as is. Only a call to our API reads `serverTime` off the answer.
-    private func perform(_ request: URLRequest, observesServerTime: Bool) async throws -> Response {
-        try await withRetries {
+    private func perform(_ request: URLRequest, observesServerTime: Bool, answersRateLimit: Bool = false) async throws -> Response {
+        try await withRetries(answersRateLimit: answersRateLimit) {
             let sentAt = now()
             let (data, response) = try await session.data(for: request)
             guard let http = response as? HTTPURLResponse else { return nil }
@@ -225,8 +268,9 @@ struct HTTPSyncTransport: SyncTransport {
         }
     }
 
-    /// Runs `attempt` until it answers with something other than a transient status, at most `maxAttempts` times.
-    private func withRetries(_ attempt: () async throws -> Response?) async throws -> Response {
+    /// Runs `attempt` until it answers with something other than a transient status, at most `maxAttempts` times. A 429 counts
+    /// as the answer when `answersRateLimit` is set.
+    private func withRetries(answersRateLimit: Bool = false, _ attempt: () async throws -> Response?) async throws -> Response {
         var attempts = 0
         while true {
             attempts += 1
@@ -242,7 +286,7 @@ struct HTTPSyncTransport: SyncTransport {
             } catch {
                 Self.logger.error("Sync request failed: \(error)")
             }
-            if let result, !result.isTransient { return result }
+            if let result, !result.isTransient || (answersRateLimit && result.status == 429) { return result }
             guard attempts < maxAttempts else { throw SyncTransportError.unavailable }
             let pause = result?.retryAfter.map { min(max($0, 0), Self.maxRetryAfter) } ?? Double(500 << (attempts - 1)) / 1000
             try await sleep(.seconds(pause))

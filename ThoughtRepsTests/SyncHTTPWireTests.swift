@@ -26,10 +26,22 @@ struct SyncHTTPWireTests {
         "blob-download-urls-response": "1d4b7e1efeb476d51db2c2dca56657ccb1157a4f429c1c2a9491acc382f3c1d7",
         "push-pointer-request": "6f924da9f8e67955f5aa1b48ab8005ca41ca7251ec883a900abda4afdb9915f3",
         "push-pointer-missing-blob": "1df8fae7a2c5aecc069d72d87fd7e43e7cdf4e3efd96210e57380510bef7a32b",
+        "garbage-collection-live-list-url-request": "f8f222c7cee3115ccf01a6280e557389b9ebfe9a82824c4c6a476515cbef96d3",
+        "garbage-collection-live-list-url-response": "5bcfa1048f17d820c830e3776c8ad8ed4de3c2bbeb121933f98b8142104a80f3",
+        "garbage-collection-start-request": "782b66f422aced1754c16d5f2c69bbb16e855b5d6101e4019ee084c303dfe2e9",
+        "garbage-collection-start-response": "e1663a68c6bda366377e2ea561aa4775a3773b4c2d4070ae91ffda242ad1c82a",
+        "garbage-collection-stale": "d9a72a703b6298b4b6a8f03def0bc40bbe1086bc73e47d45255c425bf0a48262",
+        "garbage-collection-live-list-missing": "7a50fd11a3fa32bc7954e2b9f3bf6fdd49127a418a7a92a2364024f53e0f2cbd",
+        "garbage-collection-rate-limited": "41c7ca52b2e262425ceb60d8f09ea1153828ee102a8e66f73315a78e4c9fe09d",
+        "blob-quota-exceeded": "238738de2e9f00f8b45c4dafc2d2a615d55bc81d5db3e8502a1a76d0e9e3532c",
         "dev-create-vault": "af9876009c1900091aabef5efb03b618fc33be4418b501ff4912f74e842f2ec8",
         "dev-erase-vault": "022ca820a818a48eeb6528cbd2c92e97798008ccfeccb1bcf429e0addefb7042",
     ]
-    static let requestFixtures: Set<String> = ["push-request", "push-pointer-request", "blob-upload-urls-request", "blob-download-urls-request"]
+    static let requestFixtures: Set<String> = [
+        "push-request", "push-pointer-request", "blob-upload-urls-request", "blob-download-urls-request",
+        "garbage-collection-live-list-url-request", "garbage-collection-start-request",
+    ]
+    static let runID = "0123456789abcdef0123456789abcdef"
     static let serverTime: Int64 = 1_768_478_400_000
     static let blobA = "ERERERERERERERERERERERERERERERERERERERERERE"
     static let blobB = "IiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiI"
@@ -147,5 +159,48 @@ struct SyncHTTPWireTests {
 
         let missing = try decode(SyncHTTPWireV1.ErrorBody.self, "push-pointer-missing-blob")
         #expect(missing.error == "blob_missing" && missing.missingBlobs == [Self.blobC] && missing.conflicts == nil && missing.epochChanged == nil)
+    }
+
+    @Test func garbageCollectionRequestsAndResponses() throws {
+        let listURL = try decode(SyncHTTPWireV1.LiveListURLRequest.self, "garbage-collection-live-list-url-request")
+        #expect(listURL == SyncHTTPWireV1.LiveListURLRequest(epoch: 1, size: 88, sha256: "eM8Q83Na+fcfFU85+p70pzU33vxFqx9t5EpWcrBTr60="))
+        #expect(listURL.size % 44 == 0 && listURL.sha256.count == 44)
+        try expectReEncodesToTheFixture(listURL, "garbage-collection-live-list-url-request")
+
+        let target = try decode(SyncHTTPWireV1.LiveListURLResponse.self, "garbage-collection-live-list-url-response")
+        #expect(target.runId == Self.runID && target.serverTime == Self.serverTime)
+        #expect(target.headers == ["x-amz-checksum-sha256": listURL.sha256])
+        #expect(target.url.hasPrefix("https://") && target.url.contains("X-Amz-Signature="))
+        try expectReEncodesToTheFixture(target, "garbage-collection-live-list-url-response")
+
+        let start = try decode(SyncHTTPWireV1.StartGarbageCollectionRequest.self, "garbage-collection-start-request")
+        #expect(start == SyncHTTPWireV1.StartGarbageCollectionRequest(epoch: 1, runId: Self.runID, asOfSeq: 42))
+        try expectReEncodesToTheFixture(start, "garbage-collection-start-request")
+
+        let started = try decode(SyncHTTPWireV1.StartGarbageCollectionResponse.self, "garbage-collection-start-response")
+        #expect(started == SyncHTTPWireV1.StartGarbageCollectionResponse(runId: Self.runID, serverTime: Self.serverTime))
+        try expectReEncodesToTheFixture(started, "garbage-collection-start-response")
+    }
+
+    @Test func garbageCollectionAndQuotaRefusals() throws {
+        let stale = try decode(SyncHTTPWireV1.GarbageCollectionStale.self, "garbage-collection-stale")
+        #expect(stale == SyncHTTPWireV1.GarbageCollectionStale(error: "garbage_collection_stale", headSeq: 43, serverTime: Self.serverTime))
+        try expectReEncodesToTheFixture(stale, "garbage-collection-stale")
+
+        let missing = try decode(SyncHTTPWireV1.LiveListMissing.self, "garbage-collection-live-list-missing")
+        #expect(missing == SyncHTTPWireV1.LiveListMissing(error: "live_list_missing", serverTime: Self.serverTime))
+        try expectReEncodesToTheFixture(missing, "garbage-collection-live-list-missing")
+
+        let limited = try decode(SyncHTTPWireV1.GarbageCollectionRateLimited.self, "garbage-collection-rate-limited")
+        #expect(limited == SyncHTTPWireV1.GarbageCollectionRateLimited(error: "garbage_collection_rate_limited", retryAfterSeconds: 2400, serverTime: Self.serverTime))
+        try expectReEncodesToTheFixture(limited, "garbage-collection-rate-limited")
+
+        let quota = try decode(SyncHTTPWireV1.QuotaExceeded.self, "blob-quota-exceeded")
+        #expect(quota == SyncHTTPWireV1.QuotaExceeded(error: "quota_exceeded", usedBytes: 10_737_000_000, limitBytes: 10_737_418_240, serverTime: Self.serverTime))
+        try expectReEncodesToTheFixture(quota, "blob-quota-exceeded")
+
+        for name in ["garbage-collection-stale", "garbage-collection-live-list-missing", "garbage-collection-rate-limited", "blob-quota-exceeded"] {
+            #expect(try decode(SyncHTTPWireV1.ErrorBody.self, name).error != nil, "the transport reads the code through ErrorBody: \(name)")
+        }
     }
 }

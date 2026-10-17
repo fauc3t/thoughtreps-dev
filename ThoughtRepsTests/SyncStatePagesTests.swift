@@ -48,17 +48,16 @@ struct SyncStatePagesTests {
         #expect(try await state.outbox(limit: 10).first { $0.entity == .thought(id) }?.generation == 2)
     }
 
-    @Test func blobsAreRememberedAndAResetForgetsThemWithTheRest() async throws {
+    @Test func aResetForgetsTheCursorRecordsAndHeldRecords() async throws {
         let state = try await enabled()
-        try await state.markBlobsUploaded(["x", "y"])
-        #expect(try await state.uploadedBlobs(among: ["x", "z"]) == ["x"])
+        try await state.recordGarbageCollection(.started, at: Date(timeIntervalSince1970: 1_000))
         try await state.commit(PageCommit(records: [syncedRecord("a")], hold: [held("m")], cursor: 9, epoch: 3))
         try await state.resetSyncProgress()
         #expect(try await state.cursor() == 0)
         #expect(try await state.recordCount() == 0)
         #expect(try await state.heldCount() == 0)
         #expect(try await state.epoch() == nil)
-        #expect(try await state.uploadedBlobs(among: ["x"]).isEmpty)
+        #expect(try await state.garbageCollectionLog() == GarbageCollectionLog())
         #expect(try await state.configuredVaultID() == "vault-1")
     }
 

@@ -14,6 +14,7 @@ final class RaceLocal: SyncLocalStore, @unchecked Sendable {
     func blobBytes(_ refs: [BlobRef]) async throws -> [BlobRef: Data] { await maybe(); return try await inner.blobBytes(refs) }
     func missingBlobs(for contents: [ThoughtContentRecord]) async throws -> Set<BlobRef> { await maybe(); return try await inner.missingBlobs(for: contents) }
     func apply(_ batch: RemoteBatch, now: Date) async -> RemoteOutcome { await maybe(); return await inner.apply(batch, now: now) }
+    func allBlobRefs(limit: Int) async throws -> [BlobRef]? { await maybe(); return try await inner.allBlobRefs(limit: limit) }
     func reconcile() async { await maybe(); await inner.reconcile() }
 }
 

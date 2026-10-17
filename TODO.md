@@ -31,10 +31,7 @@
 - Dedupe `TagRow`/`UntaggedRow`, the interval menu, `theme.js`.
 - In-app font licenses screen (OFL for Archivo and Paper Mono).
 - Quick Capture (built; device checks left): the Action button, Siri ("New thought in Thought Reps") and Shortcuts open an empty editor from the Home Screen, from another app and on cold launch; with an editor already open the draft is kept. See `designs/Thought Reps — Quick Capture Spec.md`.
-- Sync (round 3d, client for server 3c; see `designs/Thought Reps — Sync Spec.md`, section 10): mirror the 8 new wire fixtures from `thoughtreps-aws` (`infra/lambda/sync/fixtures/wire-v1/`: garbage-collection-live-list-url-request/response, garbage-collection-start-request/response, garbage-collection-stale, garbage-collection-live-list-missing, garbage-collection-rate-limited, blob-quota-exceeded) byte for byte into `ThoughtRepsTests/Fixtures/SyncWireV1/`.
-- Sync (3d): from a device with complete state (cursor at head), upload the live list and start garbage collection runs; handle 429 rate limited, 409 stale and 503 busy (retry later, not an engine stop).
-- Sync (3d): handle 413 `quota_exceeded` on upload: hold the thought, don't stop the engine, surface it in the Sync lab.
-- Sync (3d): switch image upload existence checks from `hasBlob` (download-urls) to `upload-urls` so old blobs get refreshed.
+- Sync (3d leftovers): add garbage collection to the `THOUGHTREPS_SYNC_STATUS_FILE` snapshot; test the 413 `quota_exceeded` hold against a real server (fakes only so far); check the Sync lab rows ("Garbage collection", "Held for storage limit", "Storage") visually.
 - Sync: `local.snapshots()` still loads all content records of a 49-entry push batch at once (up to 16 MB each); bound it by bytes if large thoughts get common.
 - Sync: a file block changed in place (same block id, different file) keeps the old file on apply (`applyRemote`/import).
 - Sync (phase 4): "Needs a look" UI for conflict copies; the store methods (`keepCopy`/`keepOriginal`/`keepBoth`) exist but nothing calls them.

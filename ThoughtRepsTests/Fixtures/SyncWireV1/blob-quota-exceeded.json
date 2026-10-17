@@ -1,0 +1,6 @@
+{
+  "error": "quota_exceeded",
+  "usedBytes": 10737000000,
+  "limitBytes": 10737418240,
+  "serverTime": 1768478400000
+}

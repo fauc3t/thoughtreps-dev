@@ -19,6 +19,18 @@ struct SyncLabTests {
         #expect(SyncLabText.offset(-0.25) == "-0.250 s")
     }
 
+    @Test func garbageCollectionAndQuotaText() {
+        #expect(SyncLabText.garbageCollection(GarbageCollectionLog()) == "Never")
+        let t = Date(timeIntervalSince1970: 1_790_000_000)
+        let started = SyncLabText.garbageCollection(GarbageCollectionLog(lastStartedAt: t, retryNotBefore: nil, lastAttemptAt: t, lastOutcome: .started))
+        #expect(started.hasPrefix("Started at "))
+        let limited = SyncLabText.garbageCollection(GarbageCollectionLog(lastStartedAt: nil, retryNotBefore: t.addingTimeInterval(2400), lastAttemptAt: t, lastOutcome: .rateLimited))
+        #expect(limited.hasPrefix("Rate limited at ") && limited.contains(", not before "))
+        #expect(SyncLabText.garbageCollection(GarbageCollectionLog(lastStartedAt: nil, retryNotBefore: nil, lastAttemptAt: t, lastOutcome: .stale)).hasPrefix("Stale, will retry at "))
+        #expect(SyncLabText.quota(nil) == "Not exceeded")
+        #expect(SyncLabText.quota(SyncEngine.BlobQuota(usedBytes: 10_737_000_000, limitBytes: 10_737_418_240)).hasSuffix(" used"))
+    }
+
     @Test func checksTextCountsViolations() {
         #expect(SyncLabText.checks(violations: 0) == "Passed")
         #expect(SyncLabText.checks(violations: 1) == "Failed: 1 violation")

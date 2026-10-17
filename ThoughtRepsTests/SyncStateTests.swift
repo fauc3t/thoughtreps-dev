@@ -244,4 +244,32 @@ struct SyncStateTests {
         #expect(!state.isEnabled)
         #expect(!FileManager.default.fileExists(atPath: url.path))
     }
+
+    @Test func theGarbageCollectionLogIsKeptInTheFileAndSurvivesReopening() async throws {
+        let url = temporarySyncFile()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let t = Date(timeIntervalSince1970: 1_790_000_000)
+        let first = SyncState(location: .file(url))
+        try await first.configure(vaultID: "vault-1")
+        #expect(try await first.garbageCollectionLog() == GarbageCollectionLog())
+        try await first.recordGarbageCollection(.started, at: t)
+        try await first.recordGarbageCollection(.rateLimited, at: t.addingTimeInterval(60), retryAfter: 2400)
+        let reopened = SyncState(location: .file(url))
+        let log = try await reopened.garbageCollectionLog()
+        #expect(log.lastStartedAt == t && log.lastAttemptAt == t.addingTimeInterval(60) && log.lastOutcome == .rateLimited)
+        #expect(log.retryNotBefore == t.addingTimeInterval(2460))
+    }
+
+    @Test func aStartedRunClearsTheRateLimitAndAFailedOneKeepsTheLastStart() async throws {
+        let state = try await enabled()
+        let t = Date(timeIntervalSince1970: 1_790_000_000)
+        try await state.recordGarbageCollection(.rateLimited, at: t, retryAfter: 100)
+        #expect(try await state.garbageCollectionLog().retryNotBefore == t.addingTimeInterval(100))
+        try await state.recordGarbageCollection(.started, at: t.addingTimeInterval(200))
+        var log = try await state.garbageCollectionLog()
+        #expect(log.retryNotBefore == nil && log.lastStartedAt == t.addingTimeInterval(200))
+        try await state.recordGarbageCollection(.stale, at: t.addingTimeInterval(300))
+        log = try await state.garbageCollectionLog()
+        #expect(log.lastStartedAt == t.addingTimeInterval(200) && log.lastOutcome == .stale && log.lastAttemptAt == t.addingTimeInterval(300))
+    }
 }
