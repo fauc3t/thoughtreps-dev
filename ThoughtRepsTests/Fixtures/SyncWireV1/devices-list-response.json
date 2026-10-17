@@ -1,0 +1,20 @@
+{
+  "devices": [
+    {
+      "keyId": "AyBN6S4R/IxSgTm+QZBlkg64Pb/xpGY7vqRVqm6XAr0=",
+      "addedAt": 1768392000000,
+      "lastSeenAt": 1768478400000,
+      "nameSealed": "PD0+P0BBQkNERUZHSElKS0xNTk9QUVJTVFVWV1hZWltcXV5fYA==",
+      "current": true
+    },
+    {
+      "keyId": "WIYFv1Ni6LfxcMiykmxAYasJp9lcdMb/m0UUC2eH4N4=",
+      "addedAt": 1768474800000,
+      "lastSeenAt": 1768478340000,
+      "nameSealed": null,
+      "current": false
+    }
+  ],
+  "deviceLimit": 3,
+  "serverTime": 1768478400000
+}

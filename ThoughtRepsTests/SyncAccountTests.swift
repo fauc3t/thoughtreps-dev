@@ -3,6 +3,7 @@ import CryptoKit
 import DeviceCheck
 import Foundation
 import Testing
+import SwiftData
 import os
 @testable import ThoughtReps
 
@@ -143,7 +144,7 @@ fileprivate struct SyncAccountServiceTests {
 
         #expect(rig.http.paths == [
             "devices/app-attest/challenge", "devices/app-attest/register", "devices/app-attest/challenge",
-            "accounts/sign-in-with-apple", "vaults",
+            "accounts/sign-in-with-apple", "vaults", "vaults/vault-1/devices/key-1",
         ])
         let register = try #require(rig.http.requests(to: "register").first)
         let registered = try JSONDecoder().decode(SyncHTTPWireV1.DeviceRegisterRequest.self, from: try #require(register.httpBody))
@@ -181,7 +182,7 @@ fileprivate struct SyncAccountServiceTests {
         var rig = Rig(http: Self.account())
         rig.keys = MemoryKeyIdStore("key-9")
         _ = try await rig.service.signInAndCreateVault()
-        #expect(rig.http.paths == ["devices/app-attest/challenge", "accounts/sign-in-with-apple", "vaults"])
+        #expect(rig.http.paths == ["devices/app-attest/challenge", "accounts/sign-in-with-apple", "vaults", "vaults/vault-1/devices/key-9"])
         #expect(rig.attest.attestHashes.isEmpty)
     }
 
@@ -259,7 +260,7 @@ fileprivate struct SyncAccountServiceTests {
         guard case .vaultCreated = outcome else { Issue.record("\(outcome)"); return }
         #expect(rig.http.paths == [
             "devices/app-attest/challenge", "devices/app-attest/challenge", "devices/app-attest/register",
-            "accounts/sign-in-with-apple", "vaults",
+            "accounts/sign-in-with-apple", "vaults", "vaults/vault-1/devices/key-1",
         ])
         #expect(rig.http.requests(to: "sign-in-with-apple").first?.value(forHTTPHeaderField: "x-tr-key-id") == "key-1")
         #expect(try rig.keys.load() == "key-1")
@@ -349,6 +350,31 @@ struct KeychainSyncCredentialStoreTests {
 
         store.clear()
         #expect(try store.load() == nil)
+    }
+
+    @Test(arguments: [false, true]) func theLocalItemAndTheSynchronizableCopyCoexist(sameService: Bool) throws {
+        let localService = "com.thoughtreps.tests.local.\(UUID().uuidString)"
+        let local = KeychainSyncCredentialStore(service: localService)
+        let copy = KeychainSyncCredentialStore(
+            service: sameService ? localService : "com.thoughtreps.tests.icloud.\(UUID().uuidString)", synchronizable: true
+        )
+        defer { local.clear(); copy.clear() }
+        let first = SyncCredentials(vaultKey: fixedKey, vaultID: "vault-1", userID: "user-1")
+        let second = SyncCredentials(vaultKey: Data(repeating: 7, count: 32), vaultID: "vault-2", userID: "user-2")
+
+        try local.save(first)
+        try copy.save(second)
+        #expect(try local.load() == first)
+        #expect(try copy.load() == second)
+
+        local.clear()
+        #expect(try local.load() == nil)
+        #expect(try copy.load() == second, "clearing the local item leaves the copy")
+
+        try local.save(first)
+        copy.clear()
+        #expect(try copy.load() == nil)
+        #expect(try local.load() == first, "clearing the copy leaves the local item")
     }
 }
 
@@ -579,6 +605,321 @@ fileprivate struct HTTPSyncTransportSessionTests {
         let request = try #require(requests.first)
         #expect(request.value(forHTTPHeaderField: "Authorization") == "Dev s3cret")
         #expect(request.value(forHTTPHeaderField: "x-tr-vault") == "vault-1")
+    }
+}
+
+private let realVaultID = "k7P2mQx9LwT4vB8nRcZ1sA"
+
+@Suite("Sync joining a vault")
+fileprivate struct SyncJoinTests {
+    struct Rig {
+        var http: FakeHTTP
+        var attest = FakeAttest()
+        var keys = MemoryKeyIdStore()
+        var credentials = MemoryCredentials()
+        var iCloudStore = MemoryCredentials()
+        var iCloudOn = true
+
+        var iCloud: ICloudKeyCopy {
+            let copy = ICloudKeyCopy(store: iCloudStore, defaults: UserDefaults(suiteName: "SyncJoinTests.\(UUID().uuidString)")!)
+            if !iCloudOn { try? copy.setEnabled(false, local: nil) }
+            return copy
+        }
+
+        var service: SyncAccountService {
+            SyncAccountService(
+                api: SyncAccountAPI(baseURL: apiURL, transport: http, attest: attest, keyStore: keys), apple: FakeApple(),
+                credentials: credentials, makeVaultKey: { fixedKey }, makePairingSecret: { Data(0x10...0x2F) },
+                deviceName: { "Test Phone" }, now: { Date(timeIntervalSince1970: 1_768_478_410) }, iCloud: iCloud
+            )
+        }
+
+        func pairBody(_ index: Int = 0) throws -> Data {
+            try #require(http.requests(to: "pair")[index].httpBody)
+        }
+    }
+
+    static func pairing(vault: String = realVaultID, _ answer: @escaping @Sendable (Int) -> (Int, String) = { _ in (200, "") }) -> FakeHTTP {
+        FakeHTTP { request, number in
+            switch request.url!.lastPathComponent {
+            case "register": return (200, #"{"registered":true,"serverTime":1}"#)
+            case "pair":
+                let result = answer(number)
+                return result.1.isEmpty ? (200, accountJSON(vault: vault)) : result
+            default: return (500, "{}")
+            }
+        }
+    }
+
+    static func recoveryCode(vault: String = realVaultID) throws -> String {
+        try SyncRecoveryCode.encode(vaultID: vault, vaultKey: fixedKey)
+    }
+
+    @Test func aRecoveryCodeJoinsWithKAuthAndASealedName() async throws {
+        let rig = Rig(http: Self.pairing())
+        let joined = try await rig.service.joinWithRecoveryCode(try Self.recoveryCode())
+
+        #expect(rig.http.paths == ["devices/app-attest/challenge", "devices/app-attest/register", "devices/app-attest/challenge", "pair"])
+        let body = try rig.pairBody()
+        let sent = try JSONDecoder().decode(SyncHTTPWireV1.PairKAuthRequest.self, from: body)
+        let keys = try SyncKeys(vaultKey: fixedKey)
+        #expect(sent.vaultId == realVaultID && sent.challenge == "challenge-2" && sent.kAuth == keys.authBytes)
+        let sealed = try #require(sent.nameSealed)
+        #expect(try SyncCrypto.openDeviceName(sealed, vaultID: realVaultID, keyID: "key-1", keys: keys) == "Test Phone")
+        let keysInBody = try #require(try JSONSerialization.jsonObject(with: body) as? [String: Any]).keys
+        #expect(Set(keysInBody) == ["vaultId", "challenge", "kAuth", "nameSealed"])
+
+        let request = try #require(rig.http.requests(to: "pair").first)
+        #expect(request.value(forHTTPHeaderField: "x-tr-key-id") == "key-1")
+        #expect(request.value(forHTTPHeaderField: "Authorization") == nil)
+        #expect(rig.attest.assertionHashes == [Data(SHA256.hash(data: body))])
+
+        let held = SyncCredentials(vaultKey: fixedKey, vaultID: realVaultID, userID: "user-1")
+        #expect(joined == .init(credentials: held, session: SyncHTTPWireV1.SessionToken(token: "session-token", expiresAt: 1_768_482_000_000)))
+        #expect(try rig.credentials.load() == held)
+        #expect(try rig.iCloudStore.load() == held)
+    }
+
+    @Test func anInviteJoinsWithTheSecretAndNeverSendsTheKey() async throws {
+        let rig = Rig(http: Self.pairing())
+        let invite = SyncPairingInvite(vaultID: realVaultID, pairingSecret: Data(0x10...0x2F), vaultKey: fixedKey)
+        _ = try await rig.service.joinWithInvite(invite)
+        let body = try rig.pairBody()
+        let sent = try JSONDecoder().decode(SyncHTTPWireV1.PairInviteRequest.self, from: body)
+        #expect(sent.pairingSecret == Data(0x10...0x2F) && sent.vaultId == realVaultID)
+        let keysInBody = try #require(try JSONSerialization.jsonObject(with: body) as? [String: Any]).keys
+        #expect(Set(keysInBody) == ["vaultId", "challenge", "pairingSecret", "nameSealed"])
+        #expect(try rig.credentials.load()?.vaultKey == fixedKey)
+    }
+
+    @Test func aMistypedCodeSendsNothing() async throws {
+        let rig = Rig(http: Self.pairing())
+        var code = try Self.recoveryCode()
+        code.removeLast()
+        await #expect(throws: SyncRecoveryCode.Failure.wrongLength) { try await rig.service.joinWithRecoveryCode(code) }
+        let wrong = String(try Self.recoveryCode().dropLast()) + "0"
+        await #expect(throws: SyncRecoveryCode.Failure.badChecksum) { try await rig.service.joinWithRecoveryCode(wrong) }
+        #expect(rig.http.requests.isEmpty)
+        #expect(try rig.credentials.load() == nil)
+    }
+
+    @Test func theICloudCopyJoinsWithItsOwnVaultAndKeyButTheServersUserId() async throws {
+        var rig = Rig(http: Self.pairing())
+        rig.iCloudStore = MemoryCredentials(SyncCredentials(vaultKey: fixedKey, vaultID: realVaultID, userID: "stale-user"))
+        let joined = try await rig.service.joinFromICloudKeychain()
+        #expect(joined.credentials == SyncCredentials(vaultKey: fixedKey, vaultID: realVaultID, userID: "user-1"))
+        #expect(try rig.credentials.load() == joined.credentials)
+        let sent = try JSONDecoder().decode(SyncHTTPWireV1.PairKAuthRequest.self, from: try rig.pairBody())
+        #expect(sent.kAuth == (try SyncKeys(vaultKey: fixedKey)).authBytes)
+    }
+
+    @Test func noICloudCopyMeansNothingToJoin() async {
+        let rig = Rig(http: Self.pairing())
+        await #expect(throws: SyncAccountError.keychainFailed) { try await rig.service.joinFromICloudKeychain() }
+        #expect(rig.http.requests.isEmpty)
+    }
+
+    @Test func withTheSettingOffNothingIsWrittenToICloud() async throws {
+        var rig = Rig(http: Self.pairing())
+        rig.iCloudOn = false
+        _ = try await rig.service.joinWithRecoveryCode(try Self.recoveryCode())
+        #expect(try rig.credentials.load() != nil)
+        #expect(try rig.iCloudStore.load() == nil)
+    }
+
+    @Test func aFailedICloudWriteDoesNotFailTheJoin() async throws {
+        struct Failing: SyncCredentialStore {
+            func load() throws -> SyncCredentials? { nil }
+            func save(_ credentials: SyncCredentials) throws { throw KeychainStatusError(status: -25299) }
+            func clear() {}
+        }
+        let rig = Rig(http: Self.pairing())
+        var service = rig.service
+        service.iCloud = ICloudKeyCopy(store: Failing(), defaults: UserDefaults(suiteName: "SyncJoinTests.\(UUID().uuidString)")!)
+        _ = try await service.joinWithRecoveryCode(try Self.recoveryCode())
+        #expect(try rig.credentials.load() != nil)
+    }
+
+    @Test func refusalsGetPlainMessagesAndStoreNothing() async throws {
+        let cases: [(Int, String, String)] = [
+            (403, "pairing_failed", "Couldn't join: the code was wrong, expired or already used."),
+            (409, "device_limit", "This vault already has the most devices. Remove one first."),
+            (409, "device_in_vault", "This device already belongs to a vault. Forget its key or remove it from that vault first."),
+            (409, "too_many_invites", "Too many open invitations. Wait a few minutes for them to expire."),
+        ]
+        for (status, code, message) in cases {
+            let rig = Rig(http: Self.pairing { _ in (status, errorJSON(code)) })
+            do {
+                _ = try await rig.service.joinWithRecoveryCode(try Self.recoveryCode())
+                Issue.record("\(code) should throw")
+            } catch let error as SyncAccountError {
+                #expect(error == .server(status: status, code: code) && error.pairingMessage == message, "\(code)")
+            }
+            #expect(try rig.credentials.load() == nil && rig.iCloudStore.load() == nil, "\(code)")
+        }
+        #expect(SyncAccountError.offline.pairingMessage == "You're offline.")
+    }
+
+    @Test func aStaleDeviceKeyIsReplacedWithANewChallengeAndANameSealedForTheNewKey() async throws {
+        var rig = Rig(http: Self.pairing { $0 == 1 ? (401, errorJSON("assertion_invalid")) : (200, "") })
+        rig.keys = MemoryKeyIdStore("old")
+        _ = try await rig.service.joinWithRecoveryCode(try Self.recoveryCode())
+
+        let pairs = rig.http.requests(to: "pair")
+        #expect(pairs.map { $0.value(forHTTPHeaderField: "x-tr-key-id") } == ["old", "key-1"])
+        let first = try JSONDecoder().decode(SyncHTTPWireV1.PairKAuthRequest.self, from: try rig.pairBody(0))
+        let second = try JSONDecoder().decode(SyncHTTPWireV1.PairKAuthRequest.self, from: try rig.pairBody(1))
+        #expect(first.challenge != second.challenge)
+        let keys = try SyncKeys(vaultKey: fixedKey)
+        #expect(try SyncCrypto.openDeviceName(try #require(first.nameSealed), vaultID: realVaultID, keyID: "old", keys: keys) == "Test Phone")
+        #expect(try SyncCrypto.openDeviceName(try #require(second.nameSealed), vaultID: realVaultID, keyID: "key-1", keys: keys) == "Test Phone")
+        #expect(throws: SyncCrypto.Failure.decryptionFailed) {
+            try SyncCrypto.openDeviceName(try #require(second.nameSealed), vaultID: realVaultID, keyID: "old", keys: keys)
+        }
+    }
+
+    @Test func anAnswerForAnotherVaultIsRefused() async throws {
+        let rig = Rig(http: Self.pairing(vault: "someone-else"))
+        await #expect(throws: SyncAccountError.invalidResponse) { try await rig.service.joinWithRecoveryCode(try Self.recoveryCode()) }
+        #expect(try rig.credentials.load() == nil)
+    }
+
+    @Test func aNewVaultAlsoGetsTheICloudCopy() async throws {
+        let rig = Rig(http: SyncAccountServiceTests.account())
+        _ = try await rig.service.signInAndCreateVault()
+        let held = SyncCredentials(vaultKey: fixedKey, vaultID: "vault-1", userID: "user-1")
+        #expect(try rig.credentials.load() == held)
+        #expect(try rig.iCloudStore.load() == held)
+    }
+
+    // MARK: Invitations
+
+    static let held = SyncCredentials(vaultKey: fixedKey, vaultID: realVaultID, userID: "user-1")
+    static let inviteJSON = #"{"expiresAt":1768479000000,"serverTime":1768478400000}"#
+
+    @Test func anInvitationCarriesTheSecretHashAndCountsDownOnTheLocalClock() async throws {
+        let http = FakeHTTP { _, _ in (200, Self.inviteJSON) }
+        let rig = Rig(http: http)
+        let invitation = try await rig.service.createInvitation(credentials: Self.held, session: FakeSessionSource())
+
+        let request = try #require(http.requests(to: "invites").first)
+        #expect(http.paths == ["vaults/\(realVaultID)/invites"])
+        #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer t1" && request.value(forHTTPHeaderField: "x-tr-key-id") == nil)
+        let sent = try JSONDecoder().decode(SyncHTTPWireV1.CreateInviteRequest.self, from: try #require(request.httpBody))
+        #expect(sent.secretHash == "icdGBFLt3/EZ/qBBnnhcdN4v+xOdvnQyOspKAeGYpdw=")
+        #expect(invitation.invite == SyncPairingInvite(vaultID: realVaultID, pairingSecret: Data(0x10...0x2F), vaultKey: fixedKey))
+        #expect(invitation.invite.payload == SyncPairingInviteTests.golden)
+        // The device's clock runs 10 s ahead of the server's, so the 10 minutes the server grants end 10 s later here.
+        #expect(invitation.expiresAt == Date(timeIntervalSince1970: 1_768_479_010))
+    }
+
+    @Test func aRejectedSessionIsRefreshedOnce() async throws {
+        let rejecting = FakeHTTP { request, _ in
+            request.value(forHTTPHeaderField: "Authorization") == "Bearer t1" ? (401, errorJSON("unauthorized")) : (200, Self.inviteJSON)
+        }
+        let source = FakeSessionSource()
+        let rig = Rig(http: rejecting)
+        _ = try await rig.service.createInvitation(credentials: Self.held, session: source)
+        #expect(source.rejected == ["t1"])
+        #expect(rejecting.requests(to: "invites").map { $0.value(forHTTPHeaderField: "Authorization") } == ["Bearer t1", "Bearer t2"])
+    }
+
+    @Test func tooManyOpenInvitesIsAPlainMessage() async throws {
+        let rig = Rig(http: FakeHTTP { _, _ in (409, errorJSON("too_many_invites")) })
+        do {
+            _ = try await rig.service.createInvitation(credentials: Self.held, session: FakeSessionSource())
+            Issue.record("should throw")
+        } catch let error as SyncAccountError {
+            #expect(error.code == .tooManyInvites && error.pairingMessage.hasPrefix("Too many open invitations"))
+        }
+    }
+
+    // MARK: Naming the first device
+
+    static func creating(namePut: @escaping @Sendable (URLRequest) -> (Int, String)) -> FakeHTTP {
+        FakeHTTP { request, _ in
+            if request.httpMethod == "PUT" { return namePut(request) }
+            switch request.url!.lastPathComponent {
+            case "register": return (200, #"{"registered":true,"serverTime":1}"#)
+            case "sign-in-with-apple": return (200, accountJSON(vault: nil))
+            case "vaults": return (200, #"{"vaultId":"vault-1","epoch":1,"session":{"token":"vault-token","expiresAt":1768482000000},"serverTime":1}"#)
+            default: return (500, "{}")
+            }
+        }
+    }
+
+    @Test func aNewVaultsFirstDeviceGetsItsSealedNameRightAfterCreation() async throws {
+        let http = Self.creating { _ in (200, #"{"nameSealed":null,"serverTime":1}"#) }
+        var rig = Rig(http: http)
+        rig.keys = MemoryKeyIdStore("a+b/c=")
+        _ = try await rig.service.signInAndCreateVault()
+
+        let put = try #require(http.requests.last)
+        #expect(put.httpMethod == "PUT" && put.url?.path.hasSuffix("/vaults/vault-1/devices/a-b_c") == true)
+        #expect(put.value(forHTTPHeaderField: "Authorization") == "Bearer vault-token" && put.value(forHTTPHeaderField: "x-tr-key-id") == nil)
+        let sent = try JSONDecoder().decode(SyncHTTPWireV1.DeviceNameRequest.self, from: try #require(put.httpBody))
+        let keys = try SyncKeys(vaultKey: fixedKey)
+        #expect(try SyncCrypto.openDeviceName(try #require(sent.nameSealed), vaultID: "vault-1", keyID: "a+b/c=", keys: keys) == "Test Phone")
+        let create = try #require(http.requests(to: "vaults").first)
+        let created = try JSONDecoder().decode(SyncHTTPWireV1.CreateAccountVaultRequest.self, from: try #require(create.httpBody))
+        #expect(created.nameSealed == nil, "the vault id isn't known yet, so creation carries no name")
+    }
+
+    @Test func aFailedNamingDoesNotFailVaultCreation() async throws {
+        let rig = Rig(http: Self.creating { _ in (403, errorJSON("forbidden")) })
+        let outcome = try await rig.service.signInAndCreateVault()
+        guard case .vaultCreated = outcome else { Issue.record("\(outcome)"); return }
+        #expect(try rig.credentials.load() != nil)
+    }
+
+    // MARK: Erase after joining
+
+    final class Events {
+        var log: [String] = []
+    }
+
+    @MainActor
+    @Test func theEraseRunsAfterAPairSucceedsAndBeforeSyncStarts() async throws {
+        let rig = Rig(http: Self.pairing())
+        let events = Events()
+        let message = await SyncDebugSession.join(
+            .recoveryCode(try Self.recoveryCode()), container: try ModelContainer.thoughtReps(inMemory: true), service: rig.service,
+            beforeStart: {
+                events.log.append("erase, key saved: \((try? rig.credentials.load()) != nil)")
+                return true
+            },
+            start: { joined in events.log.append("start \(joined.credentials.vaultID)") }
+        )
+        #expect(events.log == ["erase, key saved: true", "start \(realVaultID)"])
+        #expect(message == "Joined the vault.")
+    }
+
+    @MainActor
+    @Test func aFailedPairErasesNothingAndStartsNothing() async throws {
+        let rig = Rig(http: Self.pairing { _ in (403, errorJSON("pairing_failed")) })
+        let events = Events()
+        let message = await SyncDebugSession.join(
+            .recoveryCode(try Self.recoveryCode()), container: try ModelContainer.thoughtReps(inMemory: true), service: rig.service,
+            beforeStart: { events.log.append("erase"); return true },
+            start: { _ in events.log.append("start") }
+        )
+        #expect(events.log.isEmpty)
+        #expect(message == "Couldn't join: the code was wrong, expired or already used.")
+        #expect(try rig.credentials.load() == nil)
+    }
+
+    @MainActor
+    @Test func aFailedEraseKeepsTheKeyAndDoesNotStartSync() async throws {
+        let rig = Rig(http: Self.pairing())
+        let events = Events()
+        let message = await SyncDebugSession.join(
+            .recoveryCode(try Self.recoveryCode()), container: try ModelContainer.thoughtReps(inMemory: true), service: rig.service,
+            beforeStart: { events.log.append("erase"); return false },
+            start: { _ in events.log.append("start") }
+        )
+        #expect(events.log == ["erase"])
+        #expect(message.contains("couldn't erase") && message.contains("sync did not start"))
+        #expect(try rig.credentials.load()?.vaultID == realVaultID)
     }
 }
 #endif

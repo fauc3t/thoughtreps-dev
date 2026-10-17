@@ -17,22 +17,31 @@ protocol SyncCredentialStore: Sendable {
     func clear()
 }
 
-/// A single generic-password item that never leaves this device: not synchronizable (so not in iCloud Keychain) and only
-/// readable after the first unlock, and not restored onto another device from a backup.
+/// A single generic-password item. The default never leaves this device: not synchronizable (so not in iCloud Keychain) and
+/// only readable after the first unlock, and not restored onto another device from a backup. The `synchronizable` one is the
+/// optional iCloud Keychain copy, a separate item (`ICloudKeyCopy`) that the engine never reads.
 struct KeychainSyncCredentialStore: SyncCredentialStore {
+    static let iCloudService = "com.thoughtreps.sync.credentials.icloud"
+
     private static let log = Logger(subsystem: "com.thoughtreps", category: "KeychainSyncCredentialStore")
     private let service: String
+    private let synchronizable: Bool
     private let account = "credentials"
 
-    init(service: String = "com.thoughtreps.sync.credentials") {
+    init(service: String = "com.thoughtreps.sync.credentials", synchronizable: Bool = false) {
         self.service = service
+        self.synchronizable = synchronizable
+    }
+
+    static func iCloudCopy() -> KeychainSyncCredentialStore {
+        KeychainSyncCredentialStore(service: iCloudService, synchronizable: true)
     }
 
     private var query: [String: Any] {
         [kSecClass as String: kSecClassGenericPassword,
          kSecAttrService as String: service,
          kSecAttrAccount as String: account,
-         kSecAttrSynchronizable as String: false]
+         kSecAttrSynchronizable as String: synchronizable]
     }
 
     func load() throws -> SyncCredentials? {
@@ -53,7 +62,7 @@ struct KeychainSyncCredentialStore: SyncCredentialStore {
     func save(_ credentials: SyncCredentials) throws {
         let attributes: [String: Any] = [
             kSecValueData as String: try JSONEncoder().encode(credentials),
-            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
+            kSecAttrAccessible as String: synchronizable ? kSecAttrAccessibleAfterFirstUnlock : kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
         ]
         var status = SecItemAdd(query.merging(attributes) { $1 } as CFDictionary, nil)
         if status == errSecDuplicateItem {
@@ -70,12 +79,59 @@ struct KeychainSyncCredentialStore: SyncCredentialStore {
     }
 }
 
+/// The optional copy of the vault key in iCloud Keychain, so a new device of the same Apple account can join. The local item
+/// stays what the engine reads; this one is only written when the person leaves the setting on (the default), and deleted
+/// when they turn it off.
+struct ICloudKeyCopy: @unchecked Sendable {
+    static let defaultsKey = "syncSaveKeyToICloudKeychain"
+
+    var store: SyncCredentialStore
+    var defaults: UserDefaults
+
+    init(store: SyncCredentialStore = KeychainSyncCredentialStore.iCloudCopy(), defaults: UserDefaults = .standard) {
+        self.store = store
+        self.defaults = defaults
+    }
+
+    var isEnabled: Bool {
+        defaults.object(forKey: Self.defaultsKey) as? Bool ?? true
+    }
+
+    /// Turning it on writes `local` if there is a key; turning it off deletes the copy.
+    func setEnabled(_ enabled: Bool, local: SyncCredentials?) throws {
+        defaults.set(enabled, forKey: Self.defaultsKey)
+        if enabled {
+            if let local { try store.save(local) }
+        } else {
+            store.clear()
+        }
+    }
+
+    /// Writes the copy if the setting is on. A failure is the caller's to log: the vault works without the copy.
+    func saveIfEnabled(_ credentials: SyncCredentials) throws {
+        guard isEnabled else { return }
+        try store.save(credentials)
+    }
+
+    func load() throws -> SyncCredentials? {
+        try store.load()
+    }
+
+    func delete() {
+        store.clear()
+    }
+}
+
 extension SyncKeys {
     /// What `POST /vaults` takes as `kAuthVerifier`: the standard base64 of the SHA-256 of K_auth's 32 raw bytes. The server
     /// checks the same hash against the K_auth a joining device proves it holds.
     var authVerifier: String {
-        let raw = auth.withUnsafeBytes { Data($0) }
-        return Data(SHA256.hash(data: raw)).base64EncodedString()
+        Data(SHA256.hash(data: authBytes)).base64EncodedString()
+    }
+
+    /// K_auth's 32 raw bytes: what a joining device sends to `/pair` as `kAuth`.
+    var authBytes: Data {
+        auth.withUnsafeBytes { Data($0) }
     }
 }
 
@@ -91,6 +147,9 @@ enum SyncAccountError: Error, Equatable {
         case forbidden
         case deviceInVault = "device_in_vault"
         case unauthorized
+        case pairingFailed = "pairing_failed"
+        case deviceLimit = "device_limit"
+        case tooManyInvites = "too_many_invites"
     }
 
     case unsupported
@@ -117,6 +176,22 @@ enum SyncAccountError: Error, Equatable {
         if self == .staleKey { return true }
         if case .server(401, _) = self, code == .assertionInvalid { return true }
         return false
+    }
+
+    /// What the Sync lab says about a failed join or invite.
+    var pairingMessage: String {
+        switch code {
+        case .pairingFailed: "Couldn't join: the code was wrong, expired or already used."
+        case .deviceLimit: "This vault already has the most devices. Remove one first."
+        case .deviceInVault: "This device already belongs to a vault. Forget its key or remove it from that vault first."
+        case .tooManyInvites: "Too many open invitations. Wait a few minutes for them to expire."
+        default:
+            switch self {
+            case .offline: "You're offline."
+            case .unsupported: "App Attest isn't available on this device."
+            default: "Failed: \(self)"
+            }
+        }
     }
 
     static func from(status: Int, body: Data) -> SyncAccountError {

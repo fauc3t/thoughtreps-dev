@@ -52,11 +52,30 @@ struct SyncHTTPWireTests {
         "error-identity-token-invalid": "d44139cce761ae57fd37c7632beb6a18ab658b0ebaa02273175d32094f1c9984",
         "error-forbidden": "bb94e9beb6d32c2d3c0c62b305aa1c38ba88f74366047e993782d9ce1a0e4ca1",
         "error-device-in-vault": "5ad9e4a97f43fb787125baaf2f1c28506b49a736fc33742a88daa2a6db686ea4",
+        "invite-create-request": "4031175c457b90df84b149c882a2e51f2b19c5407f2033b3e79f90d3c6068c59",
+        "invite-create-response": "37e1ad2ded1940749e882ae727cfe11b3531453c635ce60e377f346f83fad23c",
+        "pair-invite-request": "aadb34dde7d5c7086c4e5798f7529fe859da965faece5b9e753ea4258158df01",
+        "pair-k-auth-request": "c9d51a703fef7297aa0f19a0749508520e5a210704280aa7e476b1745c4228ed",
+        "pair-response": "bcdeb51b4aba4f77771f627017df08c87746f476fd4ae2feed0f036a437b9dd9",
+        "vault-create-named-request": "aa229cbcbd15e461ed440d13d20f34cc849da64899a8639dd61942c3de9b9d2b",
+        "devices-list-response": "b0fad1f7b17eae8d5f15265fdd24ae66ca87da49b80e5eb18d92bb682798fab0",
+        "device-rename-request": "8dac3187719b9e32faff5a8d3c875a7fe834df0bf4c2ab76efcf77dfe065897c",
+        "device-rename-response": "461ba3ae68609eca1a6f9d2c72a359e48e4475a38d875bad389ac87faf0efeb7",
+        "device-remove-response": "42275133fba27363c6fd0dd874733f7b23574361325952cd5fee777db6c01a90",
+        "vault-erase-request": "0bd6ba933206840b8114d4ca742ebdd38164dbe221bd88afdb247d69324ebb0c",
+        "vault-erase-response": "022ca820a818a48eeb6528cbd2c92e97798008ccfeccb1bcf429e0addefb7042",
+        "account-delete-response": "49010739d882f9ca5eaa36669e9ff691a6771ded8867bef1cb20598769d5191f",
+        "error-device-limit": "cdf01a057e1f06c7f2efb20cbb65371a27a6d536d11d337a42269dfa932baf07",
+        "error-pairing-failed": "391d0017ad2d383e2e4b560b34c3bd1e87479ebed6cc16e39a8ca898e64e8cc4",
+        "error-too-many-invites": "1ce07b268c7e17039677054b6f8e4fa5d31d18d8d113ae9d8b54b427dbe4f349",
+        "error-reauthentication-required": "c7e922811c101a2b12f6b98cae0f89417bb0b60abcbf9338e3cc15388498a076",
     ]
     static let requestFixtures: Set<String> = [
         "push-request", "push-pointer-request", "blob-upload-urls-request", "blob-download-urls-request",
         "garbage-collection-live-list-url-request", "garbage-collection-start-request",
         "device-register-request", "sign-in-with-apple-request", "session-request", "vault-create-request",
+        "invite-create-request", "pair-invite-request", "pair-k-auth-request", "vault-create-named-request",
+        "device-rename-request", "vault-erase-request",
     ]
     static let runID = "0123456789abcdef0123456789abcdef"
     static let serverTime: Int64 = 1_768_478_400_000
@@ -138,7 +157,7 @@ struct SyncHTTPWireTests {
         }
     }
 
-    func expectReEncodesToTheFixture<T: Codable>(_ value: T, _ name: String) throws {
+    func expectReEncodesToTheFixture<T: Encodable>(_ value: T, _ name: String) throws {
         let encoded = try JSONSerialization.jsonObject(with: JSONEncoder().encode(value)) as? NSDictionary
         let fixture = try JSONSerialization.jsonObject(with: bytes(name)) as? NSDictionary
         #expect(encoded != nil && encoded == fixture, "\(name)")
@@ -266,12 +285,63 @@ struct SyncHTTPWireTests {
             ("error-vault-exists", .vaultExists), ("error-assertion-invalid", .assertionInvalid),
             ("error-challenge-invalid", .challengeInvalid), ("error-attestation-invalid", .attestationInvalid),
             ("error-identity-token-invalid", .identityTokenInvalid), ("error-forbidden", .forbidden),
-            ("error-device-in-vault", .deviceInVault),
+            ("error-device-in-vault", .deviceInVault), ("error-pairing-failed", .pairingFailed),
+            ("error-device-limit", .deviceLimit), ("error-too-many-invites", .tooManyInvites),
         ]
         for (name, code) in cases {
             let body = try decode(SyncHTTPWireV1.ErrorBody.self, name)
             #expect(body.error == code.rawValue && body.message?.isEmpty == false, "\(name)")
             #expect(SyncAccountError.from(status: 409, body: try bytes(name)).code == code, "\(name)")
         }
+        let reauthentication = try decode(SyncHTTPWireV1.ErrorBody.self, "error-reauthentication-required")
+        #expect(reauthentication.error == "reauthentication_required" && reauthentication.serverTime == Self.serverTime)
+    }
+
+    @Test func pairingAndInvitations() throws {
+        let invite = try decode(SyncHTTPWireV1.PairInviteRequest.self, "pair-invite-request")
+        #expect(invite.vaultId == Self.accountVaultID && invite.challenge == Self.challenge)
+        #expect(invite.pairingSecret == Data(0x10...0x2F) && invite.nameSealed?.count == 37)
+        try expectReEncodesToTheFixture(invite, "pair-invite-request")
+        try expectReEncodesToTheFixture(SyncHTTPWireV1.PairRequest.invite(invite), "pair-invite-request")
+
+        let proof = try decode(SyncHTTPWireV1.PairKAuthRequest.self, "pair-k-auth-request")
+        #expect(proof.vaultId == Self.accountVaultID && proof.challenge == Self.challenge && proof.kAuth.count == 32 && proof.nameSealed == nil)
+        try expectReEncodesToTheFixture(proof, "pair-k-auth-request")
+        try expectReEncodesToTheFixture(SyncHTTPWireV1.PairRequest.kAuth(proof), "pair-k-auth-request")
+
+        let paired = try decode(SyncHTTPWireV1.AccountSession.self, "pair-response")
+        #expect(paired.userId == Self.userID && paired.vaultId == Self.accountVaultID && paired.session.expiresAt == 1_768_482_000_000)
+
+        let create = try decode(SyncHTTPWireV1.CreateInviteRequest.self, "invite-create-request")
+        #expect(create.secretHash == Data(SHA256.hash(data: invite.pairingSecret)).base64EncodedString())
+        try expectReEncodesToTheFixture(create, "invite-create-request")
+        #expect(try decode(SyncHTTPWireV1.CreateInviteResponse.self, "invite-create-response")
+            == SyncHTTPWireV1.CreateInviteResponse(expiresAt: 1_768_479_000_000, serverTime: Self.serverTime))
+    }
+
+    @Test func aVaultCreatedWithANameSealed() throws {
+        let request = try decode(SyncHTTPWireV1.CreateAccountVaultRequest.self, "vault-create-named-request")
+        #expect(request.kAuthVerifier == "GMVd8zyX+0ku7I1tZ/45wG8lcb1uUKMVm215Vjd8hUY=" && request.nameSealed?.count == 37)
+        try expectReEncodesToTheFixture(request, "vault-create-named-request")
+    }
+
+    @Test func devicesEraseAndAccountDeletion() throws {
+        let list = try decode(SyncHTTPWireV1.DevicesList.self, "devices-list-response")
+        #expect(list.deviceLimit == 3 && list.devices.map(\.current) == [true, false] && list.devices.map { $0.nameSealed == nil } == [false, true])
+        #expect(list.devices[0].keyId == "AyBN6S4R/IxSgTm+QZBlkg64Pb/xpGY7vqRVqm6XAr0=" && list.devices[0].addedAt == 1_768_392_000_000)
+
+        let rename = try decode(SyncHTTPWireV1.DeviceNameRequest.self, "device-rename-request")
+        try expectReEncodesToTheFixture(rename, "device-rename-request")
+        let cleared = try JSONSerialization.jsonObject(with: JSONEncoder().encode(SyncHTTPWireV1.DeviceNameRequest(nameSealed: nil))) as? NSDictionary
+        #expect(cleared == ["nameSealed": NSNull()], "a cleared name is sent as an explicit null")
+        let renamed = try decode(SyncHTTPWireV1.DeviceNameResponse.self, "device-rename-response")
+        #expect(renamed.nameSealed == rename.nameSealed && renamed.serverTime == Self.serverTime)
+
+        #expect(try decode(SyncHTTPWireV1.DeviceRemoved.self, "device-remove-response") == SyncHTTPWireV1.DeviceRemoved(removed: true, serverTime: Self.serverTime))
+        let erase = try decode(SyncHTTPWireV1.EraseVaultRequest.self, "vault-erase-request")
+        #expect(erase == SyncHTTPWireV1.EraseVaultRequest(epoch: 1))
+        try expectReEncodesToTheFixture(erase, "vault-erase-request")
+        #expect(try decode(SyncHTTPWireV1.EraseVault.self, "vault-erase-response") == SyncHTTPWireV1.EraseVault(epoch: 2, serverTime: Self.serverTime))
+        #expect(try decode(SyncHTTPWireV1.AccountDeleted.self, "account-delete-response") == SyncHTTPWireV1.AccountDeleted(deleted: true, serverTime: Self.serverTime))
     }
 }

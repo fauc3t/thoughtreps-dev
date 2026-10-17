@@ -1,14 +1,15 @@
 import CryptoKit
 import Foundation
 
-/// The four keys derived from the 32-byte vault key K (HKDF-SHA256). The `info` strings are versioned
-/// so a key can be re-derived differently later without touching the others. All four are permanent;
+/// The five keys derived from the 32-byte vault key K (HKDF-SHA256). The `info` strings are versioned
+/// so a key can be re-derived differently later without touching the others. All are permanent;
 /// `auth`'s becomes part of the server protocol once phase 2 derives the verifier from it.
 struct SyncKeys: Sendable {
     let record: SymmetricKey
     let blob: SymmetricKey
     let index: SymmetricKey
     let auth: SymmetricKey
+    let deviceName: SymmetricKey
 
     static let keyLength = 32
 
@@ -26,6 +27,7 @@ struct SyncKeys: Sendable {
         blob = derive("thoughtreps.sync.v1.blob")
         index = derive("thoughtreps.sync.v1.index")
         auth = derive("thoughtreps.sync.v1.auth")
+        deviceName = derive("thoughtreps.sync.v1.device-name")
     }
 
     /// The opaque, deterministic key the server stores a record under: HMAC-SHA256 of the type and entity
@@ -75,6 +77,7 @@ enum SyncCrypto {
     static let magic = Data("TRS1".utf8)
     static let blobMagic = Data("TRSB".utf8)
     static let pointerMagic = Data("TRP1".utf8)
+    static let deviceNameMagic = Data("TRSN".utf8)
     static let currentKeyGeneration: UInt8 = 1
     /// Bumped with any change that lets this build read what an older one parked (see `SyncEngine.Configuration.readerVersion`).
     static let readerVersion = 1
@@ -187,6 +190,59 @@ enum SyncCrypto {
         }
     }
 
+    /// Magic, nonce and tag.
+    static let deviceNameOverheadBytes = 4 + 12 + 16
+    /// What the server accepts for a sealed device name.
+    static let maxSealedDeviceNameBytes = 256
+
+    /// A device name sealed for the vault's other devices: `"TRSN"` | nonce (12) | ciphertext | tag (16), sealed with the
+    /// device-name key. AAD: `lp(vaultId) | lp(keyId)`, where `keyId` is the device's App Attest key id as the server knows
+    /// it (standard base64), so a name can't be moved to another device or vault. A name too long to fit is cut on a
+    /// character boundary.
+    static func sealDeviceName(_ name: String, vaultID: String, keyID: String, keys: SyncKeys, nonce: AES.GCM.Nonce? = nil) throws -> Data {
+        let box = try AES.GCM.seal(
+            truncatedForSealing(name), using: keys.deviceName, nonce: nonce, authenticating: deviceNameAAD(vaultID: vaultID, keyID: keyID)
+        )
+        var frame = Data(capacity: maxSealedDeviceNameBytes)
+        frame.append(deviceNameMagic)
+        frame.append(contentsOf: box.nonce)
+        frame.append(box.ciphertext)
+        frame.append(box.tag)
+        return frame
+    }
+
+    static func openDeviceName(_ frame: Data, vaultID: String, keyID: String, keys: SyncKeys) throws -> String {
+        let frame = Data(frame)
+        try checkMagic(frame, expected: deviceNameMagic)
+        guard frame.count >= deviceNameOverheadBytes else { throw Failure.badFormat }
+        let plain: Data
+        do {
+            let box = try AES.GCM.SealedBox(combined: frame.dropFirst(4))
+            plain = try AES.GCM.open(box, using: keys.deviceName, authenticating: deviceNameAAD(vaultID: vaultID, keyID: keyID))
+        } catch {
+            throw Failure.decryptionFailed
+        }
+        guard let name = String(data: plain, encoding: .utf8) else { throw Failure.badFormat }
+        return name
+    }
+
+    static func deviceNameAAD(vaultID: String, keyID: String) -> Data {
+        lengthPrefixed(vaultID, keyID)
+    }
+
+    private static func truncatedForSealing(_ name: String) -> Data {
+        let limit = maxSealedDeviceNameBytes - deviceNameOverheadBytes
+        var bytes = 0
+        var kept = ""
+        for character in name {
+            let size = String(character).utf8.count
+            if bytes + size > limit { break }
+            bytes += size
+            kept.append(character)
+        }
+        return Data(kept.utf8)
+    }
+
     static func pointer(toBlob name: String) -> Data {
         pointerMagic + Data(name.utf8)
     }
@@ -197,6 +253,16 @@ enum SyncCrypto {
         let name = payload.dropFirst(pointerMagic.count)
         guard name.allSatisfy({ isBase64URL($0) }) else { return nil }
         return String(decoding: name, as: UTF8.self)
+    }
+
+    /// The bytes of canonical base64url without padding; nil for anything else (standard-alphabet characters, padding,
+    /// whitespace, or leftover bits that a re-encode wouldn't reproduce).
+    static func base64URLDecode(_ text: String) -> Data? {
+        guard text.utf8.allSatisfy({ isBase64URL($0) }) else { return nil }
+        var padded = text.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
+        padded += String(repeating: "=", count: (4 - padded.count % 4) % 4)
+        guard let data = Data(base64Encoded: padded), base64URL(data) == text else { return nil }
+        return data
     }
 
     static func base64URL(_ data: Data) -> String {
@@ -222,7 +288,7 @@ enum SyncCrypto {
         return data
     }
 
-    private static func lengthPrefixed(_ fields: String...) -> Data {
+    static func lengthPrefixed(_ fields: String...) -> Data {
         var data = Data()
         for field in fields {
             let bytes = Data(field.utf8)
@@ -236,7 +302,7 @@ enum SyncCrypto {
     private static func checkMagic(_ frame: Data, expected: Data) throws {
         let prefix = frame.prefix(4)
         if prefix == expected { return }
-        let known = [magic, blobMagic, pointerMagic]
+        let known = [magic, blobMagic, pointerMagic, deviceNameMagic]
         guard prefix.count == 4, prefix.starts(with: Data("TR".utf8)), !known.contains(prefix) else { throw Failure.badFormat }
         throw Failure.unrecognizedMagic
     }

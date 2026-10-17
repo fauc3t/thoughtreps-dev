@@ -235,12 +235,102 @@ enum SyncHTTPWireV1 {
     /// K_auth.
     struct CreateAccountVaultRequest: Codable, Equatable {
         var kAuthVerifier: String
+        /// The sealed device name (`SyncCrypto.sealDeviceName`), opaque to the server; at most 256 bytes.
+        var nameSealed: Data?
     }
 
     struct CreateAccountVaultResponse: Codable, Equatable {
         var vaultId: String
         var epoch: Int64
         var session: SessionToken
+        var serverTime: Int64?
+    }
+
+    /// `POST /vaults/{id}/invites`, with the bearer session. `secretHash` is the standard base64 of the SHA-256 of the decoded
+    /// pairing secret (16 to 64 bytes); the server never sees the secret until `/pair`.
+    struct CreateInviteRequest: Codable, Equatable {
+        var secretHash: String
+    }
+
+    /// `expiresAt` is ms since the epoch on the server's clock.
+    struct CreateInviteResponse: Codable, Equatable {
+        var expiresAt: Int64
+        var serverTime: Int64?
+    }
+
+    /// `POST /pair` proving possession of an invite's secret. Signed like sign-in; the answer is an `AccountSession` that
+    /// always has a vault.
+    struct PairInviteRequest: Codable, Equatable {
+        var vaultId: String
+        var challenge: String
+        var pairingSecret: Data
+        var nameSealed: Data?
+    }
+
+    /// `POST /pair` proving possession of the vault key: `kAuth` is K_auth's 32 raw bytes in standard base64.
+    struct PairKAuthRequest: Codable, Equatable {
+        var vaultId: String
+        var challenge: String
+        var kAuth: Data
+        var nameSealed: Data?
+    }
+
+    /// Exactly one proof goes to `/pair`.
+    enum PairRequest: Encodable, Equatable {
+        case invite(PairInviteRequest)
+        case kAuth(PairKAuthRequest)
+
+        func encode(to encoder: Encoder) throws {
+            switch self {
+            case .invite(let request): try request.encode(to: encoder)
+            case .kAuth(let request): try request.encode(to: encoder)
+            }
+        }
+    }
+
+    struct DeviceEntry: Codable, Equatable {
+        var keyId: String
+        var addedAt: Int64
+        var lastSeenAt: Int64
+        var nameSealed: Data?
+        var current: Bool
+    }
+
+    struct DevicesList: Codable, Equatable {
+        var devices: [DeviceEntry]
+        var deviceLimit: Int
+        var serverTime: Int64?
+    }
+
+    /// A device's new name. A null name clears it, so the field is always sent.
+    struct DeviceNameRequest: Codable, Equatable {
+        var nameSealed: Data?
+
+        enum CodingKeys: String, CodingKey { case nameSealed }
+
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(nameSealed, forKey: .nameSealed)
+        }
+    }
+
+    struct DeviceNameResponse: Codable, Equatable {
+        var nameSealed: Data?
+        var serverTime: Int64?
+    }
+
+    struct DeviceRemoved: Codable, Equatable {
+        var removed: Bool
+        var serverTime: Int64?
+    }
+
+    /// `epoch` is the one the device last saw; a stale one answers `push-epoch-changed`. The answer is an `EraseVault`.
+    struct EraseVaultRequest: Codable, Equatable {
+        var epoch: Int64
+    }
+
+    struct AccountDeleted: Codable, Equatable {
+        var deleted: Bool
         var serverTime: Int64?
     }
 

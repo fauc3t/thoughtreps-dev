@@ -46,6 +46,8 @@ enum SyncDebugSession {
         Environment().map { ($0.url.absoluteString, $0.vault) } ?? accountTarget
     }
 
+    private static var provider: SyncSessionProvider?
+
     private(set) static var accountTarget: (url: String, vault: String)?
 
     /// A launch that names a vault in the environment syncs with that, never with the account in the Keychain.
@@ -91,10 +93,7 @@ enum SyncDebugSession {
     /// Sync lab shows.
     static func signInAndCreateVault(container: ModelContainer, state: SyncState = .shared) async -> String {
         guard engine == nil else { return "Already syncing. Forget the key first." }
-        let service = SyncAccountService(
-            api: SyncAccountAPI(baseURL: SyncAccountAPI.defaultBaseURL()), apple: AuthenticationServicesSignIn(),
-            credentials: KeychainSyncCredentialStore()
-        )
+        let service = accountService()
         do {
             switch try await service.signInAndCreateVault() {
             case .vaultCreated(let held, let session):
@@ -106,7 +105,7 @@ enum SyncDebugSession {
                 await beginAccount(container: container, state: state, credentials: held, seed: session)
                 return "Signed in."
             case .accountHasVault:
-                return "This account already has a vault; joining another device comes in the next round."
+                return "This account already has a vault. Join it from iCloud Keychain, with a recovery code or by scanning a QR code."
             case .deviceInVault:
                 return "This device belongs to a vault of another account."
             }
@@ -118,6 +117,89 @@ enum SyncDebugSession {
         }
     }
 
+    /// Where a join gets the vault id and key from.
+    enum JoinSource {
+        case iCloudKeychain
+        case recoveryCode(String)
+        case invite(SyncPairingInvite)
+    }
+
+    /// What a join says before anything is sent, or nil if it can go ahead: a mistyped recovery code, or no iCloud copy.
+    static func preflight(_ source: JoinSource, iCloud: ICloudKeyCopy = ICloudKeyCopy()) -> String? {
+        switch source {
+        case .recoveryCode(let text):
+            do { _ = try SyncRecoveryCode.parse(text) } catch let failure as SyncRecoveryCode.Failure { return failure.message } catch { return "\(error)" }
+        case .iCloudKeychain:
+            if (try? iCloud.load()) == nil { return "No sync key in iCloud Keychain." }
+        case .invite:
+            break
+        }
+        return nil
+    }
+
+    /// Joins the account's vault through `/pair` and starts the engine on the session it returns. The text is what the Sync
+    /// lab shows. `beforeStart` (the erase the person chose) runs only after `/pair` succeeded and the key is saved, and before
+    /// the outbox is on, so the erase is neither queued nor pushed. If it returns false, the key stays saved and sync is not
+    /// started.
+    static func join(
+        _ source: JoinSource, container: ModelContainer, state: SyncState = .shared, service: SyncAccountService = accountService(),
+        beforeStart: () -> Bool = { true }, start: ((SyncAccountService.Joined) async throws -> Void)? = nil
+    ) async -> String {
+        guard engine == nil else { return "Already syncing. Forget the key first." }
+        do {
+            let joined: SyncAccountService.Joined
+            switch source {
+            case .iCloudKeychain: joined = try await service.joinFromICloudKeychain()
+            case .recoveryCode(let text): joined = try await service.joinWithRecoveryCode(text)
+            case .invite(let invite): joined = try await service.joinWithInvite(invite)
+            }
+            guard beforeStart() else {
+                return "Joined the vault, but couldn't erase this \(SyncDeviceName.current), so sync did not start. The key is saved."
+            }
+            if let start {
+                try await start(joined)
+            } else {
+                try await enableOutbox(state: state, container: container, vaultID: joined.credentials.vaultID)
+                await beginAccount(container: container, state: state, credentials: joined.credentials, seed: joined.session)
+            }
+            return "Joined the vault."
+        } catch let failure as SyncRecoveryCode.Failure {
+            return failure.message
+        } catch let error as SyncAccountError {
+            logger.error("Joining failed: \(error)")
+            return error.pairingMessage
+        } catch {
+            logger.error("Joining failed: \(error)")
+            return "Joining failed: \(error)"
+        }
+    }
+
+    /// The recovery code for the vault key this device holds, or nil without one.
+    static func recoveryCode(credentials: SyncCredentialStore = KeychainSyncCredentialStore()) -> String? {
+        guard let held = try? credentials.load() else { return nil }
+        return try? SyncRecoveryCode.encode(vaultID: held.vaultID, vaultKey: held.vaultKey)
+    }
+
+    /// Opens an invitation to this device's vault. Needs the engine's session, so only while syncing.
+    static func createInvitation(credentials: SyncCredentialStore = KeychainSyncCredentialStore()) async throws -> SyncAccountService.Invitation {
+        guard let provider, let held = try credentials.load() else { throw SyncAccountError.notRegistered }
+        return try await accountService().createInvitation(credentials: held, session: provider)
+    }
+
+    /// Turns the iCloud Keychain copy on or off for the key this device holds.
+    static func setICloudCopy(
+        enabled: Bool, credentials: SyncCredentialStore = KeychainSyncCredentialStore(), iCloud: ICloudKeyCopy = ICloudKeyCopy()
+    ) throws {
+        try iCloud.setEnabled(enabled, local: try credentials.load())
+    }
+
+    static func accountService() -> SyncAccountService {
+        SyncAccountService(
+            api: SyncAccountAPI(baseURL: SyncAccountAPI.defaultBaseURL()), apple: AuthenticationServicesSignIn(),
+            credentials: KeychainSyncCredentialStore(), iCloud: ICloudKeyCopy()
+        )
+    }
+
     /// Stops syncing, empties the outbox and deletes the vault key and the sync App Attest keyId from the Keychain, so the
     /// next sign-in registers a fresh device with the server.
     static func forgetAccount(
@@ -127,6 +209,7 @@ enum SyncDebugSession {
         await triggers?.stop(observing: state)
         engine = nil
         triggers = nil
+        provider = nil
         accountTarget = nil
         state.disable()
         credentials.clear()
@@ -147,6 +230,7 @@ enum SyncDebugSession {
             serverNow: { Date().addingTimeInterval(ServerClockOffset(defaults: .standard).current) }
         )
         if let seed { await provider.adopt(seed) }
+        Self.provider = provider
         let transport = HTTPSyncTransport(
             baseURL: url, vaultID: credentials.vaultID, auth: .session(provider), offset: ServerClockOffset(defaults: .standard)
         )

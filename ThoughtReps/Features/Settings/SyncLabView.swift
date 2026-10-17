@@ -74,6 +74,14 @@ final class SyncLabModel {
     private(set) var accountMessage: String?
     /// The vault this device holds the key for (never the key itself).
     private(set) var accountVaultID: String?
+    private(set) var iCloudEnabled = ICloudKeyCopy().isEnabled
+    private(set) var iCloudCopyExists = false
+    private(set) var isJoining = false
+    private(set) var joinStep: JoinGate.Step?
+    private(set) var recoveryCode: String?
+    private(set) var invitation: SyncAccountService.Invitation?
+    private(set) var inviteMessage: String?
+    private var pendingJoin: SyncDebugSession.JoinSource?
 
     var offset: TimeInterval { ServerClockOffset(defaults: .standard).current }
 
@@ -87,7 +95,104 @@ final class SyncLabModel {
     func forgetAccount() async {
         await SyncDebugSession.forgetAccount()
         accountMessage = "Key forgotten."
+        recoveryCode = nil
         await refresh()
+    }
+
+    // MARK: iCloud Keychain copy
+
+    func setICloudCopy(_ enabled: Bool) async {
+        do {
+            try SyncDebugSession.setICloudCopy(enabled: enabled)
+        } catch {
+            accountMessage = "Couldn't update the iCloud Keychain copy: \(error)"
+        }
+        iCloudEnabled = ICloudKeyCopy().isEnabled
+        await refresh()
+    }
+
+    func deleteICloudCopy() async {
+        ICloudKeyCopy().delete()
+        accountMessage = "iCloud Keychain copy deleted."
+        await refresh()
+    }
+
+    // MARK: Joining
+
+    enum JoinDialog { case join, ask, confirmErase }
+
+    /// Starts a join. A mistyped code or a missing iCloud copy stops here with a message; otherwise the person is asked to
+    /// confirm, and then, with thoughts on this device, what to do with them, before anything is sent.
+    func requestJoin(_ source: SyncDebugSession.JoinSource, in context: ModelContext) async {
+        if let problem = SyncDebugSession.preflight(source) {
+            accountMessage = problem
+            return
+        }
+        pendingJoin = source
+        accountMessage = nil
+        let count = (try? context.fetchCount(FetchDescriptor<Thought>())) ?? 0
+        apply(JoinGate.begin(thoughtCount: count), in: context)
+    }
+
+    func answerJoin(_ action: JoinGate.Action, in context: ModelContext) {
+        guard let joinStep else { return }
+        apply(JoinGate.advance(joinStep, action), in: context)
+    }
+
+    /// A dialog closed without one of its buttons (a tap outside it): the same as Cancel, if it is still the one showing.
+    func dialogDismissed(_ dialog: JoinDialog, in context: ModelContext) {
+        switch (dialog, joinStep) {
+        case (.join, .confirmJoin), (.ask, .askMergeOrErase), (.confirmErase, .confirmErase): answerJoin(.cancel, in: context)
+        default: break
+        }
+    }
+
+    private func apply(_ step: JoinGate.Step, in context: ModelContext) {
+        switch step {
+        case .confirmJoin, .askMergeOrErase, .confirmErase:
+            joinStep = step
+        case .cancelled:
+            joinStep = nil
+            pendingJoin = nil
+        case .join(let eraseFirst):
+            joinStep = nil
+            guard let source = pendingJoin else { return }
+            pendingJoin = nil
+            Task { await runJoin(source, eraseFirst: eraseFirst, in: context) }
+        }
+    }
+
+    private func runJoin(_ source: SyncDebugSession.JoinSource, eraseFirst: Bool, in context: ModelContext) async {
+        isJoining = true
+        accountMessage = await SyncDebugSession.join(source, container: context.container, beforeStart: {
+            !eraseFirst || ThoughtStore(context: context).deleteAll()
+        })
+        isJoining = false
+        await refresh()
+    }
+
+    func showRecoveryCode() {
+        recoveryCode = SyncDebugSession.recoveryCode()
+        if recoveryCode == nil { accountMessage = "No key on this device." }
+    }
+
+    // MARK: Inviting
+
+    func openInvitation() async {
+        invitation = nil
+        inviteMessage = nil
+        do {
+            invitation = try await SyncDebugSession.createInvitation()
+        } catch let error as SyncAccountError {
+            inviteMessage = error == .notRegistered ? "Start syncing on this device first." : error.pairingMessage
+        } catch {
+            inviteMessage = "Failed: \(error)"
+        }
+    }
+
+    func closeInvitation() {
+        invitation = nil
+        inviteMessage = nil
     }
 
     func refresh(state: SyncState = .shared) async {
@@ -99,6 +204,8 @@ final class SyncLabModel {
         snapshot = next
         lastSync = SyncDebugSession.lastSuccessfulSync
         accountVaultID = (try? KeychainSyncCredentialStore().load())?.vaultID
+        iCloudEnabled = ICloudKeyCopy().isEnabled
+        iCloudCopyExists = ((try? ICloudKeyCopy().load()) ?? nil) != nil
     }
 
     func syncNow() async {
@@ -128,6 +235,42 @@ final class SyncLabModel {
 struct SyncLabView: View {
     @Environment(\.modelContext) private var context
     @State private var model = SyncLabModel()
+    @State private var recoveryEntry = ""
+    @State private var showInvite = false
+    @State private var showScan = false
+
+    private var busy: Bool {
+        model.isSigningIn || model.isJoining || SyncDebugSession.usesEnvironmentVault
+    }
+
+    private var joinBinding: Binding<Bool> {
+        Binding(
+            get: { if case .confirmJoin = model.joinStep { true } else { false } },
+            set: { if !$0 { model.dialogDismissed(.join, in: context) } }
+        )
+    }
+
+    private var askBinding: Binding<Bool> {
+        Binding(
+            get: { if case .askMergeOrErase = model.joinStep { true } else { false } },
+            set: { if !$0 { model.dialogDismissed(.ask, in: context) } }
+        )
+    }
+
+    private var confirmBinding: Binding<Bool> {
+        Binding(
+            get: { if case .confirmErase = model.joinStep { true } else { false } },
+            set: { if !$0 { model.dialogDismissed(.confirmErase, in: context) } }
+        )
+    }
+
+    private var step: (count: Int, device: String) {
+        let device = SyncDeviceName.current
+        switch model.joinStep {
+        case .askMergeOrErase(let count), .confirmErase(let count): return (count, device)
+        default: return (0, device)
+        }
+    }
 
     var body: some View {
         Form {
@@ -144,6 +287,11 @@ struct SyncLabView: View {
             Section {
                 if let vault = model.accountVaultID {
                     LabeledContent("Account vault", value: vault)
+                    Button("Show recovery code") { model.showRecoveryCode() }
+                    if let code = model.recoveryCode {
+                        Text(code).font(.system(.footnote, design: .monospaced)).textSelection(.enabled)
+                    }
+                    Button("Add a device") { showInvite = true }
                     Button("Sign out and forget key", role: .destructive) {
                         Task { await model.forgetAccount() }
                     }
@@ -156,15 +304,48 @@ struct SyncLabView: View {
                             if model.isSigningIn { Spacer(); ProgressView() }
                         }
                     }
-                    .disabled(model.isSigningIn || SyncDebugSession.usesEnvironmentVault)
+                    .disabled(busy)
+                    if model.iCloudCopyExists {
+                        Button("Join vault from iCloud Keychain") {
+                            Task { await model.requestJoin(.iCloudKeychain, in: context) }
+                        }
+                        .disabled(busy)
+                    }
+                    Button("Join by scanning a QR code") { showScan = true }
+                        .disabled(busy)
+                    TextField("Recovery code", text: $recoveryEntry, axis: .vertical)
+                        .textInputAutocapitalization(.characters)
+                        .autocorrectionDisabled()
+                        .font(.system(.footnote, design: .monospaced))
+                    Button("Join with recovery code") {
+                        Task { await model.requestJoin(.recoveryCode(recoveryEntry), in: context) }
+                    }
+                    .disabled(busy || recoveryEntry.isEmpty)
                 }
+                if model.isJoining { ProgressView() }
                 if let message = model.accountMessage {
                     Text(message).font(.footnote).foregroundStyle(.secondary)
                 }
             } header: {
                 Text("Account")
             } footer: {
-                Text("Needs a real device. Forgetting also drops this device's App Attest key, so the next sign-in registers a new device. The vault stays on the server with no way back in until pairing exists.")
+                Text("Needs a real device. Forgetting also drops this device's App Attest key, so the next sign-in registers a new device (the old one still counts toward the device limit). The vault stays on the server; rejoin it with iCloud Keychain, a recovery code or a QR code.")
+            }
+
+            Section {
+                Toggle("Save sync key to iCloud Keychain", isOn: Binding(
+                    get: { model.iCloudEnabled },
+                    set: { value in Task { await model.setICloudCopy(value) } }
+                ))
+                if model.iCloudCopyExists {
+                    Button("Delete iCloud copy", role: .destructive) {
+                        Task { await model.deleteICloudCopy() }
+                    }
+                }
+            } header: {
+                Text("iCloud Keychain")
+            } footer: {
+                Text("Lets your other devices on this Apple account join the vault. Turning it off deletes the copy. Signing out leaves it; delete it here.")
             }
 
             Section("Engine") {
@@ -225,6 +406,33 @@ struct SyncLabView: View {
         .navigationBarTitleDisplayMode(.inline)
         .task { await model.refresh() }
         .refreshable { await model.refresh() }
+        .sheet(isPresented: $showInvite) { SyncInviteSheet(model: model) }
+        .sheet(isPresented: $showScan) {
+            SyncScanSheet { invite in
+                Task { await model.requestJoin(.invite(invite), in: context) }
+            }
+        }
+        .alert(JoinGate.joinTitle, isPresented: joinBinding) {
+            Button("Join") { model.answerJoin(.confirmJoin, in: context) }
+            Button("Cancel", role: .cancel) { model.answerJoin(.cancel, in: context) }
+        } message: {
+            Text(JoinGate.joinMessage)
+        }
+        .confirmationDialog(
+            JoinGate.askTitle(count: step.count, device: step.device), isPresented: askBinding, titleVisibility: .visible
+        ) {
+            Button("Merge") { model.answerJoin(.merge, in: context) }
+            Button("Erase \(step.device) first", role: .destructive) { model.answerJoin(.erase, in: context) }
+            Button("Cancel", role: .cancel) { model.answerJoin(.cancel, in: context) }
+        } message: {
+            Text(JoinGate.askMessage(device: step.device))
+        }
+        .alert(JoinGate.confirmTitle(count: step.count, device: step.device), isPresented: confirmBinding) {
+            Button("Erase", role: .destructive) { model.answerJoin(.confirmErase, in: context) }
+            Button("Cancel", role: .cancel) { model.answerJoin(.cancel, in: context) }
+        } message: {
+            Text(JoinGate.confirmMessage)
+        }
     }
 }
 #endif

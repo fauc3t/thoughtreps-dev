@@ -4,6 +4,7 @@ import CryptoKit
 import DeviceCheck
 import Foundation
 import UIKit
+import os
 
 /// DEBUG only: the sync server's account calls. Sync has its own App Attest key (a separate Keychain item from the export
 /// link and feedback key), because the sync server keeps its own device table.
@@ -71,6 +72,20 @@ struct SyncAccountAPI: Sendable {
         }
     }
 
+    /// Like `signedPost`, but builds the body for each attempt from the key it is signed with, so a body that carries a
+    /// single-use challenge or something bound to the key (a sealed device name) is never reused across keys.
+    func signedPost<Body: Encodable, Response: Decodable>(
+        _ path: String, keyId: String, makeBody: (_ keyId: String) async throws -> Body
+    ) async throws -> Response {
+        do {
+            return try await signedPostOnce(path, keyId: keyId, body: try await makeBody(keyId))
+        } catch let error as SyncAccountError where error.isStaleKey {
+            keyStore.clear()
+            let fresh = try await registeredKeyId()
+            return try await signedPostOnce(path, keyId: fresh, body: try await makeBody(fresh))
+        }
+    }
+
     private func signedPostOnce<Response: Decodable>(_ path: String, keyId: String, body: some Encodable) async throws -> Response {
         let bytes = try Self.encode(body)
         let assertion: Data
@@ -91,6 +106,13 @@ struct SyncAccountAPI: Sendable {
         return try decode(try await perform(request))
     }
 
+    func put<Response: Decodable>(_ path: String, body: Data, bearer: String) async throws -> Response {
+        var request = AppAttestClient.jsonRequest(url: baseURL.appending(path: path), body: body)
+        request.httpMethod = "PUT"
+        request.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization")
+        return try decode(try await perform(request))
+    }
+
     private func perform(_ request: URLRequest) async throws -> Data {
         let data: Data
         let response: HTTPURLResponse
@@ -106,6 +128,14 @@ struct SyncAccountAPI: Sendable {
 
     private func decode<T: Decodable>(_ data: Data) throws -> T {
         do { return try JSONDecoder().decode(T.self, from: data) } catch { throw SyncAccountError.invalidResponse }
+    }
+}
+
+/// What this device calls itself: in the Sync lab's prompts and, sealed, to the vault's other devices. `UIDevice.name` is a
+/// generic "iPhone" or "iPad" without a special entitlement, so the idiom says the same.
+enum SyncDeviceName {
+    @MainActor static var current: String {
+        UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone"
     }
 }
 
@@ -131,6 +161,13 @@ struct SyncAccountService: Sendable {
     var apple: AppleSignIn
     var credentials: SyncCredentialStore
     var makeVaultKey: @Sendable () -> Data = { SymmetricKey(size: .bits256).withUnsafeBytes { Data($0) } }
+    var makePairingSecret: @Sendable () -> Data = { SymmetricKey(size: .bits256).withUnsafeBytes { Data($0) } }
+    var deviceName: @Sendable () async -> String = { await MainActor.run { SyncDeviceName.current } }
+    var now: @Sendable () -> Date = { Date() }
+    /// The optional iCloud Keychain copy, written after a vault is created or joined.
+    var iCloud: ICloudKeyCopy?
+
+    private static let log = Logger(subsystem: "com.thoughtreps", category: "SyncAccountService")
 
     /// What Apple must put in the identity token for `challenge`: its lowercase hex SHA-256.
     static func nonce(for challenge: String) -> String {
@@ -182,7 +219,114 @@ struct SyncAccountService: Sendable {
         }
         let held = SyncCredentials(vaultKey: key, vaultID: created.vaultId, userID: account.userId)
         do { try credentials.save(held) } catch { throw SyncAccountError.keychainFailed }
+        saveICloudCopy(held)
+        await nameThisDevice(in: created.vaultId, key: key, session: created.session.token)
         return .vaultCreated(held, created.session)
+    }
+
+    /// The server mints the vault id, so the name can't be sealed into `POST /vaults`; it is set right after. A failure only
+    /// leaves the device unnamed.
+    private func nameThisDevice(in vaultID: String, key: Data, session: String) async {
+        do {
+            guard let keyId = try api.storedKeyId() else { return }
+            let sealed = try SyncCrypto.sealDeviceName(await deviceName(), vaultID: vaultID, keyID: keyId, keys: SyncKeys(vaultKey: key))
+            let pathKey = keyId.replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_")
+                .replacingOccurrences(of: "=", with: "")
+            let _: SyncHTTPWireV1.DeviceNameResponse = try await api.put(
+                "vaults/\(vaultID)/devices/\(pathKey)", body: try SyncAccountAPI.encode(SyncHTTPWireV1.DeviceNameRequest(nameSealed: sealed)), bearer: session
+            )
+        } catch {
+            Self.log.error("Naming this device failed: \(String(describing: error))")
+        }
+    }
+
+    private func saveICloudCopy(_ held: SyncCredentials) {
+        do { try iCloud?.saveIfEnabled(held) } catch { Self.log.error("Saving the iCloud Keychain copy failed: \(error)") }
+    }
+
+    // MARK: Joining
+
+    /// What proves to the server that this device may join the vault.
+    enum JoinProof: Equatable {
+        /// K_auth, from the vault key: an iCloud Keychain copy or a recovery code.
+        case vaultKey
+        /// The secret of an open invitation from a device already in the vault.
+        case invite(pairingSecret: Data)
+    }
+
+    struct Joined: Equatable {
+        var credentials: SyncCredentials
+        var session: SyncHTTPWireV1.SessionToken
+    }
+
+    /// Joins through `POST /pair`, signed with this device's key (registered first if it isn't yet) and carrying its sealed
+    /// name. On success the key is stored here and, if the setting is on, in iCloud Keychain. A stale device key is replaced
+    /// once, with a new challenge and a name sealed for the new key.
+    func join(vaultID: String, vaultKey: Data, proof: JoinProof) async throws -> Joined {
+        guard api.attest.isSupported else { throw SyncAccountError.unsupported }
+        let keys = try SyncKeys(vaultKey: vaultKey)
+        let keyId = try await api.registeredKeyId()
+        let name = await deviceName()
+        let answer: SyncHTTPWireV1.AccountSession = try await api.signedPost("pair", keyId: keyId, makeBody: { keyId in
+            let challenge = try await api.challenge()
+            let sealed = try SyncCrypto.sealDeviceName(name, vaultID: vaultID, keyID: keyId, keys: keys)
+            switch proof {
+            case .vaultKey:
+                return SyncHTTPWireV1.PairRequest.kAuth(.init(vaultId: vaultID, challenge: challenge, kAuth: keys.authBytes, nameSealed: sealed))
+            case .invite(let secret):
+                return SyncHTTPWireV1.PairRequest.invite(.init(vaultId: vaultID, challenge: challenge, pairingSecret: secret, nameSealed: sealed))
+            }
+        })
+        guard answer.vaultId == vaultID else { throw SyncAccountError.invalidResponse }
+        let held = SyncCredentials(vaultKey: vaultKey, vaultID: vaultID, userID: answer.userId)
+        do { try credentials.save(held) } catch { throw SyncAccountError.keychainFailed }
+        saveICloudCopy(held)
+        return Joined(credentials: held, session: answer.session)
+    }
+
+    func joinFromICloudKeychain() async throws -> Joined {
+        guard let copy = try? iCloud?.load() else { throw SyncAccountError.keychainFailed }
+        return try await join(vaultID: copy.vaultID, vaultKey: copy.vaultKey, proof: .vaultKey)
+    }
+
+    /// A wrong or mistyped code throws before anything is sent.
+    func joinWithRecoveryCode(_ text: String) async throws -> Joined {
+        let parsed = try SyncRecoveryCode.parse(text)
+        return try await join(vaultID: parsed.vaultID, vaultKey: parsed.vaultKey, proof: .vaultKey)
+    }
+
+    func joinWithInvite(_ invite: SyncPairingInvite) async throws -> Joined {
+        try await join(vaultID: invite.vaultID, vaultKey: invite.vaultKey, proof: .invite(pairingSecret: invite.pairingSecret))
+    }
+
+    // MARK: Inviting
+
+    struct Invitation: Equatable {
+        var invite: SyncPairingInvite
+        /// When the server stops accepting it, on this device's clock (corrected by the server's `serverTime`).
+        var expiresAt: Date
+    }
+
+    /// Opens a 10-minute, single-use invitation to the vault, from a device already in it.
+    func createInvitation(credentials held: SyncCredentials, session: SyncSessionSource) async throws -> Invitation {
+        let invite = SyncPairingInvite(vaultID: held.vaultID, pairingSecret: makePairingSecret(), vaultKey: held.vaultKey)
+        let body = try SyncAccountAPI.encode(SyncHTTPWireV1.CreateInviteRequest(secretHash: invite.secretHash))
+        let path = "vaults/\(held.vaultID)/invites"
+        let response: SyncHTTPWireV1.CreateInviteResponse = try await withBearer(session) { token in
+            try await api.post(path, body: body, bearer: token)
+        }
+        let received = now()
+        let skew = response.serverTime.map { Double($0) / 1000 - received.timeIntervalSince1970 } ?? 0
+        return Invitation(invite: invite, expiresAt: Date(timeIntervalSince1970: Double(response.expiresAt) / 1000 - skew))
+    }
+
+    private func withBearer<T>(_ session: SyncSessionSource, _ call: (String) async throws -> T) async throws -> T {
+        let token = try await session.token()
+        do {
+            return try await call(token)
+        } catch SyncAccountError.server(401, _) {
+            return try await call(try await session.refresh(after: token))
+        }
     }
 
     private func stored() throws -> SyncCredentials? {
