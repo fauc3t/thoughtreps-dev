@@ -16,3 +16,11 @@ Garbage collection and quota fixtures (phase 3c, added after the rest; the exist
 `garbage-collection-live-list-missing` (409), `garbage-collection-rate-limited` (429) and `blob-quota-exceeded` (413, from
 `blobs/upload-urls`). The live list itself is not JSON: one 43-character blob name per line, every line ending in `\n`, so
 its size is a multiple of 44.
+
+Account, device and session fixtures (phase 4a, copied for the app in 4c-1; the other 4b fixtures are not mirrored yet):
+`device-challenge-response`, `device-register-*`, `sign-in-with-apple-*`, `session-*`, `vault-create-*` (`POST /vaults`, bearer
+session) and the refusals `error-vault-exists`, `error-assertion-invalid`, `error-challenge-invalid`,
+`error-attestation-invalid`, `error-identity-token-invalid`, `error-forbidden` and `error-device-in-vault`. Signed requests
+(`sign-in-with-apple`, `session`) also carry the `x-tr-key-id` and `x-tr-assertion` headers, which no fixture covers.
+`sign-in-with-apple-response` has `vaultId: null` and a vaultless session; `session-response` and `vault-create-response` have
+a vault. Their structs are in `SyncHTTPWireV1` and are separate from the export-link API's (`AppAttestClient`).

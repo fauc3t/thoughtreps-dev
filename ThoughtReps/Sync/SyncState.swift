@@ -860,10 +860,12 @@ actor SyncState {
 
 #if DEBUG
 extension SyncState {
-    /// Sync has no UI yet: launching with `THOUGHTREPS_SYNC_VAULT=<id>` turns it on for that vault.
-    func enableForDebugging() async {
-        guard let vault = ProcessInfo.processInfo.environment["THOUGHTREPS_SYNC_VAULT"], !vault.isEmpty else { return }
+    /// Sync has no UI yet: launching with `THOUGHTREPS_SYNC_VAULT=<id>` turns it on for that vault, and without it the vault
+    /// of the account signed in from the Sync lab, if the Keychain holds one.
+    func enableForDebugging(credentials: SyncCredentialStore = KeychainSyncCredentialStore()) async {
+        let named = ProcessInfo.processInfo.environment["THOUGHTREPS_SYNC_VAULT"] ?? ""
         do {
+            guard let vault = named.isEmpty ? try credentials.load()?.vaultID : named else { return }
             try configure(vaultID: vault)
         } catch {
             Self.logger.error("Enabling sync failed: \(error)")

@@ -1,0 +1,5 @@
+{
+  "error": "vault_exists",
+  "message": "This account already has a vault",
+  "serverTime": 1768478400000
+}

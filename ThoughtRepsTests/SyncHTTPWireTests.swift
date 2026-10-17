@@ -36,10 +36,27 @@ struct SyncHTTPWireTests {
         "blob-quota-exceeded": "238738de2e9f00f8b45c4dafc2d2a615d55bc81d5db3e8502a1a76d0e9e3532c",
         "dev-create-vault": "af9876009c1900091aabef5efb03b618fc33be4418b501ff4912f74e842f2ec8",
         "dev-erase-vault": "022ca820a818a48eeb6528cbd2c92e97798008ccfeccb1bcf429e0addefb7042",
+        "device-challenge-response": "a998af43aa01e3836805a0e850879dde6d8857b57b397f875dfbedb04cb8a305",
+        "device-register-request": "f7cf3e4fba912b528a0a937f5a0ea73e75d51205aa97a43ee0b2430e7cf855df",
+        "device-register-response": "3e462330d0712c7da84fb1f8288522bf4dee31bcefaa24db53bfe32e395cb108",
+        "sign-in-with-apple-request": "5bd20c000bcdc9c3cd5e8eb123edca652b9a064df24692f75e82fb207644c07c",
+        "sign-in-with-apple-response": "b2326b78943e395903104b798c2511baa7d4c49d84a03a4a54e19e97f79cd1d4",
+        "session-request": "2ddd58f8ff4977abba6017592ea3d1d36d3c1897805247243d4aa799a78260c1",
+        "session-response": "bcdeb51b4aba4f77771f627017df08c87746f476fd4ae2feed0f036a437b9dd9",
+        "vault-create-request": "bdc5bd55bbca88a6e9a8aac78378471182c3de11bf6dc2b31bcd6ef1a7524cd7",
+        "vault-create-response": "e52f47f8c87207b83a99c6df9155357bc00a399c77261cc28f7ff14b9d24467e",
+        "error-vault-exists": "348b02f76a2df97a0fc947c789c634a1d112275a3d6cab7ad9579e28a7ddf7f2",
+        "error-assertion-invalid": "c175c208cf9b013bbc5adca9138d6247746b54267e063d5e153cac937298ddb7",
+        "error-challenge-invalid": "236915cb84c223ad254a1e027081781b23bb8545ff4cc0612e9ea42588907fd6",
+        "error-attestation-invalid": "de3c02ec4626557f1d04e47de060a587b6887fc01ce1d4627982dff28cf6d031",
+        "error-identity-token-invalid": "d44139cce761ae57fd37c7632beb6a18ab658b0ebaa02273175d32094f1c9984",
+        "error-forbidden": "bb94e9beb6d32c2d3c0c62b305aa1c38ba88f74366047e993782d9ce1a0e4ca1",
+        "error-device-in-vault": "5ad9e4a97f43fb787125baaf2f1c28506b49a736fc33742a88daa2a6db686ea4",
     ]
     static let requestFixtures: Set<String> = [
         "push-request", "push-pointer-request", "blob-upload-urls-request", "blob-download-urls-request",
         "garbage-collection-live-list-url-request", "garbage-collection-start-request",
+        "device-register-request", "sign-in-with-apple-request", "session-request", "vault-create-request",
     ]
     static let runID = "0123456789abcdef0123456789abcdef"
     static let serverTime: Int64 = 1_768_478_400_000
@@ -201,6 +218,60 @@ struct SyncHTTPWireTests {
 
         for name in ["garbage-collection-stale", "garbage-collection-live-list-missing", "garbage-collection-rate-limited", "blob-quota-exceeded"] {
             #expect(try decode(SyncHTTPWireV1.ErrorBody.self, name).error != nil, "the transport reads the code through ErrorBody: \(name)")
+        }
+    }
+
+    static let challenge = "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789_-AbCdE"
+    static let userID = "Zk3x9QvT2mLpR8sWnD4aYg"
+    static let accountVaultID = "k7P2mQx9LwT4vB8nRcZ1sA"
+
+    @Test func deviceRegistration() throws {
+        let challenge = try decode(SyncHTTPWireV1.DeviceChallenge.self, "device-challenge-response")
+        #expect(challenge == SyncHTTPWireV1.DeviceChallenge(challenge: Self.challenge, expiresAt: 1_768_478_700_000, serverTime: Self.serverTime))
+        let request = try decode(SyncHTTPWireV1.DeviceRegisterRequest.self, "device-register-request")
+        #expect(request == SyncHTTPWireV1.DeviceRegisterRequest(
+            keyId: "pN3GFqlKsfvBzng1wDPNFHcV9Cf4xaxgPjrULMK7Jmk=", attestation: "AAECAwQFBgcICQoLDA0ODw==", challenge: Self.challenge
+        ))
+        try expectReEncodesToTheFixture(request, "device-register-request")
+        #expect(try decode(SyncHTTPWireV1.DeviceRegisterResponse.self, "device-register-response") == SyncHTTPWireV1.DeviceRegisterResponse(registered: true, serverTime: Self.serverTime))
+    }
+
+    @Test func signInAndSessions() throws {
+        let signIn = try decode(SyncHTTPWireV1.SignInWithAppleRequest.self, "sign-in-with-apple-request")
+        #expect(signIn.challenge == Self.challenge && signIn.identityToken.hasPrefix("eyJ"))
+        try expectReEncodesToTheFixture(signIn, "sign-in-with-apple-request")
+        let session = try decode(SyncHTTPWireV1.SessionRequest.self, "session-request")
+        #expect(session == SyncHTTPWireV1.SessionRequest(challenge: Self.challenge))
+        try expectReEncodesToTheFixture(session, "session-request")
+
+        let vaultless = try decode(SyncHTTPWireV1.AccountSession.self, "sign-in-with-apple-response")
+        #expect(vaultless.userId == Self.userID && vaultless.vaultId == nil)
+        #expect(vaultless.session.expiresAt == 1_768_482_000_000 && vaultless.session.token.hasPrefix("v1.") && vaultless.serverTime == Self.serverTime)
+        let withVault = try decode(SyncHTTPWireV1.AccountSession.self, "session-response")
+        #expect(withVault.userId == Self.userID && withVault.vaultId == Self.accountVaultID)
+        #expect(withVault.session.expiresAt == 1_768_482_000_000 && withVault.serverTime == Self.serverTime)
+    }
+
+    @Test func vaultCreation() throws {
+        let request = try decode(SyncHTTPWireV1.CreateAccountVaultRequest.self, "vault-create-request")
+        #expect(request.kAuthVerifier == "GMVd8zyX+0ku7I1tZ/45wG8lcb1uUKMVm215Vjd8hUY=")
+        try expectReEncodesToTheFixture(request, "vault-create-request")
+        let response = try decode(SyncHTTPWireV1.CreateAccountVaultResponse.self, "vault-create-response")
+        #expect(response.vaultId == Self.accountVaultID && response.epoch == 1 && response.serverTime == Self.serverTime)
+        #expect(response.session == (try decode(SyncHTTPWireV1.AccountSession.self, "session-response")).session)
+    }
+
+    @Test func accountErrorsMapToTheirCodes() throws {
+        let cases: [(String, SyncAccountError.Code)] = [
+            ("error-vault-exists", .vaultExists), ("error-assertion-invalid", .assertionInvalid),
+            ("error-challenge-invalid", .challengeInvalid), ("error-attestation-invalid", .attestationInvalid),
+            ("error-identity-token-invalid", .identityTokenInvalid), ("error-forbidden", .forbidden),
+            ("error-device-in-vault", .deviceInVault),
+        ]
+        for (name, code) in cases {
+            let body = try decode(SyncHTTPWireV1.ErrorBody.self, name)
+            #expect(body.error == code.rawValue && body.message?.isEmpty == false, "\(name)")
+            #expect(SyncAccountError.from(status: 409, body: try bytes(name)).code == code, "\(name)")
         }
     }
 }

@@ -70,7 +70,25 @@ final class SyncLabModel {
     private(set) var checksResult: String?
     private(set) var violations: [String] = []
 
+    private(set) var isSigningIn = false
+    private(set) var accountMessage: String?
+    /// The vault this device holds the key for (never the key itself).
+    private(set) var accountVaultID: String?
+
     var offset: TimeInterval { ServerClockOffset(defaults: .standard).current }
+
+    func signIn(in context: ModelContext) async {
+        isSigningIn = true
+        accountMessage = await SyncDebugSession.signInAndCreateVault(container: context.container)
+        isSigningIn = false
+        await refresh()
+    }
+
+    func forgetAccount() async {
+        await SyncDebugSession.forgetAccount()
+        accountMessage = "Key forgotten."
+        await refresh()
+    }
 
     func refresh(state: SyncState = .shared) async {
         var next = Snapshot(status: await SyncDebugSession.status())
@@ -80,6 +98,7 @@ final class SyncLabModel {
         next.garbageCollection = (try? await state.garbageCollectionLog()) ?? GarbageCollectionLog()
         snapshot = next
         lastSync = SyncDebugSession.lastSuccessfulSync
+        accountVaultID = (try? KeychainSyncCredentialStore().load())?.vaultID
     }
 
     func syncNow() async {
@@ -120,6 +139,32 @@ struct SyncLabView: View {
                     Text("Not configured. Launch with THOUGHTREPS_SYNC_URL, _VAULT, _DEV_SECRET and _KEY.")
                         .foregroundStyle(.secondary)
                 }
+            }
+
+            Section {
+                if let vault = model.accountVaultID {
+                    LabeledContent("Account vault", value: vault)
+                    Button("Sign out and forget key", role: .destructive) {
+                        Task { await model.forgetAccount() }
+                    }
+                } else {
+                    Button {
+                        Task { await model.signIn(in: context) }
+                    } label: {
+                        HStack {
+                            Text("Sign in with Apple and create vault")
+                            if model.isSigningIn { Spacer(); ProgressView() }
+                        }
+                    }
+                    .disabled(model.isSigningIn || SyncDebugSession.usesEnvironmentVault)
+                }
+                if let message = model.accountMessage {
+                    Text(message).font(.footnote).foregroundStyle(.secondary)
+                }
+            } header: {
+                Text("Account")
+            } footer: {
+                Text("Needs a real device. Forgetting also drops this device's App Attest key, so the next sign-in registers a new device. The vault stays on the server with no way back in until pairing exists.")
             }
 
             Section("Engine") {

@@ -96,8 +96,15 @@ struct KeychainStatusError: Error, Equatable { let status: OSStatus }
 
 struct KeychainKeyIdStore: KeyIdStore {
     private static let log = Logger(subsystem: "com.thoughtreps", category: "KeychainKeyIdStore")
-    private let service = "com.thoughtreps.appattest"
-    private let account = "keyId"
+    private let service: String
+    private let account: String
+
+    /// The defaults are the export-link and feedback key; sync keeps its own, because it is a different server with its own
+    /// device table.
+    init(service: String = "com.thoughtreps.appattest", account: String = "keyId") {
+        self.service = service
+        self.account = account
+    }
 
     private var query: [String: Any] {
         [kSecClass as String: kSecClassGenericPassword,
@@ -206,7 +213,7 @@ actor AppAttestClient {
         return request
     }
 
-    private static func jsonRequest(url: URL, body: Data) -> URLRequest {
+    static func jsonRequest(url: URL, body: Data) -> URLRequest {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.httpBody = body

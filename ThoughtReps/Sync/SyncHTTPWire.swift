@@ -184,6 +184,66 @@ enum SyncHTTPWireV1 {
         var serverTime: Int64?
     }
 
+    /// `POST /devices/app-attest/challenge`. `expiresAt` is ms since the epoch; a challenge is single use.
+    struct DeviceChallenge: Codable, Equatable {
+        var challenge: String
+        var expiresAt: Int64
+        var serverTime: Int64?
+    }
+
+    /// `keyId` is standard base64; `attestation` the App Attest object, also standard base64. The attestation's client data
+    /// hash is the SHA-256 of the challenge string's UTF-8 bytes.
+    struct DeviceRegisterRequest: Codable, Equatable {
+        var keyId: String
+        var attestation: String
+        var challenge: String
+    }
+
+    struct DeviceRegisterResponse: Codable, Equatable {
+        var registered: Bool
+        var serverTime: Int64?
+    }
+
+    /// Sent with the `x-tr-key-id` and `x-tr-assertion` headers; the assertion's client data hash is the SHA-256 of these
+    /// exact body bytes. The identity token's nonce is the lowercase hex SHA-256 of `challenge`.
+    struct SignInWithAppleRequest: Codable, Equatable {
+        var challenge: String
+        var identityToken: String
+    }
+
+    /// `POST /sessions/app-attest`, signed like sign-in.
+    struct SessionRequest: Codable, Equatable {
+        var challenge: String
+    }
+
+    /// `expiresAt` is ms since the epoch. The token is opaque to clients.
+    struct SessionToken: Codable, Equatable {
+        var token: String
+        var expiresAt: Int64
+    }
+
+    /// The answer to sign-in and to `sessions/app-attest`. `vaultId` is null for an account without a vault, whose session
+    /// can only create one.
+    struct AccountSession: Codable, Equatable {
+        var userId: String
+        var vaultId: String?
+        var session: SessionToken
+        var serverTime: Int64?
+    }
+
+    /// `POST /vaults`, with the bearer session. `kAuthVerifier` is the standard base64 of the SHA-256 of the 32 raw bytes of
+    /// K_auth.
+    struct CreateAccountVaultRequest: Codable, Equatable {
+        var kAuthVerifier: String
+    }
+
+    struct CreateAccountVaultResponse: Codable, Equatable {
+        var vaultId: String
+        var epoch: Int64
+        var session: SessionToken
+        var serverTime: Int64?
+    }
+
     /// Only the clock, for reading `serverTime` off any response.
     struct TimeOnly: Codable {
         var serverTime: Int64?

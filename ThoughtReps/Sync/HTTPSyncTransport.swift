@@ -9,6 +9,9 @@ import os
 /// An expired URL (403) is replaced by a fresh one once; a 400, 411 or a second 403 means the request itself is wrong and
 /// is refused.
 ///
+/// With a bearer session (`SyncAuth.session`) a 401 gets one refreshed token and one retry; a second 401 is the server's
+/// refusal like any other.
+///
 /// A 5xx, 408, 429 or a failed connection is retried up to `maxAttempts` times with a growing pause (or the server's
 /// `Retry-After`, at most `maxRetryAfter`). That is safe for a push
 /// because the server checks every record's `baseSeq` again: a push that did commit before its answer was lost comes
@@ -22,7 +25,7 @@ struct HTTPSyncTransport: SyncTransport {
 
     let baseURL: URL
     let vaultID: String
-    private let devSecret: String
+    private let auth: SyncAuth
     private let session: URLSession
     private let now: @Sendable () -> Date
     private let sleep: Sleep
@@ -32,18 +35,29 @@ struct HTTPSyncTransport: SyncTransport {
 
     /// `offset` is where the server-clock estimate is kept (nil: not tracked). `baseURL` ends in `/api/v1`.
     init(
-        baseURL: URL, vaultID: String, devSecret: String, session: URLSession = HTTPSyncTransport.makeSession(),
+        baseURL: URL, vaultID: String, auth: SyncAuth, session: URLSession = HTTPSyncTransport.makeSession(),
         offset: ServerClockOffset? = nil, maxAttempts: Int = 3, now: @escaping @Sendable () -> Date = { Date() },
         sleep: @escaping Sleep = { try await Task.sleep(for: $0) }
     ) {
         self.baseURL = baseURL
         self.vaultID = vaultID
-        self.devSecret = devSecret
+        self.auth = auth
         self.session = session
         self.offset = offset
         self.maxAttempts = maxAttempts
         self.now = now
         self.sleep = sleep
+    }
+
+    init(
+        baseURL: URL, vaultID: String, devSecret: String, session: URLSession = HTTPSyncTransport.makeSession(),
+        offset: ServerClockOffset? = nil, maxAttempts: Int = 3, now: @escaping @Sendable () -> Date = { Date() },
+        sleep: @escaping Sleep = { try await Task.sleep(for: $0) }
+    ) {
+        self.init(
+            baseURL: baseURL, vaultID: vaultID, auth: .devSecret(devSecret), session: session, offset: offset,
+            maxAttempts: maxAttempts, now: now, sleep: sleep
+        )
     }
 
     static func makeSession() -> URLSession {
@@ -227,17 +241,40 @@ struct HTTPSyncTransport: SyncTransport {
         var components = URLComponents(url: baseURL.appendingPathComponent(path), resolvingAgainstBaseURL: false)
         if !query.isEmpty { components?.queryItems = query }
         guard let url = components?.url else { throw SyncTransportError.refused(status: 0, message: "bad URL") }
-        var request = URLRequest(url: url)
-        request.httpMethod = method
-        #if DEBUG
-        request.setValue("Dev \(devSecret)", forHTTPHeaderField: "Authorization")
-        #endif
-        request.setValue(vaultID, forHTTPHeaderField: "x-tr-vault")
-        if let body {
-            request.httpBody = body
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        func build(bearer token: String?) -> URLRequest {
+            var request = URLRequest(url: url)
+            request.httpMethod = method
+            switch auth {
+            case .devSecret(let secret):
+                #if DEBUG
+                request.setValue("Dev \(secret)", forHTTPHeaderField: "Authorization")
+                #endif
+                request.setValue(vaultID, forHTTPHeaderField: "x-tr-vault")
+            case .session:
+                if let token { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+            }
+            if let body {
+                request.httpBody = body
+                request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            }
+            return request
         }
-        return try await perform(request, observesServerTime: true, answersRateLimit: answersRateLimit)
+        guard case .session(let source) = auth else {
+            return try await perform(build(bearer: nil), observesServerTime: true, answersRateLimit: answersRateLimit)
+        }
+        let token = try await sessionCall { try await source.token() }
+        let response = try await perform(build(bearer: token), observesServerTime: true, answersRateLimit: answersRateLimit)
+        guard response.status == 401 else { return response }
+        let fresh = try await sessionCall { try await source.refresh(after: token) }
+        return try await perform(build(bearer: fresh), observesServerTime: true, answersRateLimit: answersRateLimit)
+    }
+
+    private func sessionCall(_ call: () async throws -> String) async throws -> String {
+        do {
+            return try await call()
+        } catch let error as SyncAccountError {
+            throw error.transportError
+        }
     }
 
     /// `request` is sent as is. Only a call to our API reads `serverTime` off the answer.

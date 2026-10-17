@@ -1,0 +1,5 @@
+{
+  "error": "device_in_vault",
+  "message": "This device is in a vault of another account",
+  "serverTime": 1768478400000
+}
