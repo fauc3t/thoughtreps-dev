@@ -45,5 +45,5 @@
 - Sync (4c): bearer session handling: refresh before the 1 hour expiry, and on a 401 refresh once and retry.
 - Sync (4c): retry `identity_token_invalid` with a fresh challenge.
 - Sync (4c): also mirror the 4b wire-v1 fixtures from `thoughtreps-aws` (`infra/lambda/sync/fixtures/wire-v1/`) byte for byte, and decide the `nameSealed` key derivation and format.
-- Sync (4b leftovers): dev smoke test, including `%2F` in a `keyId` on real API Gateway; cleanup failures take about 2 h to reach the dead-letter queue (30-min visibility); erase of a 600k-row vault takes 10+ min and isn't load-tested; a presigned upload issued just before deletion can orphan an encrypted blob; legacy pre-4b dev devices get their vault backfilled only on sign-in or re-pair.
+- Sync (4b leftovers): `/pair` on dev with a real device (the smoke test covers every other route); cleanup failures take about 2 h to reach the dead-letter queue (30-min visibility); erase of a 600k-row vault takes 10+ min and isn't load-tested; a presigned upload issued just before deletion can orphan an encrypted blob; legacy pre-4b dev devices get their vault backfilled only on sign-in or re-pair.
 - Sync (4b, optional): sweep empty accounts (no vault, no subscription, no devices) after about 30 days; pairing leaves them behind.
