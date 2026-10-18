@@ -135,6 +135,7 @@ actor SyncEngine {
     private var observer: (@Sendable (Status) -> Void)?
     private var running: Task<Void, Never>?
     private var rerun = false
+    private var isShutDown = false
     private var cycleNumber = 0
     /// Queued thoughts left alone in this push because the server holds a version this device couldn't apply yet.
     private var waitingEntities: Set<SyncEntity> = []
@@ -181,6 +182,7 @@ actor SyncEngine {
     /// Runs a cycle, or asks the one in progress to run once more when it finishes, and returns when that is done.
     @discardableResult
     func syncNow() async -> Status {
+        guard !isShutDown else { return status }
         if let running {
             rerun = true
             await running.value
@@ -190,6 +192,24 @@ actor SyncEngine {
         running = task
         await task.value
         return status
+    }
+
+    /// Ends the engine for good. It awaits the running cycle, so nothing of this engine runs after it returns; the cycle's
+    /// checks before each apply and state write only make it exit early.
+    func stop() async {
+        isShutDown = true
+        let task = running
+        task?.cancel()
+        await task?.value
+    }
+
+    private func checkActive() throws {
+        if isShutDown || Task.isCancelled { throw CancellationError() }
+    }
+
+    private func commitPage(_ page: PageCommit) async throws {
+        try checkActive()
+        try await state.commit(page)
     }
 
     /// The periodic check: asks the server for its head and runs a cycle if it moved past what was pulled, if the last cycle
@@ -242,10 +262,14 @@ actor SyncEngine {
             } catch SyncTransportError.refused(let status, let message) {
                 stop(.serverRefused(status: status, message: message))
             } catch {
-                record(error)
+                if isShutDown {
+                    update { $0.phase = .stopped }
+                } else {
+                    record(error)
+                }
             }
-            await refreshPending()
-        } while rerun && status.lastError == nil && status.attention == nil
+            if !isShutDown { await refreshPending() }
+        } while rerun && status.lastError == nil && status.attention == nil && !isShutDown
         running = nil
     }
 
@@ -254,6 +278,7 @@ actor SyncEngine {
     }
 
     private func stop(_ attention: Attention) {
+        guard !isShutDown else { return }
         Self.logger.error("Sync stopped: \(String(describing: attention))")
         update {
             $0.phase = .stopped
@@ -333,7 +358,9 @@ actor SyncEngine {
         if try await state.cursor() == 0 { await local.reconcile() }
         while true {
             let cursor = try await state.cursor()
+            try checkActive()
             let page = try await transport.pull(after: cursor, limit: config.pullLimit)
+            try checkActive()
             guard !page.hasMore || page.nextSeq > cursor else { throw Failure.pullStalled(cursor) }
             try await apply(page, after: cursor)
             if !page.hasMore {
@@ -465,7 +492,7 @@ actor SyncEngine {
                     continue
                 case .updateRequired:
                     commit.park = [Self.parked(pulled, needsUpdate: true)]
-                    try await state.commit(commit)
+                    try await commitPage(commit)
                     continue
                 case .record(let found):
                     resolved = found
@@ -480,7 +507,7 @@ actor SyncEngine {
                 switch reading {
                 case .parked(let parked):
                     commit.park = [parked]
-                    try await state.commit(commit)
+                    try await commitPage(commit)
                 case .readable(let item):
                     commit.unpark = [record.recordKey]
                     let superseded = bases[record.recordKey].map { $0.seq >= record.seq } ?? false
@@ -533,7 +560,7 @@ actor SyncEngine {
             case .waiting:
                 var commit = PageCommit(cursor: try await state.cursor(), epoch: epoch)
                 commit.park = [Self.parked(pulled)]
-                try await state.commit(commit)
+                try await commitPage(commit)
                 return
             case .record(let found):
                 resolved = found
@@ -585,6 +612,7 @@ actor SyncEngine {
         work.pending = []
         work.bytes = 0
         guard !next.thoughts.isEmpty || !next.tags.isEmpty || next.settings != nil else { return }
+        try checkActive()
         work.outcome.merge(await local.apply(next, now: clockNow()))
         guard work.outcome.saved else { throw Failure.applyFailed }
     }
@@ -732,7 +760,7 @@ actor SyncEngine {
                 // merges against them again instead of seeing the merged text as a rival edit.
                 var partial = PageCommit(cursor: try await state.cursor(), epoch: commit.epoch)
                 settle(flushed, work.outcome, isFinal: false, into: &partial)
-                try await state.commit(partial)
+                try await commitPage(partial)
                 committed.formUnion(flushed)
             }
             work.pending.append(thought)
@@ -745,7 +773,7 @@ actor SyncEngine {
 
         let remaining = Set(thoughtIDs.compactMap(UUID.init(uuidString:))).subtracting(committed)
         settle(remaining, outcome, isFinal: true, into: &commit)
-        try await state.commit(commit)
+        try await commitPage(commit)
     }
 
     /// The tags the pulled bodies use. Applying them may have created a tag here with the display name of
@@ -826,6 +854,7 @@ actor SyncEngine {
             }
         }
         while true {
+            try checkActive()
             let entries = try await state.outbox(limit: config.pushEntities, after: after)
             guard let last = entries.last else { break }
             switch try await pushBatch(entries) {
@@ -959,10 +988,11 @@ actor SyncEngine {
             peakPlannedBytes = max(peakPlannedBytes, chunkPlanned)
         }
         if !staleTags.isEmpty {
+            try checkActive()
             let outcome = await local.apply(RemoteBatch(tags: staleTags), now: clockNow())
             guard outcome.saved else { throw Failure.applyFailed }
         }
-        if !finished.isEmpty { try await state.markSynced([], dequeuing: finished) }
+        if !finished.isEmpty { try checkActive(); try await state.markSynced([], dequeuing: finished) }
 
         if !chunk.isEmpty, try await send(chunk) == .conflict { return .conflict }
         return .done
@@ -1043,6 +1073,7 @@ actor SyncEngine {
                 ))
             }
             let deleted = chunk.filter { $0.records.contains { $0.payload.isDeletion } }.map { $0.entry.entity.id }
+            try checkActive()
             try await state.markSynced(synced, dequeuing: chunk.map(\.entry))
             if !deleted.isEmpty { try await state.releaseHeld(entityIDs: deleted) }
             return .done
@@ -1102,7 +1133,7 @@ actor SyncEngine {
     /// when this device has everything the vault has: nothing queued, held or parked, and nothing pulled since. Whatever the
     /// server answers, the attempt is noted and syncing goes on; the next clean cycle tries again.
     private func collectGarbageIfDue() async {
-        guard transport.supportsBlobs, status.attention == nil else { return }
+        guard !isShutDown, transport.supportsBlobs, status.attention == nil else { return }
         let now = clockNow()
         do {
             if quotaHeldEntities.isEmpty {
@@ -1135,6 +1166,7 @@ actor SyncEngine {
         } catch SyncTransportError.epochChanged(let server) {
             if let known = try? await state.epoch() { stop(.epochChanged(known: known, server: server)) }
         } catch {
+            guard !isShutDown else { return }
             Self.logger.error("Garbage collection not started: \(error)")
             try? await state.recordGarbageCollection(.failed, at: now)
         }

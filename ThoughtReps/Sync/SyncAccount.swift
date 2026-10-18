@@ -150,6 +150,7 @@ enum SyncAccountError: Error, Equatable {
         case pairingFailed = "pairing_failed"
         case deviceLimit = "device_limit"
         case tooManyInvites = "too_many_invites"
+        case reauthenticationRequired = "reauthentication_required"
     }
 
     case unsupported
@@ -164,6 +165,8 @@ enum SyncAccountError: Error, Equatable {
     case offline
     case network
     case invalidResponse
+    /// A fresh Sign in with Apple belongs to an account whose vault is not the one this device holds.
+    case differentAccount
     case server(status: Int, code: String?)
 
     var code: Code? {

@@ -201,19 +201,141 @@ enum SyncDebugSession {
     }
 
     /// Stops syncing, empties the outbox and deletes the vault key and the sync App Attest keyId from the Keychain, so the
-    /// next sign-in registers a fresh device with the server.
+    /// next sign-in registers a fresh device with the server. Returns once the state file is gone, so nothing written after
+    /// this is enqueued. The iCloud Keychain copy is left.
     static func forgetAccount(
         state: SyncState = .shared, credentials: SyncCredentialStore = KeychainSyncCredentialStore(),
         attestKeys: KeyIdStore = SyncAccountAPI.defaultKeyStore()
     ) async {
         await triggers?.stop(observing: state)
+        await engine?.stop()
         engine = nil
         triggers = nil
         provider = nil
         accountTarget = nil
+        awaitingResume = false
         state.disable()
+        await state.flush()
         credentials.clear()
         attestKeys.clear()
+    }
+
+    // MARK: Leaving and deleting
+
+    enum LeaveResult: Equatable {
+        case left
+        case leftAndErased
+        /// The server leave worked and sync is cleared, but the erase failed.
+        case eraseFailed
+        /// Nothing was cleared or erased.
+        case failed(String)
+    }
+
+    /// Removes this device from the vault on the server, then stops the engine and clears the key, the App Attest key id and
+    /// the sync state. `erase` (the person's second confirmation) runs only after all of that, so its deletes are neither
+    /// enqueued nor pushed. A failed server call leaves everything as it was. The iCloud Keychain copy is kept.
+    static func leaveSync(
+        erase: (() -> Bool)? = nil, service: SyncAccountService = accountService(), state: SyncState = .shared,
+        session: SyncSessionSource? = nil
+    ) async -> LeaveResult {
+        do {
+            guard let held = try service.credentials.load() else { return .failed("No key on this device.") }
+            try await service.leaveVault(credentials: held, session: session ?? sessionSource(for: held, service: service))
+        } catch SyncAccountError.server(let status, _) where status == 401 || status == 403 {
+            return .failed("This device was removed from sync or can't reach its account. Use Sign out and forget key.")
+        } catch {
+            logger.error("Leaving sync failed: \(error)")
+            return .failed(failureText(error))
+        }
+        await forgetAccount(state: state, credentials: service.credentials, attestKeys: service.api.keyStore)
+        guard let erase else { return .left }
+        return erase() ? .leftAndErased : .eraseFailed
+    }
+
+    /// Deletes the account's sync data on the server (every device stops syncing), then clears this device like a leave and
+    /// also deletes the iCloud Keychain copy. A server failure leaves everything as it was. Returns the failure text, or nil.
+    static func deleteSyncData(
+        service: SyncAccountService = accountService(), state: SyncState = .shared, session: SyncSessionSource? = nil
+    ) async -> String? {
+        do {
+            guard let held = try service.credentials.load() else { return "No key on this device." }
+            try await service.deleteAccount(vaultID: held.vaultID, session: session ?? sessionSource(for: held, service: service))
+        } catch SyncAccountError.differentAccount {
+            return "That Apple ID's sync account isn't the one this device is in. Nothing was deleted."
+        } catch SyncAccountError.appleSignInCancelled {
+            return "Sign in cancelled. Nothing was deleted."
+        } catch {
+            logger.error("Deleting sync data failed: \(error)")
+            return failureText(error)
+        }
+        await forgetAccount(state: state, credentials: service.credentials, attestKeys: service.api.keyStore)
+        service.iCloud?.delete()
+        return nil
+    }
+
+    static func failureText(_ error: Error) -> String {
+        (error as? SyncAccountError)?.pairingMessage ?? "Failed: \(error)"
+    }
+
+    /// The engine's session if it is running, otherwise one minted through the device key.
+    static func sessionSource(for held: SyncCredentials, service: SyncAccountService) -> SyncSessionSource {
+        provider ?? SyncSessionProvider(
+            api: service.api, vaultID: held.vaultID, serverNow: { Date().addingTimeInterval(ServerClockOffset(defaults: .standard).current) }
+        )
+    }
+
+    // MARK: Launch and reinstall
+
+    /// True after a launch found a vault key but no sync history: the engine waits for `resume` or `forgetAccount`.
+    private(set) static var awaitingResume = false
+
+    /// The sync state at launch; nil when there is no state file (`SyncState` is on from an existing file).
+    static func progress(of state: SyncState) async -> SyncProgress? {
+        guard state.isEnabled else { return nil }
+        do {
+            return SyncProgress(
+                vaultID: try await state.configuredVaultID(), cursor: try await state.cursor(), epoch: try await state.epoch(),
+                records: try await state.recordCount(), outbox: try await state.outboxCount()
+            )
+        } catch {
+            logger.error("Reading the sync state failed: \(error)")
+            return nil
+        }
+    }
+
+    /// A new device whose first cycle never succeeded has no history either, so it is asked too; Resume is harmless there.
+    /// The DEBUG launch: turns the outbox on, reconciles and starts the engine, unless the Keychain holds a vault key for
+    /// which this device has no sync history (a reinstall). Then it waits for the person. A launch environment that names a
+    /// vault always starts.
+    static func launch(
+        container: ModelContainer, state: SyncState = .shared, credentials: SyncCredentialStore = KeychainSyncCredentialStore()
+    ) async {
+        if !usesEnvironmentVault, Environment() == nil, let held = try? credentials.load(),
+           SyncResumeGate.needsConfirmation(heldVaultID: held.vaultID, progress: await progress(of: state)) {
+            awaitingResume = true
+            return
+        }
+        await begin(container: container, state: state, credentials: credentials)
+    }
+
+    /// `start` replaces the engine start in tests.
+    static func resume(
+        container: ModelContainer, state: SyncState = .shared, credentials: SyncCredentialStore = KeychainSyncCredentialStore(),
+        start: (() async -> Void)? = nil
+    ) async {
+        guard awaitingResume else { return }
+        awaitingResume = false
+        if let start {
+            await start()
+        } else {
+            await begin(container: container, state: state, credentials: credentials)
+        }
+    }
+
+    private static func begin(container: ModelContainer, state: SyncState, credentials: SyncCredentialStore) async {
+        await state.enableForDebugging(credentials: credentials)
+        await SyncReconcileRunner.reconcile(container: container, state: state)
+        await start(container: container, state: state, credentials: credentials)
     }
 
     private static func enableOutbox(state: SyncState, container: ModelContainer, vaultID: String) async throws {

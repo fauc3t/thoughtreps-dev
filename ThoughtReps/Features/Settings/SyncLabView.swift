@@ -83,13 +83,22 @@ final class SyncLabModel {
     private(set) var inviteMessage: String?
     private var pendingJoin: SyncDebugSession.JoinSource?
 
+    private(set) var devices: SyncDeviceList?
+    private(set) var devicesMessage: String?
+    private(set) var isLoadingDevices = false
+    private(set) var isWorking = false
+    private(set) var leaveStep: LeaveGate.Step?
+    private(set) var confirmsDeleteData = false
+    var pendingRemoval: SyncDeviceList.Device?
+    var awaitingResume: Bool { SyncDebugSession.awaitingResume }
+
     var offset: TimeInterval { ServerClockOffset(defaults: .standard).current }
 
     func signIn(in context: ModelContext) async {
         isSigningIn = true
         accountMessage = await SyncDebugSession.signInAndCreateVault(container: context.container)
         isSigningIn = false
-        await refresh()
+        await reload()
     }
 
     func forgetAccount() async {
@@ -97,6 +106,127 @@ final class SyncLabModel {
         accountMessage = "Key forgotten."
         recoveryCode = nil
         await refresh()
+    }
+
+    // MARK: Resuming
+
+    func resume(in context: ModelContext) async {
+        await SyncDebugSession.resume(container: context.container)
+        accountMessage = nil
+        await reload()
+    }
+
+    // MARK: Devices
+
+    private var service: SyncAccountService { SyncDebugSession.accountService() }
+
+    private func heldSession() throws -> (SyncCredentials, SyncSessionSource) {
+        guard let held = try KeychainSyncCredentialStore().load() else { throw SyncAccountError.notRegistered }
+        return (held, SyncDebugSession.sessionSource(for: held, service: service))
+    }
+
+    func loadDevices() async {
+        guard accountVaultID != nil, !awaitingResume else {
+            devices = nil
+            return
+        }
+        isLoadingDevices = true
+        defer { isLoadingDevices = false }
+        do {
+            let (held, session) = try heldSession()
+            devices = try await service.listDevices(credentials: held, session: session)
+            devicesMessage = nil
+        } catch {
+            devicesMessage = SyncDebugSession.failureText(error)
+        }
+    }
+
+    func renameThisDevice(to name: String) async {
+        guard let keyId = devices?.current?.keyId else { return }
+        isWorking = true
+        defer { isWorking = false }
+        do {
+            let (held, session) = try heldSession()
+            try await service.renameDevice(keyId: keyId, to: name, credentials: held, session: session)
+            devicesMessage = nil
+        } catch {
+            devicesMessage = SyncDebugSession.failureText(error)
+        }
+        await loadDevices()
+    }
+
+    func removePendingDevice() async {
+        guard let device = pendingRemoval else { return }
+        pendingRemoval = nil
+        isWorking = true
+        defer { isWorking = false }
+        do {
+            let (held, session) = try heldSession()
+            try await service.removeDevice(keyId: device.keyId, credentials: held, session: session)
+            devicesMessage = "Removed \(device.name)."
+        } catch {
+            devicesMessage = SyncDebugSession.failureText(error)
+        }
+        await loadDevices()
+    }
+
+    // MARK: Leaving and deleting
+
+    func requestLeave(erase: Bool, in context: ModelContext) {
+        do {
+            leaveStep = LeaveGate.begin(erase: erase, thoughtCount: try context.fetchCount(FetchDescriptor<Thought>()))
+        } catch {
+            accountMessage = "Couldn't count the thoughts on this device: \(error)"
+        }
+    }
+
+    func answerLeave(_ action: LeaveGate.Action, in context: ModelContext) {
+        guard let leaveStep else { return }
+        let next = LeaveGate.advance(leaveStep, action)
+        switch next {
+        case .run(let erase):
+            self.leaveStep = nil
+            isWorking = true
+            Task { await runLeave(erase: erase, in: context) }
+        case .cancelled:
+            self.leaveStep = nil
+        default:
+            self.leaveStep = next
+        }
+    }
+
+    private func runLeave(erase: Bool, in context: ModelContext) async {
+        let result = await SyncDebugSession.leaveSync(erase: erase ? { ThoughtStore(context: context).deleteAll() } : nil)
+        isWorking = false
+        switch result {
+        case .left: accountMessage = "Left sync. This device keeps its thoughts."
+        case .leftAndErased: accountMessage = "Left sync and erased this device."
+        case .eraseFailed: accountMessage = "Left sync, but erasing this device failed."
+        case .failed(let text): accountMessage = text
+        }
+        recoveryCode = nil
+        devices = nil
+        await refresh()
+    }
+
+    func requestDeleteData() {
+        confirmsDeleteData = true
+    }
+
+    func answerDeleteData(_ confirmed: Bool) {
+        confirmsDeleteData = false
+        guard confirmed, !isWorking else { return }
+        isWorking = true
+        Task {
+            let failure = await SyncDebugSession.deleteSyncData()
+            isWorking = false
+            accountMessage = failure ?? "Sync data deleted. This device keeps its thoughts."
+            if failure == nil {
+                recoveryCode = nil
+                devices = nil
+            }
+            await refresh()
+        }
     }
 
     // MARK: iCloud Keychain copy
@@ -168,7 +298,7 @@ final class SyncLabModel {
             !eraseFirst || ThoughtStore(context: context).deleteAll()
         })
         isJoining = false
-        await refresh()
+        await reload()
     }
 
     func showRecoveryCode() {
@@ -208,6 +338,11 @@ final class SyncLabModel {
         iCloudCopyExists = ((try? ICloudKeyCopy().load()) ?? nil) != nil
     }
 
+    func reload() async {
+        await refresh()
+        await loadDevices()
+    }
+
     func syncNow() async {
         isSyncing = true
         await SyncDebugSession.syncNow()
@@ -238,9 +373,41 @@ struct SyncLabView: View {
     @State private var recoveryEntry = ""
     @State private var showInvite = false
     @State private var showScan = false
+    @State private var showRename = false
+    @State private var renameText = ""
 
     private var busy: Bool {
-        model.isSigningIn || model.isJoining || SyncDebugSession.usesEnvironmentVault
+        model.isSigningIn || model.isJoining || model.isWorking || SyncDebugSession.usesEnvironmentVault
+    }
+
+    private var leaveBinding: Binding<Bool> {
+        Binding(
+            get: { if case .confirmLeave = model.leaveStep { true } else { false } },
+            set: { if !$0, case .confirmLeave = model.leaveStep { model.answerLeave(.cancel, in: context) } }
+        )
+    }
+
+    private var eraseBinding: Binding<Bool> {
+        Binding(
+            get: { if case .confirmErase = model.leaveStep { true } else { false } },
+            set: { if !$0, case .confirmErase = model.leaveStep { model.answerLeave(.cancel, in: context) } }
+        )
+    }
+
+    private var removeBinding: Binding<Bool> {
+        Binding(get: { model.pendingRemoval != nil }, set: { if !$0 { model.pendingRemoval = nil } })
+    }
+
+    private var deleteDataBinding: Binding<Bool> {
+        Binding(get: { model.confirmsDeleteData }, set: { if !$0 { model.answerDeleteData(false) } })
+    }
+
+    private var leaveErases: Bool {
+        if case .confirmLeave(let erase, _) = model.leaveStep { erase } else { false }
+    }
+
+    private var eraseCount: Int {
+        if case .confirmErase(let count) = model.leaveStep { count } else { 0 }
     }
 
     private var joinBinding: Binding<Bool> {
@@ -285,13 +452,25 @@ struct SyncLabView: View {
             }
 
             Section {
-                if let vault = model.accountVaultID {
+                if let vault = model.accountVaultID, model.awaitingResume {
+                    LabeledContent("Account vault", value: vault)
+                    Text(SyncResumeGate.title).font(.headline)
+                    Text(SyncResumeGate.message).font(.footnote).foregroundStyle(.secondary)
+                    Button("Resume") { Task { await model.resume(in: context) } }
+                    Button("Forget", role: .destructive) { Task { await model.forgetAccount() } }
+                } else if let vault = model.accountVaultID {
                     LabeledContent("Account vault", value: vault)
                     Button("Show recovery code") { model.showRecoveryCode() }
                     if let code = model.recoveryCode {
                         Text(code).font(.system(.footnote, design: .monospaced)).textSelection(.enabled)
                     }
                     Button("Add a device") { showInvite = true }
+                    Button("Leave sync", role: .destructive) { model.requestLeave(erase: false, in: context) }
+                        .disabled(busy)
+                    Button("Erase this device and leave sync", role: .destructive) { model.requestLeave(erase: true, in: context) }
+                        .disabled(busy)
+                    Button("Delete sync data", role: .destructive) { model.requestDeleteData() }
+                        .disabled(busy)
                     Button("Sign out and forget key", role: .destructive) {
                         Task { await model.forgetAccount() }
                     }
@@ -322,7 +501,7 @@ struct SyncLabView: View {
                     }
                     .disabled(busy || recoveryEntry.isEmpty)
                 }
-                if model.isJoining { ProgressView() }
+                if model.isJoining || model.isWorking { ProgressView() }
                 if let message = model.accountMessage {
                     Text(message).font(.footnote).foregroundStyle(.secondary)
                 }
@@ -330,6 +509,10 @@ struct SyncLabView: View {
                 Text("Account")
             } footer: {
                 Text("Needs a real device. Forgetting also drops this device's App Attest key, so the next sign-in registers a new device (the old one still counts toward the device limit). The vault stays on the server; rejoin it with iCloud Keychain, a recovery code or a QR code.")
+            }
+
+            if model.accountVaultID != nil, !model.awaitingResume {
+                devicesSection
             }
 
             Section {
@@ -404,13 +587,42 @@ struct SyncLabView: View {
         }
         .navigationTitle("Sync lab")
         .navigationBarTitleDisplayMode(.inline)
-        .task { await model.refresh() }
-        .refreshable { await model.refresh() }
+        .task { await model.reload() }
+        .refreshable { await model.reload() }
         .sheet(isPresented: $showInvite) { SyncInviteSheet(model: model) }
         .sheet(isPresented: $showScan) {
             SyncScanSheet { invite in
                 Task { await model.requestJoin(.invite(invite), in: context) }
             }
+        }
+        .alert(LeaveGate.leaveTitle(device: SyncDeviceName.current), isPresented: leaveBinding) {
+            Button(leaveErases ? "Continue" : "Leave sync", role: leaveErases ? nil : .destructive) { model.answerLeave(.confirm, in: context) }
+            Button("Cancel", role: .cancel) { model.answerLeave(.cancel, in: context) }
+        } message: {
+            Text(LeaveGate.leaveMessage(erase: leaveErases))
+        }
+        .alert(LeaveGate.eraseTitle(count: eraseCount, device: SyncDeviceName.current), isPresented: eraseBinding) {
+            Button("Erase", role: .destructive) { model.answerLeave(.confirm, in: context) }
+            Button("Cancel", role: .cancel) { model.answerLeave(.cancel, in: context) }
+        } message: {
+            Text(LeaveGate.eraseMessage)
+        }
+        .alert(LeaveGate.removeTitle(name: model.pendingRemoval?.name ?? ""), isPresented: removeBinding) {
+            Button("Remove", role: .destructive) { Task { await model.removePendingDevice() } }
+            Button("Cancel", role: .cancel) { model.pendingRemoval = nil }
+        } message: {
+            Text(LeaveGate.removeMessage)
+        }
+        .alert(LeaveGate.deleteDataTitle, isPresented: deleteDataBinding) {
+            Button("Delete sync data", role: .destructive) { model.answerDeleteData(true) }
+            Button("Cancel", role: .cancel) { model.answerDeleteData(false) }
+        } message: {
+            Text(LeaveGate.deleteDataMessage)
+        }
+        .alert("Rename this device", isPresented: $showRename) {
+            TextField("Name", text: $renameText)
+            Button("Rename") { Task { await model.renameThisDevice(to: renameText) } }
+            Button("Cancel", role: .cancel) {}
         }
         .alert(JoinGate.joinTitle, isPresented: joinBinding) {
             Button("Join") { model.answerJoin(.confirmJoin, in: context) }
@@ -432,6 +644,43 @@ struct SyncLabView: View {
             Button("Cancel", role: .cancel) { model.answerJoin(.cancel, in: context) }
         } message: {
             Text(JoinGate.confirmMessage)
+        }
+    }
+
+    private var devicesSection: some View {
+        Section {
+            if let devices = model.devices {
+                ForEach(devices.devices) { device in
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text(device.name).font(.headline)
+                            if device.isCurrent { Text("This device").font(.caption).foregroundStyle(.secondary) }
+                        }
+                        Text("Added \(device.addedAt.formatted(date: .abbreviated, time: .shortened)), last seen \(device.lastSeenAt.formatted(date: .abbreviated, time: .shortened))")
+                            .font(.footnote).foregroundStyle(.secondary)
+                        if device.isCurrent {
+                            Button("Rename") {
+                                renameText = device.name == SyncDeviceList.unnamed ? "" : device.name
+                                showRename = true
+                            }
+                            .disabled(busy)
+                        } else {
+                            Button("Remove", role: .destructive) { model.pendingRemoval = device }
+                                .disabled(busy)
+                        }
+                    }
+                }
+                Text(devices.countText).font(.footnote).foregroundStyle(.secondary)
+            } else if model.isLoadingDevices {
+                ProgressView()
+            }
+            if let message = model.devicesMessage {
+                Text(message).font(.footnote).foregroundStyle(.secondary)
+            }
+        } header: {
+            Text("Devices")
+        } footer: {
+            Text("Pull to refresh. Removing a device stops it syncing; its thoughts stay on it.")
         }
     }
 }

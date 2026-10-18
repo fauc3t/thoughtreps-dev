@@ -34,7 +34,7 @@
 - Sync (3d leftovers): add garbage collection to the `THOUGHTREPS_SYNC_STATUS_FILE` snapshot; test the 413 `quota_exceeded` hold against a real server (fakes only so far); check the Sync lab rows ("Garbage collection", "Held for storage limit", "Storage") visually.
 - Sync: `local.snapshots()` still loads all content records of a 49-entry push batch at once (up to 16 MB each); bound it by bytes if large thoughts get common.
 - Sync: a file block changed in place (same block id, different file) keeps the old file on apply (`applyRemote`/import).
-- Sync (phase 4): "Needs a look" UI for conflict copies; the store methods (`keepCopy`/`keepOriginal`/`keepBoth`) exist but nothing calls them.
+- Sync ("Needs a look" round, after 4c-3): timeline section and resolve sheet for conflict copies (changes the shipped Timeline); the store methods (`keepCopy`/`keepOriginal`/`keepBoth`) exist but nothing calls them.
 - Sync: `noteAttempts` keeps the first attempt (INSERT OR IGNORE), so after a lost push response plus another edit, the merge base is older than the last push and a clean merge can come out as a spurious conflict copy (nothing lost).
 - Sync (2c): `scripts/sync-integ.sh` uses fixed simulator names ("TR Sync A"/"TR Sync B") and one port, so two runs at once collide.
 - Sync (2c): the DEBUG Sync lab screen (`SyncLabView.swift`) hasn't been reviewed by a human on a device yet.
@@ -42,8 +42,10 @@
 - Sync (3b): `scripts/sync-integ.sh` has no image scenario because creating an inline image in an XCUITest needs the photo picker; add one once a DEBUG launch hook can seed an image thought.
 - Sync (4c-2): device-test pairing on real devices: QR pair iPhone to iPad, recovery code join, iCloud Keychain join, and the merge and erase paths of the join prompt.
 - Sync (4c-2): the camera usage string is the photo wording; it needs a scan-specific one (QR pairing) before sync ships.
-- Sync (4c-1): if the Keychain save fails after `POST /vaults`, the vault exists on the server without a key on any device (accepted); recover via erase or delete in 4c-3.
-- Sync (4c-1): a stale App Attest key is re-registered as a new server device; the old device stays in the vault and counts toward the 3-device limit until device removal (4c-3), and the new key isn't a vault member until pairing (4c-2).
+- Sync (4c-3): device-test on real devices: device list, rename, remove another device, leave, erase-and-leave, Delete sync data, the "Resume syncing" prompt after a reinstall.
+- Sync (4c-1): if the Keychain save fails after `POST /vaults`, the vault exists on the server without a key on any device (accepted); recover via Delete sync data.
+- Sync (4c-1): a stale App Attest key is re-registered as a new server device and the new key isn't a vault member until pairing; the old device can be removed from the Devices list (4c-3), but it counts toward the 3-device limit until then.
+- Sync (4c-3): the engine stop's push-side checks (no push after `stop()`) aren't covered by a test; only a mid-pull stop is.
 - Sync (4c-1): the "failing Keychain save keeps the old key" path is untested.
 - Sync (4b leftovers): `/pair` on dev with a real device (the smoke test covers every other route); cleanup failures take about 2 h to reach the dead-letter queue (30-min visibility); erase of a 600k-row vault takes 10+ min and isn't load-tested; a presigned upload issued just before deletion can orphan an encrypted blob; legacy pre-4b dev devices get their vault backfilled only on sign-in or re-pair.
 - Sync (4b, optional): sweep empty accounts (no vault, no subscription, no devices) after about 30 days; pairing leaves them behind.

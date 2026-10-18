@@ -113,6 +113,14 @@ struct SyncAccountAPI: Sendable {
         return try decode(try await perform(request))
     }
 
+    /// A bearer-authenticated call without a body: `GET` or `DELETE`.
+    func bodyless<Response: Decodable>(_ method: String, _ path: String, bearer: String) async throws -> Response {
+        var request = URLRequest(url: baseURL.appending(path: path))
+        request.httpMethod = method
+        request.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization")
+        return try decode(try await perform(request))
+    }
+
     private func perform(_ request: URLRequest) async throws -> Data {
         let data: Data
         let response: HTTPURLResponse
@@ -191,7 +199,7 @@ struct SyncAccountService: Sendable {
     }
 
     /// An identity token Apple issued for a stale or already used challenge is rejected; one more try with new ones.
-    private func signIn(keyId: String) async throws -> SyncHTTPWireV1.AccountSession {
+    func signIn(keyId: String) async throws -> SyncHTTPWireV1.AccountSession {
         var retried = false
         while true {
             let challenge = try await api.challenge()
@@ -230,10 +238,8 @@ struct SyncAccountService: Sendable {
         do {
             guard let keyId = try api.storedKeyId() else { return }
             let sealed = try SyncCrypto.sealDeviceName(await deviceName(), vaultID: vaultID, keyID: keyId, keys: SyncKeys(vaultKey: key))
-            let pathKey = keyId.replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_")
-                .replacingOccurrences(of: "=", with: "")
             let _: SyncHTTPWireV1.DeviceNameResponse = try await api.put(
-                "vaults/\(vaultID)/devices/\(pathKey)", body: try SyncAccountAPI.encode(SyncHTTPWireV1.DeviceNameRequest(nameSealed: sealed)), bearer: session
+                SyncDevicePath.device(vaultID: vaultID, keyID: keyId), body: try SyncAccountAPI.encode(SyncHTTPWireV1.DeviceNameRequest(nameSealed: sealed)), bearer: session
             )
         } catch {
             Self.log.error("Naming this device failed: \(String(describing: error))")
@@ -320,7 +326,7 @@ struct SyncAccountService: Sendable {
         return Invitation(invite: invite, expiresAt: Date(timeIntervalSince1970: Double(response.expiresAt) / 1000 - skew))
     }
 
-    private func withBearer<T>(_ session: SyncSessionSource, _ call: (String) async throws -> T) async throws -> T {
+    func withBearer<T>(_ session: SyncSessionSource, _ call: (String) async throws -> T) async throws -> T {
         let token = try await session.token()
         do {
             return try await call(token)
