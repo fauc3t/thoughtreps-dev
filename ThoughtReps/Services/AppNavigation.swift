@@ -36,6 +36,11 @@ struct EditThoughtRequest: Identifiable, Equatable {
     let id: UUID
 }
 
+/// A request to resolve a conflict copy, held by id and presented from the root like the editor.
+struct ResolveConflictRequest: Identifiable, Equatable {
+    let id: UUID
+}
+
 /// A request for a new thought. One from the Action button or Siri skips the current tag's prefill.
 struct NewThoughtRequest: Equatable {
     let skipsTagPrefill: Bool
@@ -54,6 +59,7 @@ final class AppNavigation {
     var selectedTab: AppTab = .timeline
     var showSettings = false
     var editRequest: EditThoughtRequest?
+    var resolveRequest: ResolveConflictRequest?
     /// Increments on each reminder tap.
     private(set) var reminderOpenCount = 0
     /// Held until the root consumes it, so a request made before the root mounts (cold launch) isn't missed.
@@ -81,6 +87,11 @@ final class AppNavigation {
     func requestEdit(thoughtID: UUID) {
         guard editRequest == nil else { return }
         editRequest = EditThoughtRequest(id: thoughtID)
+    }
+
+    func requestResolve(copyID: UUID) {
+        guard resolveRequest == nil else { return }
+        resolveRequest = ResolveConflictRequest(id: copyID)
     }
 
     func requestSearch() {

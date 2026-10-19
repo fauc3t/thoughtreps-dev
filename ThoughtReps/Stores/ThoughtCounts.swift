@@ -104,6 +104,9 @@ enum ThoughtCounts {
     /// there to be resolved either way.
     static let conflictCopies = #Predicate<Thought> { $0.conflictOfID != nil }
 
+    /// How many copies the timeline's "Needs a look" section lists at once.
+    static let conflictCopyRowLimit = 20
+
     /// The oldest copies first (the longest unresolved), and how many there are in all.
     static func conflictCopies(limit: Int, in context: ModelContext) -> (thoughts: [Thought], total: Int) {
         do {

@@ -73,6 +73,8 @@ export const HELP_EXAMPLE_KINDS = [
   'blurred-block',
   'file-card',
   'linked-thought',
+  'conflict-copy',
+  'conflict-sheet',
   'tag-list',
   'color-sheet',
   'share-sheet',
@@ -424,7 +426,8 @@ export const HELP_ARTICLES: HelpArticle[] = [
       {
         heading: 'What is on the Timeline',
         list: [
-          'A "Pinned" section at the top, with every pinned thought. They stay in the order you pinned them.',
+          'A "Needs a look" section above those, only when the app has a conflict copy for you to sort out. See [When two versions clash](/help/conflict-copies).',
+          'A "Pinned" section, with every pinned thought. They stay in the order you pinned them.',
           'A "Due" section below it, with thoughts whose wait is over, oldest first.',
         ],
       },
@@ -1378,6 +1381,64 @@ export const HELP_ARTICLES: HelpArticle[] = [
     ],
   },
   {
+    slug: 'conflict-copies',
+    category: 'reviewing',
+    title: 'When two versions clash: "Needs a look"',
+    description:
+      'Sometimes a thought ends up with two versions. Thought Reps keeps both and shows the copy under "Needs a look" so you can pick which one to keep.',
+    related: ['the-timeline', 'backup-and-restore', 'how-resurfacing-works'],
+    sections: [
+      {
+        paragraphs: [
+          'Now and then the same thought gets changed in two places at once. Say you are editing it, and a change to the same thought lands before you tap Save. Or you import a backup that has a different version of a thought you also changed here. Thought Reps will not guess which one is right, and it will not throw either one away.',
+          'It saves one version as the thought, and the other as a conflict copy. The copy shows up in a "Needs a look" section at the top of your Timeline, until you decide what to do with it.',
+        ],
+        example: {
+          kind: 'conflict-copy',
+          caption:
+            'A copy under "Needs a look", with the original under it as a small card. Tapping it opens the choices.',
+        },
+      },
+      {
+        heading: 'Sort out a copy',
+        steps: [
+          'On the Timeline, tap the copy under "Needs a look". It does not open the thought, so it is not counted as a view.',
+          'Read the two versions. On a phone they are stacked. On an iPad they sit side by side.',
+          'Pick one of the three choices.',
+        ],
+      },
+      {
+        heading: 'The three choices',
+        list: [
+          '"Keep this version" puts the copy\'s text in the original thought, and the copy goes away. The old text of the original is gone.',
+          '"Keep the original" deletes the copy. It asks you to confirm first.',
+          '"Keep both" turns the copy into a thought of its own, with the usual schedule. It leaves the "Needs a look" section.',
+        ],
+        example: {
+          kind: 'conflict-sheet',
+          caption:
+            'The sheet that opens when you tap a copy. Each version has its own button.',
+        },
+      },
+      {
+        heading: 'If the original is gone',
+        paragraphs: [
+          'If you deleted the original, the row says "Original deleted". The sheet then has two choices. "Keep" turns the copy into a normal thought. "Delete" removes it for good, after you confirm.',
+        ],
+      },
+      {
+        heading: 'Good to know',
+        list: [
+          'A copy has a banner at the top of the open thought that says "Conflict copy · Resolve". Tap it to open the same choices.',
+          'The Timeline lists the first 20 copies. If there are more, tap "and 5 more" (with your own number) to see them all.',
+          'If a choice cannot be done, the sheet says so and nothing changes. Close it and try again.',
+          'Copies stay out of the Due list, so they only show under "Needs a look".',
+          'Nothing is lost until you choose. A copy waits as long as you like.',
+        ],
+      },
+    ],
+  },
+  {
     slug: 'stats',
     category: 'reviewing',
     title: 'Stats: how you use the app',
@@ -1458,7 +1519,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
           'You get at most one reminder a day, at the time you pick.',
           'If nothing is due, you get no reminder that day.',
           'The count includes thoughts due by that time, even ones that have waited a while.',
-          'Pinned and archived thoughts are never counted.',
+          'Pinned and archived thoughts are never counted. Neither are conflict copies. See [When two versions clash](/help/conflict-copies).',
         ],
       },
       {
@@ -1591,6 +1652,7 @@ export const HELP_ARTICLES: HelpArticle[] = [
           'Thoughts that are new to this phone are added.',
           'If a thought is already on this phone, Thought Reps keeps the newest change to each part: the text, the schedule, and pinned or archived. It also keeps the higher view count.',
           'An import never deletes anything on your phone. Importing the same file twice changes nothing.',
+          'If the same thought was changed in both places at once, the import can keep your other version as a copy. See [When two versions clash](/help/conflict-copies).',
           'Imported thoughts bring their schedule, pins and archive state.',
         ],
       },

@@ -9,6 +9,7 @@ enum AppRoute: Hashable {
     case tag(Tag)
     case untagged
     case search
+    case conflictCopies
 }
 
 /// What survives a switch between the compact tabs and the split view (a fold or unfold).
@@ -98,6 +99,7 @@ extension View {
             case .tag(let tag): TagTimelineView(tag: tag)
             case .untagged: ThoughtTimelineView(scope: .untagged)
             case .search: SearchView()
+            case .conflictCopies: ConflictCopyListView()
             }
         }
     }

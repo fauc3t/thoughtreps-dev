@@ -20,9 +20,9 @@ enum ReminderPlanner {
     }
 
     /// Thoughts that count toward a reminder firing at `fireDate`: unarchived, unpinned (pinned
-    /// thoughts never count) and due by then, so overdue thoughts count until opened.
+    /// thoughts never count), not a conflict copy (those wait under "Needs a look") and due by then, so overdue thoughts count until opened.
     static func countedPredicate(dueBy fireDate: Date) -> Predicate<Thought> {
-        #Predicate<Thought> { !$0.isArchived && !$0.isPinned && $0.nextDueAt <= fireDate }
+        #Predicate<Thought> { !$0.isArchived && !$0.isPinned && $0.conflictOfID == nil && $0.nextDueAt <= fireDate }
     }
 
     /// One entry per day at `hour:minute`, covering the next `days` fire times. Today is

@@ -4,6 +4,7 @@
 - After the launch email (and TestFlight invites), delete all WaitlistTable rows and the [Waitlist] notification emails; the privacy policy promises it.
 - Linked thoughts (built; checks left): device-check the link picker and the editor's "Linked thought" row on iPhone and iPad. On iPad with a hardware keyboard, check ⌘↩/Esc while the picker is open (the editor's SwiftUI Save/Cancel shortcuts are unverified under the sheet). Check iPad split visits and fold/unfold with a visit on the stack. See `designs/Thought Reps — Linked Thoughts Spec.md`.
 - Main `SearchView` searches while the index is still rebuilding and doesn't re-search when indexing ends (shows "Indexing… results may be incomplete.").
+- Before release, "Needs a look" (conflict copies; ships in release builds, unlike the rest of sync) is untested beyond unit tests: the Timeline section, the "and N more" list, the resolve sheet and the detail banner (including the compact pop after resolving from the banner) haven't been seen in a simulator or on a device, in either layout. Check them by hand on iPhone and iPad, then add a scenario to the device sync harness (`designs/Thought Reps — Device Sync Harness Spec.md`): two devices edit the same thought offline, sync, and the copy is resolved from the row and from the banner.
 
 ## Backlog
 
@@ -34,12 +35,12 @@
 - Sync (3d leftovers): add garbage collection to the `THOUGHTREPS_SYNC_STATUS_FILE` snapshot; test the 413 `quota_exceeded` hold against a real server (fakes only so far); check the Sync lab rows ("Garbage collection", "Held for storage limit", "Storage") visually.
 - Sync: `local.snapshots()` still loads all content records of a 49-entry push batch at once (up to 16 MB each); bound it by bytes if large thoughts get common.
 - Sync: a file block changed in place (same block id, different file) keeps the old file on apply (`applyRemote`/import).
-- Sync ("Needs a look" round, after 4c-3): timeline section and resolve sheet for conflict copies (changes the shipped Timeline); the store methods (`keepCopy`/`keepOriginal`/`keepBoth`) exist but nothing calls them.
 - Sync: `noteAttempts` keeps the first attempt (INSERT OR IGNORE), so after a lost push response plus another edit, the merge base is older than the last push and a clean merge can come out as a spurious conflict copy (nothing lost).
 - Sync (2c): `scripts/sync-integ.sh` uses fixed simulator names ("TR Sync A"/"TR Sync B") and one port, so two runs at once collide.
 - Sync (2c): the DEBUG Sync lab screen (`SyncLabView.swift`) hasn't been reviewed by a human on a device yet.
 - Sync (3b follow-ups): blob uploads and downloads use a foreground `URLSession`, so they stop when the app is suspended; move them to a background session. Blobs are held in memory (up to `maxAssetBlobBytes`, 25 MB); stream through temp files before files grow past that. `hasBlob` and `putBlob` each make one API round trip per blob (a download-urls call to check, an upload-urls call to put, then the S3 request); batch them into one call per chunk (the routes take up to 100). Downloads read byte by byte to enforce the cap; a streaming-to-file read would be faster.
 - Sync (3b): `scripts/sync-integ.sh` has no image scenario because creating an inline image in an XCUITest needs the photo picker; add one once a DEBUG launch hook can seed an image thought.
+- Sync device harness (`scripts/sync-device-integ.sh`): phase 1 (the two-device scenarios) has never run on real devices; phases 2-3 (data and account scenarios) are unbuilt.
 - Sync (4c-2): device-test pairing on real devices: QR pair iPhone to iPad, recovery code join, iCloud Keychain join, and the merge and erase paths of the join prompt.
 - Sync (4c-2): the camera usage string is the photo wording; it needs a scan-specific one (QR pairing) before sync ships.
 - Sync (4c-3): device-test on real devices: device list, rename, remove another device, leave, erase-and-leave, Delete sync data, the "Resume syncing" prompt after a reinstall.

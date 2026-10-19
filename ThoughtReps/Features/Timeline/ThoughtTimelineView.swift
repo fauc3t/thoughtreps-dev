@@ -157,6 +157,9 @@ private struct TimelineList: View {
     /// Row order as of `snapshot`, so opening a thought (which requeues it) doesn't move its row.
     /// Unused in "show all", which lists every thought and is shown as loaded.
     @State private var order = TimelineOrder.Frozen()
+    /// The conflict copies listed under "Needs a look" (main timeline only) and their originals, refreshed on every save.
+    @State private var copies: (thoughts: [Thought], total: Int) = ([], 0)
+    @State private var originals: [UUID: Thought] = [:]
 
     init(scope: TimelineScope, showAll: Bool, snapshot: Date, keeping: UUID?, onRefresh: @escaping () -> Void) {
         self.scope = scope
@@ -165,7 +168,7 @@ private struct TimelineList: View {
         self.keeping = keeping
         self.onRefresh = onRefresh
         _shown = Query(
-            filter: ThoughtCounts.timeline(scope.queryScope, showAll: showAll, snapshot: snapshot, keeping: keeping),
+            filter: ThoughtCounts.timeline(scope.queryScope, showAll: showAll, snapshot: snapshot, keeping: keeping, excludingCopies: true),
             sort: \Thought.nextDueAt
         )
     }
@@ -189,7 +192,26 @@ private struct TimelineList: View {
         let rows = showAll ? Array(shown) : TimelineOrder.sorted(shown, by: order.ranks)
         let pinned = TimelineOrder.pinnedSorted(rows.filter(\.isPinned))
         let listed = rows.filter { !$0.isPinned }
+        let copyRows = copies.thoughts.filter { $0.modelContext != nil && !$0.isDeleted }
         List {
+            if !copyRows.isEmpty {
+                Section {
+                    ForEach(copyRows) { copy in
+                        ConflictCopyRow(copy: copy, original: original(of: copy), now: snapshot)
+                            .inkRow()
+                    }
+                    if copies.total > copyRows.count {
+                        NavigationLink(value: AppRoute.conflictCopies) {
+                            Text("and \(copies.total - copyRows.count) more")
+                                .font(.mono(12, relativeTo: .footnote))
+                                .foregroundStyle(Color.muted)
+                        }
+                        .inkRow()
+                    }
+                } header: {
+                    Text("Needs a look").inkSectionHeader()
+                }
+            }
             if !pinned.isEmpty {
                 Section {
                     ForEach(pinned) { row($0) }
@@ -218,7 +240,7 @@ private struct TimelineList: View {
         .contentMargins(.bottom, 88, for: .scrollContent) // room for the + button
         .readableContentMargins()
         .overlay {
-            if shown.isEmpty {
+            if shown.isEmpty && copies.total == 0 {
                 emptyState
             }
         }
@@ -229,7 +251,20 @@ private struct TimelineList: View {
         .onChange(of: showAll ? [] : shown.map(\.id)) {
             order = TimelineOrder.refreshed(order, with: shown, snapshot: snapshot)
         }
+        .onChange(of: saveToken, initial: true) { refreshCopies() }
         .onReceive(NotificationCenter.default.publisher(for: ModelContext.didSave)) { _ in saveToken += 1 }
+    }
+
+    private func refreshCopies() {
+        guard case .all = scope else { return }
+        let page = ThoughtCounts.conflictCopies(limit: ThoughtCounts.conflictCopyRowLimit, in: context)
+        copies = page
+        originals = ThoughtCounts.targets(of: page.thoughts.compactMap(\.conflictOfID), in: context)
+    }
+
+    private func original(of copy: Thought) -> Thought? {
+        guard let id = copy.conflictOfID, let found = originals[id], found.modelContext != nil, !found.isDeleted else { return nil }
+        return found
     }
 
     private func row(_ thought: Thought) -> some View {

@@ -110,6 +110,22 @@ struct TimelineQueriesTests {
         #expect(result.count == 2)
     }
 
+    @Test func conflictCopiesAreLeftOutOfTheDefaultTimelineAndNextUp() throws {
+        let original = thought("original", due: -100)
+        let copy = thought("copy", due: -50, pinned: true)
+        copy.conflictOfID = original.id
+        let showAllCopy = thought("later copy", due: 500)
+        showAllCopy.conflictOfID = original.id
+        try context.save()
+        #expect(try bodies(ThoughtCounts.timeline(.all, showAll: false, snapshot: snapshot)) == ["original"])
+        #expect(try bodies(ThoughtCounts.timeline(.untagged, showAll: false, snapshot: snapshot, keeping: copy.id)) == ["original"])
+        #expect(try bodies(ThoughtCounts.timeline(.all, showAll: true, snapshot: snapshot)) == ["original", "copy", "later copy"])
+        #expect(try bodies(ThoughtCounts.timeline(.all, showAll: true, snapshot: snapshot, excludingCopies: true)) == ["original"])
+        #expect(try bodies(ThoughtCounts.timeline(.untagged, showAll: true, snapshot: snapshot, excludingCopies: true)) == ["original", "copy", "later copy"])
+        #expect(try bodies(ThoughtCounts.upcoming(.all)) == ["original"])
+        #expect(try #require(ThoughtCounts.nextUp(.all, in: context)).count == 1)
+    }
+
     @Test func nextUpIsNilWithoutUnpinnedThoughts() throws {
         thought("pinned", due: 10, pinned: true)
         try context.save()

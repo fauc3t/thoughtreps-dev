@@ -186,7 +186,7 @@ struct ReminderPlannerTests {
     }
 
     @MainActor
-    @Test func countedPredicateExcludesPinnedAndArchivedAndIncludesOverdue() throws {
+    @Test func countedPredicateExcludesPinnedArchivedAndConflictCopiesAndIncludesOverdue() throws {
         let container = try ModelContainer.thoughtReps(inMemory: true)
         defer { withExtendedLifetime(container) {} }
         let context = container.mainContext
@@ -202,6 +202,9 @@ struct ReminderPlannerTests {
         add(due: date(2026, 3, 10, 8, 1))
         add(due: date(2025, 1, 1), pinned: true)
         add(due: date(2025, 1, 1), archived: true)
+        let copy = Thought(body: "copy", nextDueAt: date(2025, 1, 1))
+        copy.conflictOfID = UUID()
+        context.insert(copy)
         try context.save()
         let count = try context.fetchCount(FetchDescriptor<Thought>(predicate: ReminderPlanner.countedPredicate(dueBy: fire)))
         #expect(count == 2)
