@@ -25,6 +25,9 @@
 # depends on a long sleep. The script passes everything through TEST_RUNNER_-prefixed variables; the app itself gets the
 # THOUGHTREPS_SYNC_* variables from the test's launch environment.
 #
+# A scenario passes only if both tests pass and scripts/sync-pass-check.py finds the two status snapshots in the same end
+# state (empty outbox, nothing parked or held, equal thought counts and content digests).
+#
 # To add a scenario: add a test method to SyncScenarioTests.swift and its name to SCENARIOS below.
 
 set -uo pipefail
@@ -43,8 +46,26 @@ SCENARIOS=(
   testDeletedWhileOpen_detail
   testDeletedWhileOpen_editor
   testDeletedWhileOpen_coveredByLinkedThought
+  testD1_content
+  testD2_stateAndSchedule
+  testD3_imagesAndFiles
+  testD4_links
+  testD5_cleanMerge
+  testD5_overlappingEdit
+  testD5_editAfterDeleteKeepsTheThought
+  testD5_deleteAfterEditRemovesTheThought
+  testD6_volume
 )
 if [ "$#" -gt 0 ]; then SCENARIOS=("$@"); fi
+
+# The data scenarios have many steps and the volume scenario moves 500 thoughts; the deleted-while-open ones fit the default.
+scenario_timeout() {
+  case "$1" in
+    testD6_volume) echo "$((SCENARIO_TIMEOUT * 4))" ;;
+    testD*) echo "$((SCENARIO_TIMEOUT * 2))" ;;
+    *) echo "$SCENARIO_TIMEOUT" ;;
+  esac
+}
 
 TMP_BASE="${TMPDIR:-/tmp}"
 TMP_BASE="${TMP_BASE%/}/thoughtreps-sync-integ"
@@ -216,7 +237,7 @@ run_device() {
   TEST_RUNNER_TR_SYNC_ROLE="$role" TEST_RUNNER_TR_SYNC_DIR="$dir/signals" TEST_RUNNER_TR_SYNC_URL="$API_URL" \
     TEST_RUNNER_TR_SYNC_VAULT="$vault" TEST_RUNNER_TR_SYNC_SECRET="$SECRET" TEST_RUNNER_TR_SYNC_KEY="$key" \
     exec xcodebuild test-without-building -xctestrun "$XCTESTRUN" -destination "platform=iOS Simulator,id=$udid" \
-    -only-testing:"ThoughtRepsUITests/SyncScenarioTests/$scenario" -parallel-testing-enabled NO \
+    -only-testing:"ThoughtRepsUITests/SyncScenarioTests/$scenario" -parallel-testing-enabled NO -collect-test-diagnostics never \
     -resultBundlePath "$dir/device-$role.xcresult" >"$dir/device-$role.log" 2>&1
 }
 
@@ -226,7 +247,8 @@ passed_in_log() {
 }
 
 run_scenario() {
-  local scenario="$1" dir="$RUN_DIR/$1" vault key elapsed=0
+  local scenario="$1" dir="$RUN_DIR/$1" vault key elapsed=0 limit
+  limit="$(scenario_timeout "$scenario")"
   mkdir -p "$dir/signals"
   vault="itest$(openssl rand -hex 6)"
   key="$(openssl rand -base64 32)"
@@ -239,8 +261,8 @@ run_scenario() {
   local pid_b=$!
   CHILDREN=("$pid_a" "$pid_b")
   while kill -0 "$pid_a" 2>/dev/null || kill -0 "$pid_b" 2>/dev/null; do
-    if [ "$elapsed" -ge "$SCENARIO_TIMEOUT" ]; then
-      echo "Timed out after ${SCENARIO_TIMEOUT} s; stopping this scenario's test runs."
+    if [ "$elapsed" -ge "$limit" ]; then
+      echo "Timed out after ${limit} s; stopping this scenario's test runs."
       kill "$pid_a" "$pid_b" 2>/dev/null
       break
     fi
@@ -252,8 +274,15 @@ run_scenario() {
   wait "$pid_b" 2>/dev/null && status_b=0
   if [ "$status_a" -eq 0 ] && [ "$status_b" -eq 0 ] \
      && passed_in_log "$dir/device-a.log" "$scenario" && passed_in_log "$dir/device-b.log" "$scenario"; then
-    echo "PASS $scenario (${elapsed} s)"
-    return 0
+    local mismatch
+    if mismatch="$(python3 -I "$ROOT/scripts/sync-pass-check.py" "$dir/signals/status-a.json" "$dir/signals/status-b.json")"; then
+      echo "PASS $scenario (${elapsed} s)"
+      return 0
+    fi
+    echo "FAIL $scenario (the tests passed, but the devices did not end in the same state)"
+    printf '%s\n' "$mismatch" | sed 's/^/    /'
+    echo "  logs: $dir"
+    return 1
   fi
   echo "FAIL $scenario (device A exit $status_a, device B exit $status_b)"
   local role

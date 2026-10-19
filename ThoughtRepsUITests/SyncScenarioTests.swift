@@ -26,6 +26,16 @@ final class SyncScenarioTests: XCTestCase {
     /// Every probe thought carries this tag: a new thought isn't due yet, so the only list that shows it is its tag's "All".
     private static let tag = "syncprobe"
 
+    /// What the app's DEBUG `SyncTestSeed` names its thoughts and tags (the UI tests can't import the app).
+    private enum Seed {
+        static let image = "Seed image"
+        static let gallery = "Seed gallery"
+        static let file = "Seed file"
+        static let learn = "Seed learn"
+        static let bulkCount = 500
+        static let bulkTag = "syncbulk"
+    }
+
     override func setUpWithError() throws {
         continueAfterFailure = false
         let env = ProcessInfo.processInfo.environment
@@ -163,24 +173,420 @@ final class SyncScenarioTests: XCTestCase {
         }
     }
 
+    // MARK: Data scenarios (D1 to D6)
+
+    // A step is `publishStep` on the device that acted (push everything, then tell the peer the digest of its store) and
+    // `awaitStep` on the other (sync until its own store has that digest). Every scenario ends with `assertConverged`, so the
+    // run passes only if both stores hold the same thoughts, bytes included, and nothing is queued, parked or held.
+
+    /// B creates a thought, A creates one, B edits A's; A adds and removes a tag; A deletes its thought.
+    func testD1_content() throws {
+        let name = "\(title) content"
+        let second = "\(title) content two"
+        launch()
+        if isA {
+            awaitStep("b-created-two")
+            waitForThought(second)
+            createThought(name)
+            publishStep("a-created")
+            awaitStep("b-edited")
+            openProbeList()
+            openThought(name, listShowing: true)
+            XCTAssertTrue(text("bedit").waitForExistence(timeout: 10), "B's edit should reach A")
+            rewriteOpenThought(to: "\(name)\nbedit line\n#\(Self.tag) #d1tag")
+            publishStep("a-tagged")
+            waitForSignal("b-saw-tag")
+            rewriteOpenThought(to: "\(name)\nbedit line\n#\(Self.tag)")
+            publishStep("a-untagged")
+            waitForSignal("b-saw-untag")
+            deleteOpenThought()
+            publishStep("a-deleted")
+        } else {
+            createThought(second)
+            publishStep("b-created-two")
+            awaitStep("a-created")
+            waitForThought(name)
+            openThought(name, listShowing: true)
+            rewriteOpenThought(to: "\(name)\nbedit line\n#\(Self.tag)")
+            publishStep("b-edited")
+            awaitStep("a-tagged")
+            openSection("Tags")
+            XCTAssertTrue(app.staticTexts["#d1tag"].waitForExistence(timeout: 10), "the tag A added should reach B")
+            signal("b-saw-tag")
+            awaitStep("a-untagged")
+            signal("b-saw-untag")
+            awaitStep("a-deleted")
+            openProbeList()
+            XCTAssertTrue(syncUntil { !self.thoughtRow(name).exists }, "A's delete should reach B")
+            XCTAssertTrue(thoughtRow(second).exists)
+        }
+        assertConverged(thoughts: 1)
+        assertChecksPass()
+    }
+
+    /// Pin, unpin, interval, snooze, archive, restore, Learn mode and Got it, each made on one device and checked on the other.
+    func testD2_stateAndSchedule() throws {
+        let name = "\(title) state"
+        let learn = Seed.learn
+        if isA {
+            launch()
+            awaitStep("b-ready")
+            waitForThought(learn)
+            createThought(name)
+            publishStep("a-created")
+            awaitStep("b-pinned")
+            openProbeList()
+            openThought(name, listShowing: true)
+            XCTAssertTrue(app.buttons["Unpin"].waitForExistence(timeout: 10), "the thought should be pinned here too")
+            app.buttons["Unpin"].tap()
+            publishStep("a-unpinned")
+            awaitStep("b-interval")
+            XCTAssertTrue(syncUntil { self.app.buttons["3 days"].isSelected }, "the 3 day interval should show here")
+            app.buttons["More"].tap()
+            tapMenuItem("Snooze a week")
+            publishStep("a-snoozed")
+            awaitStep("b-archived")
+            XCTAssertTrue(syncUntil { !self.thoughtRow(name).exists }, "the archived thought should leave the list here")
+            openSection("Archive")
+            let row = thoughtRow(name)
+            XCTAssertTrue(row.waitForExistence(timeout: 10), "the archived thought should be in the archive here")
+            row.tap()
+            app.buttons["More"].tap()
+            tapMenuItem("Restore")
+            publishStep("a-restored")
+            awaitStep("b-learn")
+            openProbeList()
+            openThought(learn, listShowing: true, learn: true)
+            let gotIt = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Got it")).firstMatch
+            XCTAssertTrue(gotIt.waitForExistence(timeout: 10), "a due Learn thought should offer Got it")
+            gotIt.tap()
+            publishStep("a-gotit")
+        } else {
+            launch(seeding: ["learn"])
+            publishStep("b-ready")
+            awaitStep("a-created")
+            waitForThought(name)
+            openThought(name, listShowing: true)
+            app.buttons["Pin"].tap()
+            publishStep("b-pinned")
+            awaitStep("a-unpinned")
+            XCTAssertTrue(app.buttons["Pin"].waitForExistence(timeout: 10), "the unpin should show on the open thought here")
+            app.buttons["3 days"].tap()
+            publishStep("b-interval")
+            awaitStep("a-snoozed")
+            app.buttons["More"].tap()
+            tapMenuItem("Archive")
+            publishStep("b-archived")
+            awaitStep("a-restored")
+            openProbeList()
+            XCTAssertTrue(syncUntil { self.thoughtRow(name).exists }, "the restored thought should be back in the list here")
+            openThought(name, listShowing: true)
+            app.switches["Learn mode"].tap()
+            publishStep("b-learn")
+            awaitStep("a-gotit")
+        }
+        assertConverged(thoughts: 2)
+        assertChecksPass()
+    }
+
+    /// An inline image, a gallery and a file block, seeded on one device or the other, arrive with the same bytes.
+    func testD3_imagesAndFiles() throws {
+        launch(seeding: isA ? ["image", "gallery"] : ["file"])
+        for kind in [Seed.image, Seed.gallery, Seed.file] { waitForThought(kind) }
+        if isA {
+            openThought(Seed.file, listShowing: true)
+            let file = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", "File: seed-notes.txt")).firstMatch
+            XCTAssertTrue(file.waitForExistence(timeout: 10), "the file block should show here")
+            publishStep("a-opened-file")
+            awaitStep("b-opened-gallery")
+        } else {
+            awaitStep("a-opened-file")
+            openProbeList()
+            openThought(Seed.gallery, listShowing: true)
+            let last = app.descendants(matching: .any)["Gallery image 3 of 3"]
+            XCTAssertTrue(last.waitForExistence(timeout: 10), "all three gallery images should show here")
+            publishStep("b-opened-gallery")
+        }
+        assertConverged(thoughts: 3)
+        assertChecksPass()
+    }
+
+    /// B creates a thought and one linking to it; A opens the link card; B deletes the target and the card dangles on both.
+    func testD4_links() throws {
+        let target = "\(title) linktarget"
+        let source = "\(title) linksource"
+        let dangling = app.descendants(matching: .any)["Linked thought: deleted"]
+        launch()
+        if isA {
+            awaitStep("b-created")
+            waitForThought(source)
+            openThought(source, listShowing: true)
+            let card = app.buttons["Linked thought: \(target)"]
+            XCTAssertTrue(card.waitForExistence(timeout: 10), "the link card should show here")
+            card.tap()
+            XCTAssertTrue(app.staticTexts[target].waitForExistence(timeout: 10), "the card should open its target")
+            app.navigationBars.buttons.element(boundBy: 0).tap()
+            XCTAssertTrue(card.waitForExistence(timeout: 10))
+            publishStep("a-walked")
+            awaitStep("b-deleted-target")
+            XCTAssertTrue(dangling.waitForExistence(timeout: 30), "the link should dangle here once the target is gone")
+            publishStep("a-checked")
+            awaitStep("b-checked")
+        } else {
+            createThought(target)
+            createThought(source, linking: target)
+            publishStep("b-created")
+            awaitStep("a-walked")
+            openThought(target)
+            deleteOpenThought()
+            publishStep("b-deleted-target")
+            awaitStep("a-checked")
+            openThought(source, listShowing: listIsShowing)
+            XCTAssertTrue(dangling.waitForExistence(timeout: 10), "the link should dangle here")
+            publishStep("b-checked")
+        }
+        assertConverged(thoughts: 1)
+        assertChecksPass()
+    }
+
+    private static let twoParagraphs = "\nfirst paragraph\n\nsecond paragraph\n"
+
+    /// The body `createThought(_:paragraphs: twoParagraphs)` types, with the title and the two paragraphs changeable.
+    private func mergeBody(_ title: String, first: String, second: String) -> String {
+        "\(title)\n\n\(first)\n\n\(second)\n#\(Self.tag)"
+    }
+
+    /// Both devices edit different lines of the same thought before either syncs: both edits survive, no copy.
+    func testD5_cleanMerge() throws {
+        let name = "\(title) merge"
+        launchBothOffline(creating: name)
+        if isA {
+            rewriteOpenThought(to: mergeBody(name, first: "first paragraph", second: "second paragraph A-end"))
+            signal("a-edited")
+            waitForSignal("b-edited")
+            pushAll()
+            signal("a-pushed")
+            awaitStep("b-merged")
+        } else {
+            rewriteOpenThought(to: mergeBody("B-start \(name)", first: "first paragraph", second: "second paragraph"))
+            signal("b-edited")
+            waitForSignal("a-pushed")
+            publishStep("b-merged")
+        }
+        openProbeList()
+        let merged = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", name)).firstMatch
+        XCTAssertTrue(merged.waitForExistence(timeout: 10))
+        merged.tap()
+        XCTAssertTrue(text("B-start").waitForExistence(timeout: 10) && text("A-end").exists, "both edits should survive the merge")
+        assertConverged(thoughts: 1)
+        assertChecksPass()
+    }
+
+    /// Both devices edit the same line before either syncs: the edit that loses is kept as a conflict copy on both.
+    func testD5_overlappingEdit() throws {
+        let name = "\(title) overlap"
+        launchBothOffline(creating: name)
+        if isA {
+            rewriteOpenThought(to: mergeBody(name, first: "first paragraph A-tail", second: "second paragraph"))
+            signal("a-edited")
+            waitForSignal("b-edited")
+            pushAll()
+            signal("a-pushed")
+            awaitStep("b-merged")
+        } else {
+            rewriteOpenThought(to: mergeBody(name, first: "first paragraph B-tail", second: "second paragraph"))
+            signal("b-edited")
+            waitForSignal("a-pushed")
+            publishStep("b-merged")
+        }
+        openSection("Timeline")
+        XCTAssertTrue(syncUntil { self.app.staticTexts["Needs a look"].exists }, "the conflict copy should be listed under Needs a look")
+        assertConverged(thoughts: 2)
+        assertChecksPass()
+    }
+
+    /// B deletes, then A edits (later), then both sync: the edit came after the delete, so the thought comes back on both.
+    func testD5_editAfterDeleteKeepsTheThought() throws {
+        let name = "\(title) editlater"
+        launchBothOffline(creating: name)
+        if isA {
+            waitForSignal("b-deleted")
+            rewriteOpenThought(to: mergeBody(name, first: "first paragraph", second: "second paragraph late"))
+            signal("a-edited")
+            waitForSignal("b-pushed")
+            publishStep("a-synced")
+        } else {
+            deleteOpenThought()
+            signal("b-deleted")
+            waitForSignal("a-edited")
+            pushAll()
+            signal("b-pushed")
+            awaitStep("a-synced")
+        }
+        openProbeList()
+        XCTAssertTrue(syncUntil { self.thoughtRow(name).exists }, "the thought should be back here")
+        assertConverged(thoughts: 1)
+        assertChecksPass()
+    }
+
+    /// A edits, then B deletes (later), then both sync: the delete came after the edit, so the thought is gone on both.
+    func testD5_deleteAfterEditRemovesTheThought() throws {
+        let name = "\(title) deletelater"
+        launchBothOffline(creating: name)
+        if isA {
+            rewriteOpenThought(to: mergeBody(name, first: "first paragraph", second: "second paragraph early"))
+            signal("a-edited")
+            waitForSignal("b-deleted")
+            pushAll()
+            signal("a-pushed")
+            awaitStep("b-synced")
+        } else {
+            waitForSignal("a-edited")
+            deleteOpenThought()
+            signal("b-deleted")
+            waitForSignal("a-pushed")
+            publishStep("b-synced")
+        }
+        openProbeList()
+        XCTAssertTrue(syncUntil { !self.thoughtRow(name).exists }, "the thought should be gone here")
+        assertConverged(thoughts: 0)
+        assertChecksPass()
+    }
+
+    /// A seeds 500 thoughts and one whose record is over 64 KiB; B ends with all 501, bytes of the big one included.
+    func testD6_volume() throws {
+        launch(seeding: isA ? ["bulk", "large"] : [], timeout: 180)
+        assertConverged(thoughts: Seed.bulkCount + 1, timeout: 600, pause: 3)
+        if !isA {
+            openSection("Tags")
+            XCTAssertTrue(app.staticTexts["#\(Seed.bulkTag)"].waitForExistence(timeout: 10), "the bulk tag should be here")
+        }
+        assertChecksPass()
+    }
+
+    /// Both devices launch with automatic sync off and in sync on one thought of three paragraphs, and that thought is open on
+    /// both. From here they sync only when the test foregrounds them, so each can edit before the other's change arrives.
+    private func launchBothOffline(creating name: String) {
+        launch(manualSync: true)
+        if isA {
+            createThought(name, paragraphs: Self.twoParagraphs)
+            publishStep("a-created")
+        } else {
+            awaitStep("a-created")
+        }
+        waitForThought(name)
+        openThought(name, listShowing: true)
+    }
+
+    // MARK: Steps and convergence
+
+    /// Syncs until every local change is pushed and a cycle has run since.
+    private func pushAll(timeout: TimeInterval = 90, pause: TimeInterval = 0.5) {
+        let before = snapshot()?.cycles ?? 0
+        XCTAssertTrue(syncUntil(timeout: timeout, pause: pause) { (self.snapshot().map { $0.cycles >= before + 2 && $0.outbox == 0 }) ?? false },
+                      "this device's changes should be pushed: \(snapshot()?.summary ?? "no status")")
+    }
+
+    /// Pushes everything, then tells the peer the digest of this device's store.
+    private func publishStep(_ step: String, timeout: TimeInterval = 90, pause: TimeInterval = 0.5) {
+        pushAll(timeout: timeout, pause: pause)
+        guard let digest = snapshot()?.digest else {
+            XCTFail("The status has no digest to publish for \(step)")
+            return
+        }
+        signal(step, text: digest)
+    }
+
+    /// Waits for the peer's step and syncs until this device's store has the digest it published.
+    private func awaitStep(_ step: String, timeout: TimeInterval = 120, pause: TimeInterval = 0.5) {
+        let expected = waitForSignalText(step)
+        XCTAssertTrue(syncUntil(timeout: timeout, pause: pause) { (self.snapshot().map { $0.outbox == 0 && $0.digest == expected }) ?? false },
+                      "this device should reach the state of \(step): \(snapshot()?.summary ?? "no status")")
+    }
+
+    /// Both devices end with the same thought count and digest, an empty outbox, nothing parked or held, no stop reason, and a
+    /// cursor at the server's head. Each publishes its own and compares with the peer's.
+    private func assertConverged(thoughts expected: Int, timeout: TimeInterval = 180, pause: TimeInterval = 0.5) {
+        let peer = isA ? "b" : "a"
+        var last: Snapshot?
+        let converged = syncUntil(timeout: timeout, pause: pause) {
+            guard let now = self.snapshot(), let count = now.thoughts, let digest = now.digest else { return false }
+            last = now
+            guard now.outbox == 0, now.parked == 0, now.held == 0, now.attention == nil, now.cursor >= self.serverHeadSeq() else { return false }
+            let line = "\(count) \(digest)"
+            self.signal("final-\(self.role)", text: line)
+            return self.readMarker("final-\(peer)").flatMap { String(data: $0, encoding: .utf8) } == line
+        }
+        XCTAssertTrue(converged, "both devices should end with the same thoughts and nothing left to sync: \(last?.summary ?? "no status")")
+        XCTAssertEqual(last?.thoughts, expected, "the thought count")
+    }
+
+    /// Opens the Edit screen of the open thought, selects all of its text and types `body` over it. Retyping the lines that
+    /// stay the same leaves them unchanged, and the caret never has to be placed.
+    private func rewriteOpenThought(to body: String) {
+        app.buttons["Edit"].tap()
+        XCTAssertTrue(app.navigationBars["Edit thought"].waitForExistence(timeout: 10))
+        app.textViews["Thought"].tap()
+        dismissKeyboardPrompt()
+        app.typeKey("a", modifierFlags: .command)
+        app.typeText(body)
+        app.buttons["Save"].tap()
+        XCTAssertTrue(app.navigationBars["Edit thought"].waitForNonExistence(timeout: 10), "Save should close the editor")
+    }
+
+    /// A menu item in the menu that is open now: the last match, since the sidebar or tab bar can have the same label.
+    private func tapMenuItem(_ label: String) {
+        let items = app.buttons.matching(identifier: label)
+        XCTAssertTrue(items.firstMatch.waitForExistence(timeout: 10), "the menu should offer \(label)")
+        items.element(boundBy: items.count - 1).tap()
+    }
+
+    private func text(_ part: String) -> XCUIElement {
+        app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", part)).firstMatch
+    }
+
     // MARK: Waiting for a state
 
     /// Syncs by foregrounding the app until `done` holds; false after `timeout` seconds.
-    private func syncUntil(timeout: TimeInterval = 60, _ done: () -> Bool) -> Bool {
+    private func syncUntil(timeout: TimeInterval = 60, pause: TimeInterval = 0.5, _ done: () -> Bool) -> Bool {
         let end = Date().addingTimeInterval(timeout)
         while Date() < end {
             if done() { return true }
             XCUIDevice.shared.press(.home)
             app.activate()
-            Thread.sleep(forTimeInterval: 0.5)
+            Thread.sleep(forTimeInterval: pause)
             if done() { return true }
         }
         return done()
     }
 
-    /// The app's own status (`SyncDebugSession.StatusSnapshot`), rewritten after every cycle: a file on simulators, and on
-    /// devices, where the runner can't read the app's container, the accessibility value of the app's status probe.
+    /// The app's status file (`SyncDebugSession.StatusSnapshot`), rewritten after every cycle. The convergence fields are nil
+    /// until the first cycle has finished.
+    private struct Snapshot {
+        var cycles: Int
+        var cursor: Int64
+        var outbox: Int
+        var thoughts: Int?
+        var parked: Int?
+        var held: Int?
+        var digest: String?
+        var attention: String?
+        var lastError: String?
+
+        var summary: String {
+            "cycles \(cycles), cursor \(cursor), outbox \(outbox), thoughts \(thoughts.map(String.init) ?? "?"), "
+                + "parked \(parked.map(String.init) ?? "?"), held \(held.map(String.init) ?? "?"), "
+                + "digest \(digest.map { String($0.prefix(10)) } ?? "?"), attention \(attention ?? "none"), error \(lastError ?? "none")"
+        }
+    }
+
     private func status() -> (cycles: Int, cursor: Int64, outbox: Int)? {
+        snapshot().map { ($0.cycles, $0.cursor, $0.outbox) }
+    }
+
+    /// A file on simulators, and on devices, where the runner can't read the app's container, the accessibility value of the
+    /// app's status probe.
+    private func snapshot() -> Snapshot? {
         let data: Data?
         if coordinator == nil {
             data = FileManager.default.contents(atPath: "\(directory)/status-\(role).json")
@@ -193,7 +599,11 @@ final class SyncScenarioTests: XCTestCase {
               let cycles = (json["cycles"] as? NSNumber)?.intValue, let cursor = (json["cursor"] as? NSNumber)?.int64Value,
               let outbox = (json["outbox"] as? NSNumber)?.intValue
         else { return nil }
-        return (cycles, cursor, outbox)
+        return Snapshot(
+            cycles: cycles, cursor: cursor, outbox: outbox, thoughts: (json["thoughts"] as? NSNumber)?.intValue,
+            parked: (json["parked"] as? NSNumber)?.intValue, held: (json["held"] as? NSNumber)?.intValue,
+            digest: json["digest"] as? String, attention: json["attention"] as? String, lastError: json["lastError"] as? String
+        )
     }
 
     /// The server's head seq, asked for directly with the dev secret.
@@ -229,16 +639,24 @@ final class SyncScenarioTests: XCTestCase {
 
     // MARK: Launching and signals
 
-    private func launchAndSignalReady() {
+    private func launchAndSignalReady(timeout: TimeInterval = 30) {
         app.launch()
-        XCTAssertTrue(app.buttons["New thought"].waitForExistence(timeout: 30))
+        XCTAssertTrue(app.buttons["New thought"].waitForExistence(timeout: timeout))
         signal("b-launched")
     }
 
-    private func launchAfterPeer() {
+    private func launchAfterPeer(timeout: TimeInterval = 30) {
         waitForSignal("b-launched")
         app.launch()
-        XCTAssertTrue(app.buttons["New thought"].waitForExistence(timeout: 30))
+        XCTAssertTrue(app.buttons["New thought"].waitForExistence(timeout: timeout))
+    }
+
+    /// B launches first, then A; both launches may seed thoughts (`SyncTestSeed`) and may turn off the engine's automatic
+    /// triggers, so this device syncs only when `syncUntil` foregrounds it.
+    private func launch(seeding kinds: [String] = [], manualSync: Bool = false, timeout: TimeInterval = 30) {
+        if !kinds.isEmpty { app.launchArguments += ["-TRSeedSyncTestData", "\(kinds.joined(separator: ",")):\(vaultID)"] }
+        if manualSync { app.launchEnvironment["THOUGHTREPS_SYNC_MANUAL"] = "1" }
+        if isA { launchAfterPeer(timeout: timeout) } else { launchAndSignalReady(timeout: timeout) }
     }
 
     private func signal(_ name: String, _ value: Int64? = nil) {
@@ -335,12 +753,14 @@ final class SyncScenarioTests: XCTestCase {
         }
     }
 
-    private func openThought(_ name: String, listShowing: Bool = false) {
+    /// Taps the thought's row and waits for its detail screen: the interval bar, or the Learn switch that every thought has.
+    private func openThought(_ name: String, listShowing: Bool = false, learn: Bool = false) {
         if !listShowing { openProbeList() }
         let row = thoughtRow(name)
-        XCTAssertTrue(row.waitForExistence(timeout: 10))
+        XCTAssertTrue(row.waitForExistence(timeout: 10), "No row for \(name)")
         row.tap()
-        XCTAssertTrue(app.buttons["More intervals"].waitForExistence(timeout: 10))
+        let ready = learn ? app.switches["Learn mode"] : app.buttons["More intervals"]
+        XCTAssertTrue(ready.waitForExistence(timeout: 10))
     }
 
     private func dismissKeyboardPrompt() {
@@ -348,13 +768,16 @@ final class SyncScenarioTests: XCTestCase {
         if slideToType.waitForExistence(timeout: 2) { slideToType.tap() }
     }
 
-    private func createThought(_ name: String, linking target: String? = nil) {
+    /// `paragraphs` go between the name and the tag line, as typed text.
+    private func createThought(_ name: String, paragraphs: String = "", linking target: String? = nil) {
+        // A tag's list offers "New thought with this tag" instead, which would prefill a tag.
+        if !app.buttons["New thought"].exists { openSection("Timeline") }
         app.buttons["New thought"].tap()
         let field = app.textViews["Thought"]
         XCTAssertTrue(field.waitForExistence(timeout: 10))
         field.tap()
         dismissKeyboardPrompt()
-        field.typeText("\(name)\n#\(Self.tag)")
+        field.typeText("\(name)\n\(paragraphs)#\(Self.tag)")
         if let target {
             app.staticTexts["Add block"].firstMatch.tap()
             let kind = app.descendants(matching: .any).matching(identifier: "Linked thought").firstMatch
@@ -368,15 +791,19 @@ final class SyncScenarioTests: XCTestCase {
         XCTAssertTrue(app.navigationBars["New thought"].waitForNonExistence(timeout: 10))
     }
 
-    /// Deletes the open thought, waits until this device has pushed the delete, then tells the other device the server's
-    /// head seq at that point: once it has pulled that far it has the delete.
-    private func deleteOpenThoughtAndPublishHead() {
+    private func deleteOpenThought() {
         app.buttons["More"].tap()
         app.buttons["Delete"].firstMatch.tap()
         let dialog = app.staticTexts.matching(NSPredicate(format: "label IN %@", ["Delete this thought?", "This can't be undone."])).firstMatch
         XCTAssertTrue(dialog.waitForExistence(timeout: 5), "the delete confirmation should appear")
         app.buttons["Delete"].firstMatch.tap()
         XCTAssertTrue(app.buttons["More intervals"].waitForNonExistence(timeout: 10))
+    }
+
+    /// Deletes the open thought, waits until this device has pushed the delete, then tells the other device the server's
+    /// head seq at that point: once it has pulled that far it has the delete.
+    private func deleteOpenThoughtAndPublishHead() {
+        deleteOpenThought()
         let before = status()?.cycles ?? 0
         XCTAssertTrue(syncUntil { (self.status().map { $0.cycles >= before + 2 && $0.outbox == 0 }) ?? false },
                       "the delete should be pushed")

@@ -38,6 +38,8 @@ enum SyncDebugSession {
     private static let logger = Logger(subsystem: "com.thoughtreps", category: "sync")
     private static var engine: SyncEngine?
     private static var triggers: SyncTriggers?
+    private static var container: ModelContainer?
+    private static var stateForReports: SyncState = .shared
     /// When the engine last finished a cycle without an error or attention state.
     private(set) static var lastSuccessfulSync: Date?
 
@@ -211,6 +213,7 @@ enum SyncDebugSession {
         await engine?.stop()
         engine = nil
         triggers = nil
+        container = nil
         provider = nil
         accountTarget = nil
         awaitingResume = false
@@ -339,6 +342,12 @@ enum SyncDebugSession {
     private static func begin(container: ModelContainer, state: SyncState, credentials: SyncCredentialStore) async {
         await state.enableForDebugging(credentials: credentials)
         await SyncReconcileRunner.reconcile(container: container, state: state)
+        let seeds = SyncTestSeed.requests(in: ProcessInfo.processInfo.arguments)
+        if !seeds.isEmpty {
+            var store = ThoughtStore(context: container.mainContext)
+            store.syncState = state
+            for request in seeds { await SyncTestSeed.run(request, store: store, now: .now) }
+        }
         await start(container: container, state: state, credentials: credentials)
     }
 
@@ -373,16 +382,22 @@ enum SyncDebugSession {
             })
             let engine = SyncEngine(transport: transport, state: state, local: local, keys: try SyncKeys(vaultKey: key), vaultID: vaultID)
             let triggers = SyncTriggers(engine: engine)
-            await triggers.start(observing: state)
+            if !manualSyncOnly { await triggers.start(observing: state) }
             await engine.setObserver(Self.noteStatus)
             self.engine = engine
             self.triggers = triggers
+            self.container = container
+            self.stateForReports = state
             let status = await engine.syncNow()
             logger.info("Debug sync started against \(transport.baseURL.absoluteString): \(String(describing: status))")
         } catch {
             logger.error("Starting debug sync failed: \(error)")
         }
     }
+
+    /// `THOUGHTREPS_SYNC_MANUAL`: no debounce after a local change and no 30 s head check, so the engine runs only on launch,
+    /// when the app comes to the foreground, or from the Sync lab. Lets a test edit on two devices before either syncs.
+    private nonisolated static let manualSyncOnly = !(ProcessInfo.processInfo.environment["THOUGHTREPS_SYNC_MANUAL"] ?? "").isEmpty
 
     /// A cycle when the app comes to the foreground, or from the Sync lab.
     @discardableResult
@@ -391,8 +406,8 @@ enum SyncDebugSession {
         return await engine.syncNow()
     }
 
-    /// What the status file holds: enough for a test to tell that a cycle has pushed its outbox and pulled up to a seq.
-    /// Never the secret or key.
+    /// What the status file holds: enough for a test to tell that a cycle has pushed its outbox and pulled up to a seq, and
+    /// (from `Extras`, filled after a cycle) whether two devices converged. Never the secret or key.
     struct StatusSnapshot: Codable, Equatable {
         var cycles: Int
         var cursor: Int64
@@ -400,14 +415,36 @@ enum SyncDebugSession {
         var phase: String
         var attention: String?
         var lastError: String?
+        /// All thoughts in the store, conflict copies and archived ones included.
+        var thoughts: Int?
+        /// `SyncContentDigest` of the store.
+        var digest: String?
+        /// Records from a newer app version, or pointers to blobs not fetched yet.
+        var parked: Int?
+        /// Thoughts or records held back for any reason (a missing blob, a pending merge, the storage limit, a transport
+        /// without blobs).
+        var held: Int?
 
-        init(_ status: SyncEngine.Status) {
+        struct Extras: Equatable {
+            var thoughts: Int
+            var digest: String
+            var parked: Int
+            var heldRecords: Int
+        }
+
+        init(_ status: SyncEngine.Status, extras: Extras? = nil) {
             cycles = status.cycles
             cursor = status.cursor
             outbox = status.pending
             phase = SyncLabText.phase(status.phase)
             attention = status.attention.map { SyncLabText.attention($0) }
             lastError = status.lastError
+            guard let extras else { return }
+            thoughts = extras.thoughts
+            digest = extras.digest
+            parked = extras.parked
+            held = extras.heldRecords + status.blockedThoughts + status.waitingThoughts + status.oversizedThoughts
+                + status.missingAttachments + status.waitingForBlobs + status.quotaExceededThoughts
         }
 
         func encoded() throws -> Data {
@@ -423,15 +460,7 @@ enum SyncDebugSession {
         .flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0, relativeTo: .homeDirectory) }
 
     private static let noteStatus: @Sendable (SyncEngine.Status) -> Void = { status in
-        if status.phase == .idle || status.phase == .stopped, let data = try? StatusSnapshot(status).encoded() {
-            if let file = statusFile {
-                try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
-                try? data.write(to: file, options: .atomic)
-            }
-            if SyncStatusProbe.isOn {
-                Task { @MainActor in SyncStatusProbe.shared.json = String(decoding: data, as: UTF8.self) }
-            }
-        }
+        if status.phase == .idle || status.phase == .stopped { Task { @MainActor in report(status) } }
         guard status.phase == .idle, status.lastError == nil, status.attention == nil, status.cycles > 0 else { return }
         Task { @MainActor in
             if status.cycles != lastCycles {
@@ -439,6 +468,40 @@ enum SyncDebugSession {
                 lastSuccessfulSync = .now
             }
         }
+    }
+
+    private static var reportTail: Task<Void, Never>?
+    private static var reportGeneration = 0
+
+    /// Writes the snapshot for `status` after the previous report, skipping it if a newer status arrived meanwhile. The digest
+    /// is computed off the main actor.
+    private static func report(_ status: SyncEngine.Status) {
+        guard statusFile != nil || SyncStatusProbe.isOn else { return }
+        reportGeneration += 1
+        let generation = reportGeneration
+        let previous = reportTail
+        let container = container
+        let state = stateForReports
+        reportTail = Task {
+            await previous?.value
+            guard generation == reportGeneration else { return }
+            var found: StatusSnapshot.Extras?
+            if let container { found = await Task.detached { try? await extras(of: container, state: state) }.value }
+            let extras = found
+            guard let data = try? StatusSnapshot(status, extras: extras).encoded() else { return }
+            if let file = statusFile {
+                try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try? data.write(to: file, options: .atomic)
+            }
+            if SyncStatusProbe.isOn { SyncStatusProbe.shared.json = String(decoding: data, as: UTF8.self) }
+        }
+    }
+
+    private nonisolated static func extras(of container: ModelContainer, state: SyncState) async throws -> StatusSnapshot.Extras {
+        let digest = try SyncContentDigest.compute(in: container)
+        return StatusSnapshot.Extras(
+            thoughts: digest.count, digest: digest.digest, parked: try await state.parkedCount(), heldRecords: try await state.heldCount()
+        )
     }
 
     private static var lastCycles = 0

@@ -71,6 +71,15 @@ The engine's logic is already covered by convergence tests against fakes. These 
 
 **Pass check after every scenario (phases 2 and 3):** both status snapshots show an empty outbox, nothing parked or held, and the same thought count. UI assertions alone don't pass a scenario.
 
+As built (phase 2):
+
+- **Seed hook** (`SyncTestSeed`, DEBUG): launch argument `-TRSeedSyncTestData kind[,kind...][:nonce]`, run in `SyncDebugSession` once the outbox is on and before the engine starts. Kinds: `image`, `gallery` (3 images), `file`, `bulk` (500 thoughts tagged `#syncbulk`), `large` (150 KB body, over the 64 KiB inline limit), and `learn` (a Learn thought already due, so Got it needs no day of waiting). It creates through `ThoughtStore`, and a relaunch with the same kind and nonce seeds nothing (`syncTestSeedApplied` in UserDefaults).
+- **Snapshot** (`StatusSnapshot`, the file and the device probe): adds `thoughts`, `digest` (`SyncContentDigest`: SHA-256 over per-thought hashes of id, body, blocks, tags, pin/archive state, conflict link, schedule fields and every image's and file's byte hash; the three change clocks and each tag's color and color clock are included; view counters and thumbnails are left out), `parked` and `held` (the held-record table plus every held-back thought counter). Written after each cycle, computed off the main actor.
+- **Pass check:** `scripts/sync-pass-check.py` (both scripts call it) compares the two pulled snapshots. Inside the tests, every scenario ends with `assertConverged` (digests equal through the markers, outbox empty, nothing parked or held, cursor at the server head), and every hand-over is `publishStep`/`awaitStep`: the actor pushes and publishes its digest, the other side syncs until it has that digest.
+- **D5** runs with `THOUGHTREPS_SYNC_MANUAL=1` (DEBUG): no debounce and no 30 s head check, so the engine runs only at launch and when the test foregrounds the app. Edit vs. delete is two tests, one per order, since the sync spec's rule depends on which came later: delete then edit keeps the thought, edit then delete removes it.
+- Edits rewrite the whole body (select all, retype) because typing after a tap next to a tag replaced the tag word, so caret placement was unreliable.
+- Scenario names: `testD1_content`, `testD2_stateAndSchedule`, `testD3_imagesAndFiles`, `testD4_links`, `testD5_cleanMerge`, `testD5_overlappingEdit`, `testD5_editAfterDeleteKeepsTheThought`, `testD5_deleteAfterEditRemovesTheThought`, `testD6_volume`. Data scenarios get twice the scenario timeout, volume four times.
+
 ## Phase 3: account scenarios (real auth)
 
 1. **Invite as text (DEBUG, Sync lab only).**
