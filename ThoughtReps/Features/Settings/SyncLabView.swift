@@ -247,6 +247,13 @@ final class SyncLabModel {
         await refresh()
     }
 
+    func resetTestState() async {
+        let result = await SyncTestReset.run(nonce: "lab")
+        accountMessage = result.keyPresent ? "A sync key is still on this device." : "Sync test state reset."
+        recoveryCode = nil
+        await refresh()
+    }
+
     // MARK: Joining
 
     enum JoinDialog { case join, ask, confirmErase }
@@ -374,6 +381,7 @@ struct SyncLabView: View {
     @State private var showInvite = false
     @State private var showScan = false
     @State private var showRename = false
+    @State private var showResetTestState = false
     @State private var renameText = ""
 
     private var busy: Bool {
@@ -531,6 +539,13 @@ struct SyncLabView: View {
                 Text("Lets your other devices on this Apple account join the vault. Turning it off deletes the copy. Signing out leaves it; delete it here.")
             }
 
+            Section {
+                Button("Reset sync test state", role: .destructive) { showResetTestState = true }
+                    .disabled(busy)
+            } footer: {
+                Text("For the device test script: forgets the key, the App Attest key id and the sync state, and deletes the iCloud copy only if it is a test vault's. No network.")
+            }
+
             Section("Engine") {
                 if let status = model.snapshot.status {
                     LabeledContent("Phase", value: SyncLabText.phase(status.phase))
@@ -618,6 +633,12 @@ struct SyncLabView: View {
             Button("Cancel", role: .cancel) { model.answerDeleteData(false) }
         } message: {
             Text(LeaveGate.deleteDataMessage)
+        }
+        .alert("Reset sync test state?", isPresented: $showResetTestState) {
+            Button("Reset", role: .destructive) { Task { await model.resetTestState() } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This forgets this device's sync key, App Attest key id and sync state. Your thoughts stay.")
         }
         .alert("Rename this device", isPresented: $showRename) {
             TextField("Name", text: $renameText)

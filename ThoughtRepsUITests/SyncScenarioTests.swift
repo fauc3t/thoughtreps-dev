@@ -1,9 +1,11 @@
 import XCTest
 
-/// Two-device sync scenarios, driven by `scripts/sync-integ.sh` (see its header). Each test is one scenario and runs on both
-/// devices at once: device A (iPhone) asserts what the user sees, device B (iPad) does the other side's work. They hand
-/// over steps through marker files in `TR_SYNC_DIR`, which both simulators can read because they share the host's filesystem.
-/// Without the script's variables every test skips, so the scheme stays safe to run on its own.
+/// Two-device sync scenarios, driven by `scripts/sync-integ.sh` on simulators and `scripts/sync-device-integ.sh` on real
+/// devices (see their headers). Each test is one scenario and runs on both devices at once: device A (iPhone) asserts what
+/// the user sees, device B (iPad) does the other side's work. They hand over steps through markers: files in `TR_SYNC_DIR`
+/// on simulators, which share the host's filesystem, or `PUT`/`GET` on the script's coordinator (`TR_SYNC_COORDINATOR`, the
+/// base URL with the run token) on devices. Without the script's variables every test skips, so the scheme stays safe to run
+/// on its own.
 ///
 /// A device makes the app sync by sending it to the background and back (the app runs a cycle on foreground), so waiting
 /// for a state is a loop of that and a check, never a long sleep.
@@ -11,6 +13,8 @@ final class SyncScenarioTests: XCTestCase {
     private var app: XCUIApplication!
     private var role = "a"
     private var directory = ""
+    private var coordinator: URL?
+    private var scenario = ""
     private var title = ""
     private var serverURL = ""
     private var vaultID = ""
@@ -25,11 +29,15 @@ final class SyncScenarioTests: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false
         let env = ProcessInfo.processInfo.environment
-        guard let role = env["TR_SYNC_ROLE"], let directory = env["TR_SYNC_DIR"], let url = env["TR_SYNC_URL"],
+        let directory = env["TR_SYNC_DIR"] ?? ""
+        let coordinator = env["TR_SYNC_COORDINATOR"].flatMap { URL(string: $0) }
+        guard let role = env["TR_SYNC_ROLE"], !directory.isEmpty || coordinator != nil, let url = env["TR_SYNC_URL"],
               let vault = env["TR_SYNC_VAULT"], let secret = env["TR_SYNC_SECRET"], let key = env["TR_SYNC_KEY"]
-        else { throw XCTSkip("Run through scripts/sync-integ.sh") }
+        else { throw XCTSkip("Run through scripts/sync-integ.sh or scripts/sync-device-integ.sh") }
         self.role = role
         self.directory = directory
+        self.coordinator = directory.isEmpty ? coordinator : nil
+        scenario = invocation.map { NSStringFromSelector($0.selector).replacingOccurrences(of: "AndReturnError:", with: "") } ?? name
         serverURL = url
         vaultID = vault
         self.secret = secret
@@ -39,12 +47,18 @@ final class SyncScenarioTests: XCTestCase {
         app.launchArguments = [
             "-AppleLanguages", "(en)", "-AppleLocale", "en_US",
             "-didSeedSampleData", "YES", "-reminderPromptAsked", "YES", "-ratingPromptAsked", "YES",
+            "-syncSaveKeyToICloudKeychain", "<false/>",
         ]
         app.launchEnvironment = [
             "THOUGHTREPS_SYNC_URL": url, "THOUGHTREPS_SYNC_VAULT": vault,
             "THOUGHTREPS_SYNC_DEV_SECRET": secret, "THOUGHTREPS_SYNC_KEY": key,
-            "THOUGHTREPS_SYNC_STATUS_FILE": "\(directory)/status-\(role).json",
         ]
+        if self.coordinator == nil {
+            app.launchEnvironment["THOUGHTREPS_SYNC_STATUS_FILE"] = "\(directory)/status-\(role).json"
+        } else {
+            app.launchEnvironment["THOUGHTREPS_SYNC_STATUS_FILE"] = "Documents/status-\(role).json"
+            app.launchEnvironment["THOUGHTREPS_SYNC_STATUS_PROBE"] = "1"
+        }
     }
 
     // MARK: Scenarios
@@ -164,9 +178,17 @@ final class SyncScenarioTests: XCTestCase {
         return done()
     }
 
-    /// The app's own status file (`SyncDebugSession.StatusSnapshot`), rewritten after every cycle.
+    /// The app's own status (`SyncDebugSession.StatusSnapshot`), rewritten after every cycle: a file on simulators, and on
+    /// devices, where the runner can't read the app's container, the accessibility value of the app's status probe.
     private func status() -> (cycles: Int, cursor: Int64, outbox: Int)? {
-        guard let data = FileManager.default.contents(atPath: "\(directory)/status-\(role).json"),
+        let data: Data?
+        if coordinator == nil {
+            data = FileManager.default.contents(atPath: "\(directory)/status-\(role).json")
+        } else {
+            let probe = app.descendants(matching: .any).matching(identifier: "syncStatusProbe").firstMatch
+            data = probe.exists ? (probe.value as? String).map { Data($0.utf8) } : nil
+        }
+        guard let data,
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let cycles = (json["cycles"] as? NSNumber)?.intValue, let cursor = (json["cursor"] as? NSNumber)?.int64Value,
               let outbox = (json["outbox"] as? NSNumber)?.intValue
@@ -220,22 +242,72 @@ final class SyncScenarioTests: XCTestCase {
     }
 
     private func signal(_ name: String, _ value: Int64? = nil) {
-        FileManager.default.createFile(atPath: "\(directory)/\(name)", contents: value.map { Data("\($0)".utf8) })
+        putMarker(name, value.map { Data("\($0)".utf8) })
+    }
+
+    private func signal(_ name: String, text: String) {
+        putMarker(name, Data(text.utf8))
     }
 
     /// Waits for the other device's marker and returns the number it carries (0 for an empty one).
     @discardableResult
     private func waitForSignal(_ name: String, timeout: TimeInterval = 120) -> Int64 {
-        let path = "\(directory)/\(name)"
+        waitForMarker(name, timeout: timeout).flatMap { String(data: $0, encoding: .utf8) }.flatMap { Int64($0) } ?? 0
+    }
+
+    /// Waits for the other device's marker and returns the text it carries (empty for an empty one).
+    @discardableResult
+    private func waitForSignalText(_ name: String, timeout: TimeInterval = 120) -> String {
+        waitForMarker(name, timeout: timeout).flatMap { String(data: $0, encoding: .utf8) } ?? ""
+    }
+
+    private func putMarker(_ name: String, _ body: Data?) {
+        guard let coordinator else {
+            FileManager.default.createFile(atPath: "\(directory)/\(name)", contents: body)
+            return
+        }
+        var request = URLRequest(url: coordinator.appending(path: scenario).appending(path: name))
+        request.httpMethod = "PUT"
+        request.httpBody = body ?? Data()
+        request.timeoutInterval = 10
+        var stored = false
+        for _ in 0..<5 where !stored {
+            stored = send(request)?.status == 204
+            if !stored { Thread.sleep(forTimeInterval: 0.5) }
+        }
+        XCTAssertTrue(stored, "The coordinator didn't take the marker \(name)")
+    }
+
+    /// The marker's body (empty if it has none), or nil after `timeout` seconds without the marker.
+    private func waitForMarker(_ name: String, timeout: TimeInterval) -> Data? {
         let end = Date().addingTimeInterval(timeout)
-        while !FileManager.default.fileExists(atPath: path) {
+        while true {
+            if let body = readMarker(name) { return body }
             if Date() > end {
                 XCTFail("The other device never signalled \(name)")
-                return 0
+                return nil
             }
             Thread.sleep(forTimeInterval: 0.3)
         }
-        return FileManager.default.contents(atPath: path).flatMap { String(data: $0, encoding: .utf8) }.flatMap { Int64($0) } ?? 0
+    }
+
+    private func readMarker(_ name: String) -> Data? {
+        guard let coordinator else { return FileManager.default.contents(atPath: "\(directory)/\(name)") }
+        var request = URLRequest(url: coordinator.appending(path: scenario).appending(path: name))
+        request.timeoutInterval = 5
+        guard let answer = send(request), answer.status == 200 else { return nil }
+        return answer.body
+    }
+
+    private func send(_ request: URLRequest) -> (status: Int, body: Data)? {
+        var answer: (status: Int, body: Data)?
+        let done = DispatchSemaphore(value: 0)
+        URLSession.shared.dataTask(with: request) { data, response, _ in
+            if let http = response as? HTTPURLResponse { answer = (http.statusCode, data ?? Data()) }
+            done.signal()
+        }.resume()
+        done.wait()
+        return answer
     }
 
     // MARK: Driving the app

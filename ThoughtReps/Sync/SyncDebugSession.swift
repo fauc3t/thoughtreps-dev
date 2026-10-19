@@ -310,6 +310,10 @@ enum SyncDebugSession {
     static func launch(
         container: ModelContainer, state: SyncState = .shared, credentials: SyncCredentialStore = KeychainSyncCredentialStore()
     ) async {
+        if let nonce = SyncTestReset.nonce(in: ProcessInfo.processInfo.arguments) {
+            SyncTestReset.writeResult(await SyncTestReset.run(nonce: nonce, state: state))
+            return
+        }
         if !usesEnvironmentVault, Environment() == nil, let held = try? credentials.load(),
            SyncResumeGate.needsConfirmation(heldVaultID: held.vaultID, progress: await progress(of: state)) {
             awaitingResume = true
@@ -413,14 +417,20 @@ enum SyncDebugSession {
         }
     }
 
-    /// `THOUGHTREPS_SYNC_STATUS_FILE`: a path the app rewrites with a `StatusSnapshot` after every cycle.
+    /// `THOUGHTREPS_SYNC_STATUS_FILE`: a path the app rewrites with a `StatusSnapshot` after every cycle. A relative path
+    /// is inside the app's container (`Documents/status-a.json`), which `devicectl` can pull from a device.
     private nonisolated static let statusFile: URL? = ProcessInfo.processInfo.environment["THOUGHTREPS_SYNC_STATUS_FILE"]
-        .flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0) }
+        .flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0, relativeTo: .homeDirectory) }
 
     private static let noteStatus: @Sendable (SyncEngine.Status) -> Void = { status in
-        if let file = statusFile, status.phase == .idle || status.phase == .stopped,
-           let data = try? StatusSnapshot(status).encoded() {
-            try? data.write(to: file, options: .atomic)
+        if status.phase == .idle || status.phase == .stopped, let data = try? StatusSnapshot(status).encoded() {
+            if let file = statusFile {
+                try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try? data.write(to: file, options: .atomic)
+            }
+            if SyncStatusProbe.isOn {
+                Task { @MainActor in SyncStatusProbe.shared.json = String(decoding: data, as: UTF8.self) }
+            }
         }
         guard status.phase == .idle, status.lastError == nil, status.attention == nil, status.cycles > 0 else { return }
         Task { @MainActor in
