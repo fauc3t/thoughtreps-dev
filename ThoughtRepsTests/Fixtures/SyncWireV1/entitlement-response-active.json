@@ -1,0 +1,19 @@
+{
+  "status": "active",
+  "tier": {
+    "id": "tier1",
+    "storageBytes": 1073741824,
+    "deviceLimit": 3
+  },
+  "productId": "com.thoughtreps.sync.tier1.monthly",
+  "nextProductId": null,
+  "storage": {
+    "usedBytes": 312000000,
+    "limitBytes": 1073741824
+  },
+  "expiresAt": 1792000000000,
+  "willRenew": true,
+  "purgeAt": null,
+  "appAccountToken": "0f8fad5b-d9cb-469f-a165-70867728950e",
+  "serverTime": 1768478400000
+}

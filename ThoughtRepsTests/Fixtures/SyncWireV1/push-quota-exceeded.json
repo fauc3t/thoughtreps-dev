@@ -1,0 +1,8 @@
+{
+  "error": "quota_exceeded",
+  "message": "Storage limit reached",
+  "usedBytes": 1073700000,
+  "limitBytes": 1073741824,
+  "deltaBytes": 90000,
+  "serverTime": 1768478400000
+}

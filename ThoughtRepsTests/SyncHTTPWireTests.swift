@@ -58,6 +58,13 @@ struct SyncHTTPWireTests {
         "pair-k-auth-request": "c9d51a703fef7297aa0f19a0749508520e5a210704280aa7e476b1745c4228ed",
         "pair-response": "bcdeb51b4aba4f77771f627017df08c87746f476fd4ae2feed0f036a437b9dd9",
         "vault-create-named-request": "aa229cbcbd15e461ed440d13d20f34cc849da64899a8639dd61942c3de9b9d2b",
+        "entitlement-response-active": "e9053f4397f95ea2c6b5d88ea1527e192966bb09fc08f4b7c85376026eaaf052",
+        "entitlement-response-none": "1dc4559879d151856868e0a968fbb1f28bf03c1d59996b3ecce5cdf9e990da67",
+        "entitlement-submit-request": "5a10846b9e9f0f6cfc4b2bb63074bbd6197cf75d75476e94b8bb23736a352611",
+        "error-subscription-required": "a18082cf180ad9834c20c12b50e503f0ede7787d7f3caa38daac9aec8c9351d5",
+        "error-transaction-invalid": "b50561db11ce20225d5e7ef2820b9c9aa4d2885402d8da6ee2aa179697df6d0f",
+        "error-subscription-other-account": "18e76a8737e033fc35fd03e57854af8d9aa3253faa74a2379c17a7f82101dfbb",
+        "push-quota-exceeded": "b76525ad58dc471ac82ea54df0c19ac1c3b82ec00fa61be2848d43032a1dfe90",
         "devices-list-response": "b0fad1f7b17eae8d5f15265fdd24ae66ca87da49b80e5eb18d92bb682798fab0",
         "device-rename-request": "8dac3187719b9e32faff5a8d3c875a7fe834df0bf4c2ab76efcf77dfe065897c",
         "device-rename-response": "461ba3ae68609eca1a6f9d2c72a359e48e4475a38d875bad389ac87faf0efeb7",
@@ -74,7 +81,7 @@ struct SyncHTTPWireTests {
         "push-request", "push-pointer-request", "blob-upload-urls-request", "blob-download-urls-request",
         "garbage-collection-live-list-url-request", "garbage-collection-start-request",
         "device-register-request", "sign-in-with-apple-request", "session-request", "vault-create-request",
-        "invite-create-request", "pair-invite-request", "pair-k-auth-request", "vault-create-named-request",
+        "invite-create-request", "pair-invite-request", "pair-k-auth-request", "vault-create-named-request", "entitlement-submit-request",
         "device-rename-request", "vault-erase-request",
     ]
     static let runID = "0123456789abcdef0123456789abcdef"
@@ -103,6 +110,13 @@ struct SyncHTTPWireTests {
         let folder = try #require(Bundle(for: WireBundleToken.self).url(forResource: "SyncWireV1", withExtension: nil))
         let names = try FileManager.default.contentsOfDirectory(atPath: folder.path).filter { $0.hasSuffix(".json") }.map { String($0.dropLast(5)) }.sorted()
         #expect(names == Self.hashes.keys.sorted())
+    }
+
+    @Test func theSubscriptionAndQuotaRefusalsDecodeAsErrorBodies() throws {
+        let codes = ["error-subscription-required": "subscription_required", "error-transaction-invalid": "transaction_invalid", "error-subscription-other-account": "subscription_other_account", "push-quota-exceeded": "quota_exceeded"]
+        for (name, code) in codes {
+            #expect(try decode(SyncHTTPWireV1.ErrorBody.self, name).error == code)
+        }
     }
 
     @Test func thePushRequestDecodesAndReEncodesToTheSameObject() throws {

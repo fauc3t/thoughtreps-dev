@@ -44,6 +44,15 @@
 - Sync (4c-2): device-test pairing on real devices: QR pair iPhone to iPad, recovery code join, iCloud Keychain join, and the merge and erase paths of the join prompt.
 - Sync (4c-2): the camera usage string is the photo wording; it needs a scan-specific one (QR pairing) before sync ships.
 - Sync (4c-3): device-test on real devices: device list, rename, remove another device, leave, erase-and-leave, Delete sync data, the "Resume syncing" prompt after a reinstall.
+- Sync (phase 5, app side; server 5a is built): handle 402 `subscription_required` as a hold, not a stop (the engine stops for good on 403 only).
+- Sync (phase 5): on push 413 `quota_exceeded`, hold growing thoughts but keep pushing deletes and shrinks (the server lets non-growing pushes through).
+- Sync (phase 5): a storage meter, and StoreKit purchase and restore passing `appAccountToken` from `GET /entitlement`, then `POST /entitlement`.
+- Sync (phase 5): after a purge's epoch change, show "your synced copy was removed, everything on this device is safe, resubscribe to upload again".
+- Sync (phase 5): mirror decoding for the new wire fixtures (`entitlement-*`, `error-subscription-*`, `error-transaction-invalid`, `push-quota-exceeded`).
+- Sync (phase 5): set `appAppleId` in `thoughtreps-aws` `env-config.ts` once the App Store app exists (Production transactions are refused until then).
+- Sync (phase 5): create the subscription group and the tier1 product (`com.thoughtreps.sync.tier1.monthly`) in App Store Connect, Billing Grace Period on.
+- Sync (phase 5): give dev-bypass and harness vaults a `LIMITS` item before turning `REQUIRE_ENTITLEMENT` on; they would 402 otherwise.
+- Sync (phase 5): never use a public TestFlight link while sync is gated; prod accepts Sandbox purchases, so any TestFlight tester subscribes for free.
 - Sync (4c-1): if the Keychain save fails after `POST /vaults`, the vault exists on the server without a key on any device (accepted); recover via Delete sync data.
 - Sync (4c-1): a stale App Attest key is re-registered as a new server device and the new key isn't a vault member until pairing; the old device can be removed from the Devices list (4c-3), but it counts toward the 3-device limit until then.
 - Sync (4c-3): the engine stop's push-side checks (no push after `stop()`) aren't covered by a test; only a mid-pull stop is.
