@@ -34,7 +34,7 @@
 - Sync (3d leftovers): add garbage collection to the `THOUGHTREPS_SYNC_STATUS_FILE` snapshot; test the 413 `quota_exceeded` hold against a real server (fakes only so far); check the Sync lab rows ("Garbage collection", "Held for storage limit", "Storage") visually.
 - Sync: `local.snapshots()` still loads all content records of a 49-entry push batch at once (up to 16 MB each); bound it by bytes if large thoughts get common.
 - Sync: a file block changed in place (same block id, different file) keeps the old file on apply (`applyRemote`/import).
-- Sync ("Needs a look" round, after 4c-3): timeline section and resolve sheet for conflict copies (changes the shipped Timeline); the store methods (`keepCopy`/`keepOriginal`/`keepBoth`) exist but nothing calls them.
+- Sync ("Needs a look"): the section, "and N more" list, resolve sheet and detail banner (compact pop after resolving from the banner) haven't been seen in a simulator or on a device, in either layout.
 - Sync: `noteAttempts` keeps the first attempt (INSERT OR IGNORE), so after a lost push response plus another edit, the merge base is older than the last push and a clean merge can come out as a spurious conflict copy (nothing lost).
 - Sync (2c): `scripts/sync-integ.sh` uses fixed simulator names ("TR Sync A"/"TR Sync B") and one port, so two runs at once collide.
 - Sync (2c): the DEBUG Sync lab screen (`SyncLabView.swift`) hasn't been reviewed by a human on a device yet.

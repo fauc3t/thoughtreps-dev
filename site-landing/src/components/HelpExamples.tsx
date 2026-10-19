@@ -479,6 +479,56 @@ function LinkedThought() {
   );
 }
 
+function ConflictCopy() {
+  return (
+    <div className={`${panel} pb-3`}>
+      <ListLabel>Needs a look</ListLabel>
+      <div className="flex flex-col gap-1.5 px-3 pt-2">
+        <div className="rounded-[14px] border-2 border-ink bg-paper">
+          <ThoughtRow
+            title="Packing list for Lisbon"
+            preview="Passport, charger, sunscreen, the good walking shoes."
+            tags={['#travel']}
+            status={{ text: 'due today', hot: true }}
+          />
+        </div>
+        <div className="ml-4 flex flex-col gap-0.5 rounded-[14px] bg-soft p-3 ring-2 ring-hl">
+          <span className="text-[14px] leading-snug">
+            Original · Packing list for Lisbon
+          </span>
+          <span className="line-clamp-1 text-[13px] text-muted">
+            Passport, charger, sunscreen.
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ConflictSheet() {
+  return (
+    <div className="grid gap-2.5 xs:grid-cols-2">
+      <div className="flex min-w-0 flex-col gap-2">
+        <span className="label">This version · edited Oct 5</span>
+        <div className="rounded-[14px] border-2 border-ink bg-paper p-3 text-[13.5px] leading-snug">
+          Passport, charger, sunscreen, the good walking shoes.
+        </div>
+        <SheetButton label="Keep this version" primary />
+      </div>
+      <div className="flex min-w-0 flex-col gap-2">
+        <span className="label">Original · edited Oct 5</span>
+        <div className="rounded-[14px] border-2 border-ink bg-paper p-3 text-[13.5px] leading-snug">
+          Passport, charger, sunscreen.
+        </div>
+        <SheetButton label="Keep the original" />
+      </div>
+      <div className="grid xs:col-span-2">
+        <SheetButton label="Keep both" />
+      </div>
+    </div>
+  );
+}
+
 function TagList() {
   const tags = [
     { name: '#quotes', due: 2, total: 14 },
@@ -1044,6 +1094,8 @@ const EXAMPLES: Record<
   'blurred-block': { Mock: BlurredBlock, interactive: true },
   'file-card': { Mock: FileCard },
   'linked-thought': { Mock: LinkedThought },
+  'conflict-copy': { Mock: ConflictCopy },
+  'conflict-sheet': { Mock: ConflictSheet },
   'tag-list': { Mock: TagList },
   'color-sheet': { Mock: ColorSheet },
   'share-sheet': { Mock: ShareSheet },

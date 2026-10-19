@@ -27,9 +27,29 @@ struct ThoughtDetailView: View {
         ThoughtStore(context: context, defaultIntervalDays: defaultIntervalDays)
     }
 
+    /// Deleted from outside this screen (a conflict copy resolved from its sheet): nothing of it may be read.
+    private var isGone: Bool { thought.modelContext == nil || thought.isDeleted }
+
     var body: some View {
+        Group {
+            if isGone {
+                Color.paper
+            } else {
+                detail
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: ModelContext.didSave)) { _ in
+            // In the compact stack `ThoughtDetailLoader` pops it; popping from here too could pop twice.
+            if isGone, !pendingDelete, selection != nil { leave() }
+        }
+    }
+
+    private var detail: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
+                if thought.conflictOfID != nil {
+                    conflictBanner
+                }
                 if !thought.sortedTags.isEmpty {
                     ScrollView(.horizontal, showsIndicators: false) {
                         TagChips(tags: thought.sortedTags, linked: true)
@@ -99,6 +119,19 @@ struct ThoughtDetailView: View {
     }
 
     // MARK: Pieces
+
+    private var conflictBanner: some View {
+        Button {
+            AppNavigation.shared.requestResolve(copyID: thought.id)
+        } label: {
+            Text("Conflict copy · Resolve")
+                .font(.mono(13, semibold: true, relativeTo: .footnote))
+                .foregroundStyle(Color.ink)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .inkCard(filled: true)
+        }
+        .buttonStyle(InkPressStyle())
+    }
 
     private var footer: some View {
         Text(statusText)

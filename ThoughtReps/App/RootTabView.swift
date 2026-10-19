@@ -157,6 +157,10 @@ struct RootTabView: View {
         .sheet(item: $navigation.editRequest) { request in
             EditThoughtSheet(thoughtID: request.id)
         }
+        .sheet(item: $navigation.resolveRequest) { request in
+            ConflictResolveSheet(copyID: request.id)
+                .environment(usesSplitView ? thoughtSelection : nil)
+        }
         .sheet(isPresented: $showReminderPrompt) {
             ReminderPromptSheet()
         }
