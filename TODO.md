@@ -40,6 +40,7 @@
 - Sync (2c): the DEBUG Sync lab screen (`SyncLabView.swift`) hasn't been reviewed by a human on a device yet.
 - Sync (3b follow-ups): blob uploads and downloads use a foreground `URLSession`, so they stop when the app is suspended; move them to a background session. Blobs are held in memory (up to `maxAssetBlobBytes`, 25 MB); stream through temp files before files grow past that. `hasBlob` and `putBlob` each make one API round trip per blob (a download-urls call to check, an upload-urls call to put, then the S3 request); batch them into one call per chunk (the routes take up to 100). Downloads read byte by byte to enforce the cap; a streaming-to-file read would be faster.
 - Sync (3b): `scripts/sync-integ.sh` has no image scenario because creating an inline image in an XCUITest needs the photo picker; add one once a DEBUG launch hook can seed an image thought.
+- Sync device harness (`scripts/sync-device-integ.sh`): phase 1 (the two-device scenarios) has never run on real devices; phases 2-3 (data and account scenarios) are unbuilt.
 - Sync (4c-2): device-test pairing on real devices: QR pair iPhone to iPad, recovery code join, iCloud Keychain join, and the merge and erase paths of the join prompt.
 - Sync (4c-2): the camera usage string is the photo wording; it needs a scan-specific one (QR pairing) before sync ships.
 - Sync (4c-3): device-test on real devices: device list, rename, remove another device, leave, erase-and-leave, Delete sync data, the "Resume syncing" prompt after a reinstall.
