@@ -51,7 +51,7 @@
 - Sync (phase 5): set `appAppleId` in `thoughtreps-aws` `env-config.ts` once the App Store app exists (Production transactions are refused until then).
 - Sync (phase 5): create the subscription group and the tier1 product (`com.thoughtreps.sync.tier1.monthly`) in App Store Connect, Billing Grace Period on.
 - Sync (phase 5): in App Store Connect set both App Store Server Notifications v2 URLs (Production and Sandbox) to the prod API's `/api/v1/app-store/notifications`, then send a test notification.
-- Sync (phase 5): once 5c (`thoughtreps-aws` a596026) is deployed to prod, remove the unused `byPurge` GSI in its own deploy (a GSI delete can't share a table update with the stream change); promote it to prod separately too.
+- Sync (phase 5): promote the `byPurge` GSI removal to prod on its own (`PromoteToProd`), after 5c's prod deploy finished.
 - Sync (phase 5): give dev-bypass and harness vaults a `LIMITS` item before turning `REQUIRE_ENTITLEMENT` on; they would 402 otherwise.
 - Sync (phase 5): never use a public TestFlight link while sync is gated; prod accepts Sandbox purchases, so any TestFlight tester subscribes for free.
 - Sync (4c-1): if the Keychain save fails after `POST /vaults`, the vault exists on the server without a key on any device (accepted); recover via Delete sync data.
