@@ -68,7 +68,27 @@ final class SyncScenarioTests: XCTestCase {
         } else {
             app.launchEnvironment["THOUGHTREPS_SYNC_STATUS_FILE"] = "Documents/status-\(role).json"
             app.launchEnvironment["THOUGHTREPS_SYNC_STATUS_PROBE"] = "1"
+            reachCoordinator()
         }
+    }
+
+    /// On a device the runner's first request to the Mac raises the Local Network prompt; until it's answered every
+    /// request fails (-1009). Keeps asking for up to two minutes, tapping Allow when the prompt shows. Any HTTP answer
+    /// (the coordinator says 404 for an unknown marker) means the Mac is reachable.
+    private func reachCoordinator() {
+        guard let coordinator else { return }
+        var request = URLRequest(url: coordinator.appending(path: scenario).appending(path: "reach"))
+        request.timeoutInterval = 5
+        let allow = XCUIApplication(bundleIdentifier: "com.apple.springboard").alerts.buttons["Allow"]
+        // iOS asks only for a foreground app, and the runner is in the background unless brought forward.
+        if let runner = Bundle.main.bundleIdentifier { XCUIApplication(bundleIdentifier: runner).activate() }
+        let end = Date().addingTimeInterval(120)
+        while Date() < end {
+            if send(request) != nil { return }
+            if allow.exists { allow.tap() }
+            Thread.sleep(forTimeInterval: 1)
+        }
+        XCTFail("Can't reach the coordinator. Turn on ThoughtRepsUITests-Runner in Settings > Privacy & Security > Local Network")
     }
 
     // MARK: Scenarios

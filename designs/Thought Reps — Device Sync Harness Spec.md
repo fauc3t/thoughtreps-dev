@@ -115,7 +115,7 @@ A1 to A6 run in order in one session so a run needs one sign-in.
 ## Open questions (resolved during the build)
 
 1. Which account routes need a Sign in with Apple session vs. an App Attest device session only. If `/pair` and the device routes need only App Attest, A2 to A5 need no tap at all.
-2. Whether the XCUITest runner's Local Network prompt appears on first run (accept once per device). ATS needs no exception: the Xcode-generated UI-test runner's Info.plist already sets `NSAllowsArbitraryLoads` and has an `NSLocalNetworkUsageDescription`. The prompt itself is still to be seen on a device.
+2. Resolved on devices (2026-10-19): iOS shows the Local Network prompt only for a foreground app, and the background runner was silently refused ("Local network prohibited", -1009) and never listed in Settings. `SyncScenarioTests.reachCoordinator` now brings the runner forward, retries the coordinator for up to 2 minutes and taps Allow; the grant sticks because only the app is uninstalled between scenarios. ATS needs no exception: the Xcode-generated runner's Info.plist sets `NSAllowsArbitraryLoads` and has an `NSLocalNetworkUsageDescription`. Also seen: a floating window (an iPad picture-in-picture player) covering Save fails a scenario, so close other apps before a run.
 3. Whether reinstall keeps the Keychain item on current iOS for a development-signed app (it should; A5 and the reset action depend on it). Still to be confirmed on a device.
 4. Resolved: a dev-secret scenario erases its vault with the existing `POST /dev/vaults/{id}/erase` (dev stage only, dev secret; erases records and blobs, 404 for an unknown vault). The app creates the vault itself at start (`POST /dev/vaults`), so the script only records it in the ledger.
 
