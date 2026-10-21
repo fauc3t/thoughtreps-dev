@@ -31,6 +31,9 @@
 #     file to confirm no key is left, then uninstalls the app. The Keychain item survives an uninstall, hence the reset first.
 #   - The tests launch with "Save sync key to iCloud Keychain" off, so no test key reaches the tester's iCloud.
 #   - Run directories older than 7 days are deleted at start.
+#   - Secrets: XCUITest logs the app's launch environment (.xcresult Diagnostics), so redact_secrets overwrites the dev secret
+#     and the run's vault keys in every run-directory file with same-length `*` after each scenario and on exit; the run fails
+#     if any remain (file names only). The Authorization header file lives outside the run directory, private, removed on exit.
 #
 # A scenario passes only if both tests pass and scripts/sync-pass-check.py finds the two status snapshots in the same end
 # state (empty outbox, nothing parked or held, equal thought counts and content digests).
@@ -76,7 +79,7 @@ TMP_BASE="${TMP_BASE%/}/thoughtreps-sync-device-integ"
 RUN_DIR="${TMP_BASE}/run-$(date +%Y%m%d-%H%M%S)"
 DERIVED="${TR_SYNC_DERIVED_DATA:-${TMP_BASE}/dd-$(printf '%s' "$ROOT" | cksum | cut -d' ' -f1)}"
 LEDGER="$RUN_DIR/ledger.jsonl"
-AUTH_HEADER="$RUN_DIR/.auth-header"
+AUTH_HEADER="$(umask 077; mktemp "${TMPDIR:-/tmp}/tr-sync-auth.XXXXXX")"
 mkdir -p "$RUN_DIR"
 touch "$LEDGER"
 echo "Run directory: $RUN_DIR"
@@ -151,18 +154,49 @@ clean_ledger() {
   return "$failed"
 }
 
-# Names files in the run directory that contain the dev secret or a vault key; never prints the values.
-warn_secrets_at_rest() {
+# Overwrites every occurrence of the dev secret and vault keys under the run directory with same-length '*', so
+# binary files (.xcresult bundles) keep their offsets. Values travel by environment, never argv; never printed.
+redact_secrets() {
+  [ -n "$SECRET" ] || return 0
+  TR_REDACT_VALUES="$(printf '%s\n' "$SECRET" ${RUN_KEYS[@]+"${RUN_KEYS[@]}"})" python3 -I - "$RUN_DIR" <<'PY' \
+    || echo "WARNING: redacting secrets in $RUN_DIR failed." >&2
+import os, sys
+values = sorted({v.encode() for v in os.environ["TR_REDACT_VALUES"].split("\n") if v}, key=len, reverse=True)
+for root, _, names in os.walk(sys.argv[1]):
+    for name in names:
+        path = os.path.join(root, name)
+        if os.path.islink(path) or not os.path.isfile(path):
+            continue
+        try:
+            with open(path, "rb") as f:
+                data = f.read()
+            out = data
+            for v in values:
+                out = out.replace(v, b"*" * len(v))
+            if out != data:
+                with open(path, "r+b") as f:
+                    f.write(out)
+        except Exception:
+            pass
+PY
+}
+
+# Redacts, then names any files in the run directory that still contain the dev secret or a vault key; returns 1 if any.
+check_secrets_at_rest() {
   local found
   [ -n "$SECRET" ] || return 0
+  redact_secrets
   found="$(grep -rlF -f <(printf '%s\n' "$SECRET" ${RUN_KEYS[@]+"${RUN_KEYS[@]}"}) "$RUN_DIR" 2>/dev/null)"
-  [ -z "$found" ] || printf 'WARNING: the dev secret or a vault key appears in these files:\n%s\n' "$found" >&2
+  [ -z "$found" ] && return 0
+  printf 'FAIL: the dev secret or a vault key is still in these files after redaction:\n%s\n' "$found" >&2
+  return 1
 }
 
 cleanup() {
   local status=$? pid status_reset_failed=0
   trap - EXIT
   for pid in ${CHILDREN[@]+"${CHILDREN[@]}"}; do kill -0 "$pid" 2>/dev/null && kill "$pid" 2>/dev/null; done
+  for pid in ${CHILDREN[@]+"${CHILDREN[@]}"}; do wait "$pid" 2>/dev/null; done
   if [ -n "$SECRET" ] && ! clean_ledger "$LEDGER"; then
     echo "Cleanup incomplete: the next run's preflight will retry from $LEDGER." >&2
     [ "$status" -eq 0 ] && status=1
@@ -174,7 +208,7 @@ cleanup() {
   fi
   if [ -n "$COORD_PID" ]; then kill "$COORD_PID" 2>/dev/null; fi
   rm -f "$AUTH_HEADER"
-  warn_secrets_at_rest
+  check_secrets_at_rest || [ "$status" -ne 0 ] || status=1
   exit "$status"
 }
 trap cleanup EXIT
@@ -415,6 +449,7 @@ run_scenario() {
   CHILDREN=()
   pull_status "$UDID_A" a "$dir"
   pull_status "$UDID_B" b "$dir"
+  redact_secrets
   if ! clean_ledger "$LEDGER"; then
     echo "FAIL $scenario (the vault $vault couldn't be erased)"
     return 1

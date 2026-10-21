@@ -111,7 +111,7 @@ A1 to A6 run in order in one session so a run needs one sign-in.
 
 - All app changes are DEBUG-only and live in the Sync lab or launch hooks; nothing ships. The share extension and release builds are untouched.
 - The app itself makes no new network calls: only the test runner talks to the coordinator. The app talks only to the dev API and presigned S3, as today.
-- Invites and recovery codes cross the LAN only for throwaway dev vaults; the coordinator binds the LAN address, holds markers in memory and exits with the run. Logs never print the dev secret or vault key, and redact invites and recovery codes.
+- Invites and recovery codes cross the LAN only for throwaway dev vaults; the coordinator binds the LAN address, holds markers in memory and exits with the run. Logs never print the dev secret or vault key, and redact invites and recovery codes. The test runners' own logs (`.xcresult`) would hold the dev secret and vault key, so the script overwrites them with same-length `*` after each scenario and on exit and fails the run if any remain.
 - The simulator harness keeps working unchanged; a `sync-integ.sh` run is part of every phase.
 
 ## Open questions (resolved during the build)
