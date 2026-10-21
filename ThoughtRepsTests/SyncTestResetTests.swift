@@ -52,10 +52,22 @@ struct SyncTestResetTests {
         let result = await SyncTestReset.run(
             nonce: "n1", state: SyncState(location: .inMemory), credentials: local, attestKeys: keys, iCloud: copy(cloud)
         )
-        #expect(result == SyncTestReset.Result(nonce: "n1", hadKey: true, keyPresent: false, iCloudCopyRemoved: true, iCloudCopyKept: false))
+        #expect(result == SyncTestReset.Result(nonce: "n1", hadKey: true, keyPresent: false, iCloudCopyRemoved: true, iCloudCopyKept: false,
+                                                     forgottenVaultID: "test-1"))
         #expect(try local.load() == nil)
         #expect(try keys.load() == nil)
         #expect(try cloud.load() == nil)
+    }
+
+    @MainActor
+    @Test func reportsTheVaultIDOfTheKeyItForgot() async throws {
+        let result = await SyncTestReset.run(
+            nonce: "n3", state: SyncState(location: .inMemory), credentials: MemoryCredentials(held("5f1c0c0e-aaaa-bbbb-cccc-0123456789ab")),
+            attestKeys: MemoryKeyIdStore(), iCloud: copy(MemoryCredentials())
+        )
+        #expect(result.forgottenVaultID == "5f1c0c0e-aaaa-bbbb-cccc-0123456789ab")
+        let json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(result)) as? [String: Any]
+        #expect(Set(json?.keys.map { $0 } ?? []) == ["nonce", "hadKey", "keyPresent", "iCloudCopyRemoved", "iCloudCopyKept", "forgottenVaultID"])
     }
 
     @MainActor

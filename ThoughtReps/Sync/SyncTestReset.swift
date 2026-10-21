@@ -16,6 +16,8 @@ enum SyncTestReset {
         var keyPresent: Bool
         var iCloudCopyRemoved: Bool
         var iCloudCopyKept: Bool
+        /// The vault id (never the key) of the local key this reset deleted, so the script can clean up a vault it never heard of.
+        var forgottenVaultID: String?
     }
 
     /// Throwaway vaults made by the harness are named `test-...`; account vaults are UUIDs.
@@ -36,7 +38,8 @@ enum SyncTestReset {
         nonce: String, state: SyncState = .shared, credentials: SyncCredentialStore = KeychainSyncCredentialStore(),
         attestKeys: KeyIdStore = SyncAccountAPI.defaultKeyStore(), iCloud: ICloudKeyCopy = ICloudKeyCopy()
     ) async -> Result {
-        let hadKey = ((try? credentials.load()) ?? nil) != nil
+        let held = (try? credentials.load()) ?? nil
+        let hadKey = held != nil
         await SyncDebugSession.forgetAccount(state: state, credentials: credentials, attestKeys: attestKeys)
         var removed = false
         var kept = false
@@ -49,7 +52,8 @@ enum SyncTestReset {
             }
         }
         let keyPresent = ((try? credentials.load()) ?? nil) != nil
-        return Result(nonce: nonce, hadKey: hadKey, keyPresent: keyPresent, iCloudCopyRemoved: removed, iCloudCopyKept: kept)
+        return Result(nonce: nonce, hadKey: hadKey, keyPresent: keyPresent, iCloudCopyRemoved: removed, iCloudCopyKept: kept,
+                      forgottenVaultID: held?.vaultID)
     }
 
     static func writeResult(_ result: Result) {

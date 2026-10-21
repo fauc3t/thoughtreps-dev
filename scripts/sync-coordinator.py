@@ -1,15 +1,19 @@
-"""Marker store for scripts/sync-device-integ.sh. Run with `python3 -I scripts/sync-coordinator.py <bind-ip> <token>`.
+"""Marker store for scripts/sync-device-integ.sh. Run with `python3 -I scripts/sync-coordinator.py <bind-ip> <token> [secrets-file]`.
 
 The two device test runners hand steps to each other through it, because real devices don't share the Mac's filesystem.
 
     PUT    /<token>/<scenario>/<name>   stores a marker with an optional body (up to 64 KiB), answers 204
     GET    /<token>/<scenario>/<name>   200 with the body, or 404
-    DELETE /<token>                     clears every marker, answers 204
+    GET    /<token>                     200 with a JSON object of "<scenario>/<name>": how many times it was stored (no bodies)
+    DELETE /<token>                     clears every marker and count, answers 204
 
-Any other token, path or method is a 404 (405 for other methods). In memory only. Binds <bind-ip> on a free port, prints
+Any other token, path or method is a 404 (405 for other methods). In memory only, except that with a secrets file every body
+stored under a name starting `invite` or `recovery` (pairing invites and recovery codes) is also appended to it, one line each,
+so the script can redact them; it is never read back or logged here. Binds <bind-ip> on a free port, prints
 `URL http://<bind-ip>:<port>/<token>` as its first line, and exits when the process that started it does, so it ends with the script.
 """
 
+import json
 import os
 import re
 import sys
@@ -18,10 +22,11 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 MAX_BODY = 64 * 1024
+SECRET_PREFIXES = ("invite", "recovery")
 SEGMENT = re.compile(r"^[A-Za-z0-9_.-]{1,128}$")
 
 
-def make_handler(token, markers):
+def make_handler(token, markers, counts, secrets):
     lock = threading.Lock()
 
     class Handler(BaseHTTPRequestHandler):
@@ -57,9 +62,17 @@ def make_handler(token, markers):
             body = self.rfile.read(length) if length else b""
             with lock:
                 markers[key] = body
+                counts[key] = counts.get(key, 0) + 1
+                if secrets is not None and key[1].startswith(SECRET_PREFIXES):
+                    secrets.write(body.decode("utf-8", "replace").strip() + "\n")
+                    secrets.flush()
             self.reply(204)
 
         def do_GET(self):
+            if self.path.split("?")[0] == "/" + token:
+                with lock:
+                    listing = {"%s/%s" % key: n for key, n in counts.items()}
+                return self.reply(200, json.dumps(listing).encode())
             key = self.marker_key()
             if key is None:
                 return self.reply(404)
@@ -72,6 +85,7 @@ def make_handler(token, markers):
                 return self.reply(404)
             with lock:
                 markers.clear()
+                counts.clear()
             self.reply(204)
 
         def do_POST(self):
@@ -84,10 +98,11 @@ def make_handler(token, markers):
 
 
 def main():
-    if len(sys.argv) != 3 or not SEGMENT.match(sys.argv[2]):
-        sys.exit("usage: sync-coordinator.py <bind-ip> <token>")
+    if len(sys.argv) not in (3, 4) or not SEGMENT.match(sys.argv[2]):
+        sys.exit("usage: sync-coordinator.py <bind-ip> <token> [secrets-file]")
     ip, token = sys.argv[1], sys.argv[2]
-    server = ThreadingHTTPServer((ip, 0), make_handler(token, {}))
+    secrets = open(sys.argv[3], "a") if len(sys.argv) == 4 else None
+    server = ThreadingHTTPServer((ip, 0), make_handler(token, {}, {}, secrets))
     server.daemon_threads = True
     print(f"URL http://{ip}:{server.server_address[1]}/{token}", flush=True)
     threading.Thread(target=server.serve_forever, daemon=True).start()
