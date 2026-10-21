@@ -390,6 +390,17 @@ extension MarkdownTextView {
             view.clipsToBounds = false
             // Smart delete ate the blank lines around a deleted image token. Autocorrect and the double-space period are separate.
             view.smartInsertDeleteType = .no
+            #if DEBUG
+            if ProcessInfo.processInfo.environment["THOUGHTREPS_UITEST_PLAIN_TYPING"] == "1" {
+                // UI tests type exact text: keep Writing Tools, autocorrect and smart punctuation from altering it.
+                view.writingToolsBehavior = .none
+                view.autocorrectionType = .no
+                view.spellCheckingType = .no
+                view.smartQuotesType = .no
+                view.smartDashesType = .no
+                view.inlinePredictionType = .no
+            }
+            #endif
             view.font = applier.baseFont
             view.typingAttributes = applier.baseAttributes
             view.accessibilityLabel = parent.accessibilityLabel

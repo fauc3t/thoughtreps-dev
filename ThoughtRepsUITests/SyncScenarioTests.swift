@@ -64,6 +64,7 @@ final class SyncScenarioTests: XCTestCase {
             "THOUGHTREPS_SYNC_URL": url, "THOUGHTREPS_SYNC_VAULT": vault,
             "THOUGHTREPS_SYNC_DEV_SECRET": secret, "THOUGHTREPS_SYNC_KEY": key,
         ]
+        app.launchEnvironment["THOUGHTREPS_UITEST_PLAIN_TYPING"] = "1"
         app.launchEnvironment["THOUGHTREPS_SYNC_NOW_NOTIFICATION"] = "com.thoughtreps.debug.sync-now.\(role).\(vault)"
         if self.coordinator == nil {
             app.launchEnvironment["THOUGHTREPS_SYNC_STATUS_FILE"] = "\(directory)/status-\(role).json"
@@ -543,17 +544,49 @@ final class SyncScenarioTests: XCTestCase {
         XCTAssertEqual(last?.thoughts, expected, "the thought count")
     }
 
-    /// Opens the Edit screen of the open thought, selects all of its text and types `body` over it. Retyping the lines that
-    /// stay the same leaves them unchanged, and the caret never has to be placed.
+    /// Replaces the open thought's whole text with `body`. Cmd-A needs a hardware keyboard, so select all comes from the
+    /// edit menu; the field is checked afterwards so a bad edit fails here instead of surfacing as a sync mismatch.
     private func rewriteOpenThought(to body: String) {
         app.buttons["Edit"].tap()
         XCTAssertTrue(app.navigationBars["Edit thought"].waitForExistence(timeout: 10))
-        app.textViews["Thought"].tap()
+        let field = app.textViews["Thought"]
+        field.tap()
         dismissKeyboardPrompt()
-        app.typeKey("a", modifierFlags: .command)
+        field.press(forDuration: 1)
+        let selectAllItem = app.menuItems["Select All"].firstMatch
+        let selectAllButton = app.buttons["Select All"].firstMatch
+        if selectAllItem.waitForExistence(timeout: 2) {
+            selectAllItem.tap()
+        } else if selectAllButton.exists {
+            selectAllButton.tap()
+        } else {
+            app.typeKey("a", modifierFlags: .command)
+        }
         app.typeText(body)
+        if fieldText(field) != body {
+            for _ in 0..<3 where !fieldText(field).isEmpty {
+                tapEndOfText(field)
+                app.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: fieldText(field).count + 5))
+            }
+            app.typeText(body)
+        }
+        XCTAssertEqual(fieldText(field), body, "the editor should hold exactly the typed body")
         app.buttons["Save"].tap()
         XCTAssertTrue(app.navigationBars["Edit thought"].waitForNonExistence(timeout: 10), "Save should close the editor")
+    }
+
+    /// Taps just inside the bottom-right of the field's visible part (above the keyboard), which puts the caret at the end.
+    private func tapEndOfText(_ field: XCUIElement) {
+        let frame = field.frame
+        var bottom = frame.maxY
+        let keyboard = app.keyboards.firstMatch
+        if keyboard.exists { bottom = min(bottom, keyboard.frame.minY) }
+        let origin = app.windows.firstMatch.coordinate(withNormalizedOffset: .zero)
+        origin.withOffset(CGVector(dx: frame.maxX - 4, dy: bottom - 6)).tap()
+    }
+
+    private func fieldText(_ field: XCUIElement) -> String {
+        field.value as? String ?? ""
     }
 
     /// A menu item in the menu that is open now: the last match, since the sidebar or tab bar can have the same label.
@@ -845,7 +878,9 @@ final class SyncScenarioTests: XCTestCase {
         XCTAssertTrue(field.waitForExistence(timeout: 10))
         field.tap()
         dismissKeyboardPrompt()
-        field.typeText("\(name)\n\(paragraphs)#\(Self.tag)")
+        let typed = "\(name)\n\(paragraphs)#\(Self.tag)"
+        field.typeText(typed)
+        XCTAssertEqual(fieldText(field), typed, "the new thought should hold exactly the typed text")
         if let target {
             app.staticTexts["Add block"].firstMatch.tap()
             let kind = app.descendants(matching: .any).matching(identifier: "Linked thought").firstMatch
