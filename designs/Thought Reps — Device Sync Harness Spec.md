@@ -24,7 +24,8 @@ Each phase merges to main on its own, with the simulator harness still passing. 
 |---|---|---|---|---|
 | 1 | **Device runner and cleanup** | Coordinator, HTTP signals, device script, cleanup ledger, reset action | The three existing scenarios pass on the iPhone and iPad twice in a row, and the second run's preflight finds nothing left from the first | 1 day |
 | 2 | **Data sync scenarios** | Seed hook, scenarios D1 to D6, snapshot pass check | D1 to D6 pass on devices; the outbox is empty and counts match on both sides after each | 1 day |
-| 3 | **Account scenarios** | Invite as text, scenarios A1 to A6 | A1 to A6 pass on devices with at most one Sign in with Apple tap per run; phase 4 of the sync spec is done | 1 day |
+| 3a | **Account hooks** (built) | Invite as text, `SyncLabID` accessibility ids, dev delete-account route | Sync lab exposes everything A1 to A6 need to read or tap | half a day |
+| 3b | **Account scenarios** | `SyncAccountScenarioTests` A1 to A6, the script's `account` mode, ledger entry for the account vault | A1 to A6 pass on devices with at most two Sign in with Apple taps per run; phase 4 of the sync spec is done | half a day |
 | 4 | **Once before ship (manual)** | Nothing; a checklist | Real QR scan, iCloud Keychain join and a look at the Sync lab screens, done once on the iPhone and iPad | 1 hour |
 
 ## Phase 1: device runner and cleanup
@@ -84,6 +85,18 @@ As built (phase 2):
 
 ## Phase 3: account scenarios (real auth)
 
+Split in two: 3a (app and server hooks, built) and 3b (tests, script mode, ledger; next).
+
+As built (3a, all DEBUG-only):
+
+- `syncInviteQR` is the QR image's id and its `accessibilityValue` is the full invite payload.
+- "Join with invite text" (`syncInviteTextField`, `syncInviteTextJoin`, shown when signed out) goes through `SyncPairingInvite(parsing:)` -> `requestJoin(.invite(...))` -> `JoinGate` -> `/pair`. The invite and recovery fields clear after a join attempt, since they hold secrets.
+- About 30 ids in `SyncLabID` (`SyncLabView.swift`): recovery code, recovery join, JoinGate confirm/Merge/Erase, device rows (name, this-device marker, rename/remove and their confirmations), leave and erase-and-leave, resume prompt/Resume/Forget, Delete sync data, sign-in, account vault, engine phase and attention, account message. Status rows are single accessibility elements; tests read their `.value` (the code, the vault id, the status text; `serverRefused` reads "Server refused: ..."). Device row ids repeat per row: Rename exists only on this device's row, Remove only on others.
+- Server (`thoughtreps-aws`, documented there): dev-only `POST /dev/vaults/{id}/delete-account` deletes the account that owns a vault, like `DELETE /account` but with the dev secret instead of Sign in with Apple.
+- Failed-run cleanup: the UI's "Delete sync data" when a device still holds the account, plus a sweep that calls `delete-account` for ledger vaults (3b).
+
+The plan below is what 3b builds.
+
 1. **Invite as text (DEBUG, Sync lab only).**
    - `SyncInviteSheet`'s QR image gets the payload as its `accessibilityValue` in DEBUG, so device A's test can read `thoughtreps-pair:v1:...`.
    - The Sync lab gets "Join with invite text" (next to "Join by scanning a QR code"): a text field that feeds the same `SyncPairingInvite(parsing:)` -> `JoinGate` -> `/pair` path as a scan. Only the VisionKit decode is skipped.
@@ -99,7 +112,7 @@ Scenarios:
 5. **A5 Reinstall resume.** B is in the vault; the script uninstalls and reinstalls B (keeps the Keychain item); B shows "Resume syncing with this vault?"; Resume brings the thoughts back.
 6. **A6 Delete sync data.** A deletes sync data (may need a second Sign in with Apple tap on 403 `reauthentication_required`); both devices keep their thoughts and show signed out. This is also every account scenario's cleanup.
 
-A1 to A6 run in order in one session so a run needs one sign-in.
+A1 to A6 run in order in one session. `/pair`, the device routes and leave need only App Attest, so B never signs in with Apple; A needs Sign in with Apple at A1, and `DELETE /account` needs one within the last 10 minutes, so A6 likely needs a second tap.
 
 ## Phase 4: once before ship (manual)
 
@@ -116,9 +129,9 @@ A1 to A6 run in order in one session so a run needs one sign-in.
 
 ## Open questions (resolved during the build)
 
-1. Which account routes need a Sign in with Apple session vs. an App Attest device session only. If `/pair` and the device routes need only App Attest, A2 to A5 need no tap at all.
+1. Resolved: `/pair`, the device routes and leave need only App Attest; only creating the account and `DELETE /account` need Sign in with Apple, and the delete needs one within the last 10 minutes. A2 to A5 need no tap, and a full run needs two taps on A (A1 and A6).
 2. Resolved on devices (2026-10-19): iOS shows the Local Network prompt only for a foreground app, and the background runner was silently refused ("Local network prohibited", -1009) and never listed in Settings. `SyncScenarioTests.reachCoordinator` now brings the runner forward, retries the coordinator for up to 2 minutes and taps Allow; the grant sticks because only the app is uninstalled between scenarios. ATS needs no exception: the Xcode-generated runner's Info.plist sets `NSAllowsArbitraryLoads` and has an `NSLocalNetworkUsageDescription`. Also seen: a floating window (an iPad picture-in-picture player) covering Save fails a scenario, so close other apps before a run.
-3. Whether reinstall keeps the Keychain item on current iOS for a development-signed app (it should; A5 and the reset action depend on it). Still to be confirmed on a device.
+3. Whether reinstall keeps the Keychain item on current iOS for a development-signed app (it should; A5 and the reset action depend on it). Still to be confirmed on a device (3b; if it doesn't survive, A5 needs a fallback).
 4. Resolved: a dev-secret scenario erases its vault with the existing `POST /dev/vaults/{id}/erase` (dev stage only, dev secret; erases records and blobs, 404 for an unknown vault). The app creates the vault itself at start (`POST /dev/vaults`), so the script only records it in the ledger.
 
 ## Estimate

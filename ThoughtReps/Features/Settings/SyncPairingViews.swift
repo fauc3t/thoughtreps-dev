@@ -34,6 +34,8 @@ struct SyncInviteSheet: View {
                         .padding(12)
                         .background(.white)
                         .accessibilityLabel("Pairing QR code")
+                        .accessibilityIdentifier(SyncLabID.inviteQR)
+                        .accessibilityValue(invitation.invite.payload)
                     TimelineView(.periodic(from: .now, by: 1)) { context in
                         let left = max(0, Int(invitation.expiresAt.timeIntervalSince(context.date)))
                         Text(left > 0 ? "Expires in \(left / 60):\(String(format: "%02d", left % 60))" : "Expired. Close this and try again.")

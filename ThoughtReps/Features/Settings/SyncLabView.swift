@@ -271,6 +271,16 @@ final class SyncLabModel {
         apply(JoinGate.begin(thoughtCount: count), in: context)
     }
 
+    /// A pasted invite goes the same way as a scanned one; only the camera decode is skipped.
+    func requestJoin(inviteText: String, in context: ModelContext) async {
+        do {
+            let invite = try SyncPairingInvite(parsing: inviteText.trimmingCharacters(in: .whitespacesAndNewlines))
+            await requestJoin(.invite(invite), in: context)
+        } catch {
+            accountMessage = SyncPairingInvite.Failure.malformed.message
+        }
+    }
+
     func answerJoin(_ action: JoinGate.Action, in context: ModelContext) {
         guard let joinStep else { return }
         apply(JoinGate.advance(joinStep, action), in: context)
@@ -373,11 +383,50 @@ final class SyncLabModel {
     }
 }
 
+/// Accessibility identifiers the device harness's account scenarios (XCUITest) look up. Inert in the UI.
+enum SyncLabID {
+    static let inviteQR = "syncInviteQR"
+    static let accountVault = "syncAccountVault"
+    static let signIn = "syncSignIn"
+    static let recoveryCodeText = "syncRecoveryCodeText"
+    static let showRecoveryCode = "syncShowRecoveryCode"
+    static let recoveryCodeField = "syncRecoveryCodeField"
+    static let recoveryCodeJoin = "syncRecoveryCodeJoin"
+    static let inviteTextField = "syncInviteTextField"
+    static let inviteTextJoin = "syncInviteTextJoin"
+    static let addDevice = "syncAddDevice"
+    static let joinConfirm = "syncJoinConfirm"
+    static let joinMerge = "syncJoinMerge"
+    static let joinErase = "syncJoinErase"
+    static let joinEraseConfirm = "syncJoinEraseConfirm"
+    static let deviceName = "syncDeviceName"
+    static let deviceThisMarker = "syncDeviceThisMarker"
+    static let deviceRename = "syncDeviceRename"
+    static let renameField = "syncRenameField"
+    static let renameSave = "syncRenameSave"
+    static let deviceRemove = "syncDeviceRemove"
+    static let removeConfirm = "syncRemoveConfirm"
+    static let leave = "syncLeave"
+    static let leaveConfirm = "syncLeaveConfirm"
+    static let eraseAndLeave = "syncEraseAndLeave"
+    static let eraseAndLeaveContinue = "syncEraseAndLeaveContinue"
+    static let eraseAndLeaveConfirm = "syncEraseAndLeaveConfirm"
+    static let deleteData = "syncDeleteData"
+    static let deleteDataConfirm = "syncDeleteDataConfirm"
+    static let forget = "syncForget"
+    static let resumePrompt = "syncResumePrompt"
+    static let resume = "syncResume"
+    static let engineAttention = "syncEngineAttention"
+    static let enginePhase = "syncEnginePhase"
+    static let accountMessage = "syncAccountMessage"
+}
+
 /// DEBUG only, reached from Settings. The full lab (pairing, scripted scenarios, fault switches) is a later phase.
 struct SyncLabView: View {
     @Environment(\.modelContext) private var context
     @State private var model = SyncLabModel()
     @State private var recoveryEntry = ""
+    @State private var inviteEntry = ""
     @State private var showInvite = false
     @State private var showScan = false
     @State private var showRename = false
@@ -461,27 +510,40 @@ struct SyncLabView: View {
 
             Section {
                 if let vault = model.accountVaultID, model.awaitingResume {
-                    LabeledContent("Account vault", value: vault)
+                    singleElementRow("Account vault", value: vault, id: SyncLabID.accountVault)
                     Text(SyncResumeGate.title).font(.headline)
+                        .accessibilityIdentifier(SyncLabID.resumePrompt)
                     Text(SyncResumeGate.message).font(.footnote).foregroundStyle(.secondary)
                     Button("Resume") { Task { await model.resume(in: context) } }
+                        .accessibilityIdentifier(SyncLabID.resume)
                     Button("Forget", role: .destructive) { Task { await model.forgetAccount() } }
+                        .accessibilityIdentifier(SyncLabID.forget)
                 } else if let vault = model.accountVaultID {
-                    LabeledContent("Account vault", value: vault)
+                    singleElementRow("Account vault", value: vault, id: SyncLabID.accountVault)
                     Button("Show recovery code") { model.showRecoveryCode() }
+                        .accessibilityIdentifier(SyncLabID.showRecoveryCode)
                     if let code = model.recoveryCode {
                         Text(code).font(.system(.footnote, design: .monospaced)).textSelection(.enabled)
+                            .accessibilityElement(children: .ignore)
+                            .accessibilityLabel("Recovery code")
+                            .accessibilityValue(code)
+                            .accessibilityIdentifier(SyncLabID.recoveryCodeText)
                     }
                     Button("Add a device") { showInvite = true }
+                        .accessibilityIdentifier(SyncLabID.addDevice)
                     Button("Leave sync", role: .destructive) { model.requestLeave(erase: false, in: context) }
                         .disabled(busy)
+                        .accessibilityIdentifier(SyncLabID.leave)
                     Button("Erase this device and leave sync", role: .destructive) { model.requestLeave(erase: true, in: context) }
                         .disabled(busy)
+                        .accessibilityIdentifier(SyncLabID.eraseAndLeave)
                     Button("Delete sync data", role: .destructive) { model.requestDeleteData() }
                         .disabled(busy)
+                        .accessibilityIdentifier(SyncLabID.deleteData)
                     Button("Sign out and forget key", role: .destructive) {
                         Task { await model.forgetAccount() }
                     }
+                    .accessibilityIdentifier(SyncLabID.forget)
                 } else {
                     Button {
                         Task { await model.signIn(in: context) }
@@ -492,6 +554,7 @@ struct SyncLabView: View {
                         }
                     }
                     .disabled(busy)
+                    .accessibilityIdentifier(SyncLabID.signIn)
                     if model.iCloudCopyExists {
                         Button("Join vault from iCloud Keychain") {
                             Task { await model.requestJoin(.iCloudKeychain, in: context) }
@@ -500,18 +563,35 @@ struct SyncLabView: View {
                     }
                     Button("Join by scanning a QR code") { showScan = true }
                         .disabled(busy)
+                    TextField("Invite text", text: $inviteEntry, axis: .vertical)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .font(.system(.footnote, design: .monospaced))
+                        .accessibilityIdentifier(SyncLabID.inviteTextField)
+                    Button("Join with invite text") {
+                        let text = inviteEntry
+                        inviteEntry = ""
+                        Task { await model.requestJoin(inviteText: text, in: context) }
+                    }
+                    .disabled(busy || inviteEntry.isEmpty)
+                    .accessibilityIdentifier(SyncLabID.inviteTextJoin)
                     TextField("Recovery code", text: $recoveryEntry, axis: .vertical)
                         .textInputAutocapitalization(.characters)
                         .autocorrectionDisabled()
                         .font(.system(.footnote, design: .monospaced))
+                        .accessibilityIdentifier(SyncLabID.recoveryCodeField)
                     Button("Join with recovery code") {
-                        Task { await model.requestJoin(.recoveryCode(recoveryEntry), in: context) }
+                        let code = recoveryEntry
+                        recoveryEntry = ""
+                        Task { await model.requestJoin(.recoveryCode(code), in: context) }
                     }
                     .disabled(busy || recoveryEntry.isEmpty)
+                    .accessibilityIdentifier(SyncLabID.recoveryCodeJoin)
                 }
                 if model.isJoining || model.isWorking { ProgressView() }
                 if let message = model.accountMessage {
                     Text(message).font(.footnote).foregroundStyle(.secondary)
+                        .accessibilityIdentifier(SyncLabID.accountMessage)
                 }
             } header: {
                 Text("Account")
@@ -548,8 +628,8 @@ struct SyncLabView: View {
 
             Section("Engine") {
                 if let status = model.snapshot.status {
-                    LabeledContent("Phase", value: SyncLabText.phase(status.phase))
-                    LabeledContent("Attention", value: SyncLabText.attention(status.attention))
+                    singleElementRow("Phase", value: SyncLabText.phase(status.phase), id: SyncLabID.enginePhase)
+                    singleElementRow("Attention", value: SyncLabText.attention(status.attention), id: SyncLabID.engineAttention)
                     LabeledContent("Last error", value: status.lastError ?? "None")
                     LabeledContent("Update required", value: status.updateRequired ? "Yes" : "No")
                     LabeledContent("Cycles", value: "\(status.cycles)")
@@ -612,24 +692,28 @@ struct SyncLabView: View {
         }
         .alert(LeaveGate.leaveTitle(device: SyncDeviceName.current), isPresented: leaveBinding) {
             Button(leaveErases ? "Continue" : "Leave sync", role: leaveErases ? nil : .destructive) { model.answerLeave(.confirm, in: context) }
+                .accessibilityIdentifier(leaveErases ? SyncLabID.eraseAndLeaveContinue : SyncLabID.leaveConfirm)
             Button("Cancel", role: .cancel) { model.answerLeave(.cancel, in: context) }
         } message: {
             Text(LeaveGate.leaveMessage(erase: leaveErases))
         }
         .alert(LeaveGate.eraseTitle(count: eraseCount, device: SyncDeviceName.current), isPresented: eraseBinding) {
             Button("Erase", role: .destructive) { model.answerLeave(.confirm, in: context) }
+                .accessibilityIdentifier(SyncLabID.eraseAndLeaveConfirm)
             Button("Cancel", role: .cancel) { model.answerLeave(.cancel, in: context) }
         } message: {
             Text(LeaveGate.eraseMessage)
         }
         .alert(LeaveGate.removeTitle(name: model.pendingRemoval?.name ?? ""), isPresented: removeBinding) {
             Button("Remove", role: .destructive) { Task { await model.removePendingDevice() } }
+                .accessibilityIdentifier(SyncLabID.removeConfirm)
             Button("Cancel", role: .cancel) { model.pendingRemoval = nil }
         } message: {
             Text(LeaveGate.removeMessage)
         }
         .alert(LeaveGate.deleteDataTitle, isPresented: deleteDataBinding) {
             Button("Delete sync data", role: .destructive) { model.answerDeleteData(true) }
+                .accessibilityIdentifier(SyncLabID.deleteDataConfirm)
             Button("Cancel", role: .cancel) { model.answerDeleteData(false) }
         } message: {
             Text(LeaveGate.deleteDataMessage)
@@ -642,11 +726,14 @@ struct SyncLabView: View {
         }
         .alert("Rename this device", isPresented: $showRename) {
             TextField("Name", text: $renameText)
+                .accessibilityIdentifier(SyncLabID.renameField)
             Button("Rename") { Task { await model.renameThisDevice(to: renameText) } }
+                .accessibilityIdentifier(SyncLabID.renameSave)
             Button("Cancel", role: .cancel) {}
         }
         .alert(JoinGate.joinTitle, isPresented: joinBinding) {
             Button("Join") { model.answerJoin(.confirmJoin, in: context) }
+                .accessibilityIdentifier(SyncLabID.joinConfirm)
             Button("Cancel", role: .cancel) { model.answerJoin(.cancel, in: context) }
         } message: {
             Text(JoinGate.joinMessage)
@@ -655,17 +742,28 @@ struct SyncLabView: View {
             JoinGate.askTitle(count: step.count, device: step.device), isPresented: askBinding, titleVisibility: .visible
         ) {
             Button("Merge") { model.answerJoin(.merge, in: context) }
+                .accessibilityIdentifier(SyncLabID.joinMerge)
             Button("Erase \(step.device) first", role: .destructive) { model.answerJoin(.erase, in: context) }
+                .accessibilityIdentifier(SyncLabID.joinErase)
             Button("Cancel", role: .cancel) { model.answerJoin(.cancel, in: context) }
         } message: {
             Text(JoinGate.askMessage(device: step.device))
         }
         .alert(JoinGate.confirmTitle(count: step.count, device: step.device), isPresented: confirmBinding) {
             Button("Erase", role: .destructive) { model.answerJoin(.confirmErase, in: context) }
+                .accessibilityIdentifier(SyncLabID.joinEraseConfirm)
             Button("Cancel", role: .cancel) { model.answerJoin(.cancel, in: context) }
         } message: {
             Text(JoinGate.confirmMessage)
         }
+    }
+
+    private func singleElementRow(_ title: String, value: String, id: String) -> some View {
+        LabeledContent(title, value: value)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(title)
+            .accessibilityValue(value)
+            .accessibilityIdentifier(id)
     }
 
     private var devicesSection: some View {
@@ -675,7 +773,11 @@ struct SyncLabView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         HStack {
                             Text(device.name).font(.headline)
-                            if device.isCurrent { Text("This device").font(.caption).foregroundStyle(.secondary) }
+                                .accessibilityIdentifier(SyncLabID.deviceName)
+                            if device.isCurrent {
+                                Text("This device").font(.caption).foregroundStyle(.secondary)
+                                    .accessibilityIdentifier(SyncLabID.deviceThisMarker)
+                            }
                         }
                         Text("Added \(device.addedAt.formatted(date: .abbreviated, time: .shortened)), last seen \(device.lastSeenAt.formatted(date: .abbreviated, time: .shortened))")
                             .font(.footnote).foregroundStyle(.secondary)
@@ -685,9 +787,11 @@ struct SyncLabView: View {
                                 showRename = true
                             }
                             .disabled(busy)
+                            .accessibilityIdentifier(SyncLabID.deviceRename)
                         } else {
                             Button("Remove", role: .destructive) { model.pendingRemoval = device }
                                 .disabled(busy)
+                                .accessibilityIdentifier(SyncLabID.deviceRemove)
                         }
                     }
                 }
