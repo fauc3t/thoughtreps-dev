@@ -26,6 +26,100 @@ export interface BlogPost {
 
 export const POSTS: BlogPost[] = [
   {
+    slug: 'how-to-remember-what-you-read',
+    title: 'How to remember what you read: 5 habits that work',
+    description:
+      'Most of what we read is gone in a week. Here’s why, and five simple habits, backed by memory research, that help the good parts stick.',
+    published: '2026-10-21',
+    sections: [
+      {
+        paragraphs: [
+          'Think of the last book you finished. Now name three ideas from it. Not what happened in it, but ideas you could explain to a friend.',
+          'If you got stuck after one, you’re in good company. Your memory isn’t broken. This is just what memory does with something it saw once.',
+        ],
+      },
+      {
+        heading: 'Why we forget so fast',
+        paragraphs: [
+          'Around 1880, a German researcher named Hermann Ebbinghaus ran an odd test on himself. He learned lists of made-up syllables. Then he checked how much work it took to learn the same lists again, after twenty minutes, an hour, a day, and up to a month.',
+          'Most of the forgetting came within the first day or so. After that it slowed way down. In 2015, two researchers in Amsterdam, Jaap Murre and Joeri Dros, ran his experiment again, and their curve looked a lot like his.',
+          'So if you never see an idea again after the day you read it, it’s probably on its way out.',
+        ],
+      },
+      {
+        heading: 'Why rereading and highlighting don’t work',
+        paragraphs: [
+          'In 2013, a team led by John Dunlosky went through ten popular study habits and graded each one on how well the research backs it up. Highlighting and rereading landed near the bottom. Two habits came out on top: testing yourself, and spreading your study out over time.',
+          'Rereading also fools you. The second time through, the words feel familiar, and familiar feels like knowing. But spotting a page you’ve seen isn’t the same as recalling the idea with the book closed.',
+        ],
+      },
+      {
+        heading: '1. Put it in your own words, right away',
+        paragraphs: [
+          'When you finish a chapter, close the book and jot down the one idea you want to keep, the way you’d say it to a friend. If you can’t, you may not have it yet.',
+          'Keep it to one idea per note. A summary of a whole book is hard to come back to. And do it tonight, while it’s still there.',
+        ],
+      },
+      {
+        heading: '2. Test yourself instead of rereading',
+        paragraphs: [
+          'In a 2006 study, Henry Roediger and Jeffrey Karpicke had students read short passages. Some then read the passage again. Others put it away and wrote down what they could recall. On a test five minutes later, the rereaders did a little better. On tests two days and a week later, the students who had practiced recalling remembered more.',
+          'In a second experiment, students who only reread expected to remember the most. A week later, they remembered the least.',
+          'So turn your note into a question, like “What does the author say makes a habit stick?” Then answer it without peeking. Getting it wrong is fine. Struggling to remember is part of what makes it stick.',
+        ],
+      },
+      {
+        heading: '3. Space it out',
+        paragraphs: [
+          'Coming back once helps. Coming back a few times, with gaps, helps a lot more. Memory researchers call this the spacing effect, and they’ve seen it over and over for more than a century.',
+          'A large 2006 review led by Nicholas Cepeda pulled together hundreds of experiments. Spread-out practice beat crammed practice again and again. The review also found that the longer you want to remember something, the longer the best gap tends to be.',
+          'Don’t stress about the perfect gap. Just look at the note again in a week, and if it still matters, again a few weeks after that.',
+        ],
+      },
+      {
+        heading: '4. Connect it',
+        paragraphs: [
+          'Ideas that connect to something you already know are easier to find again. So when you write a note, add one line that ties it to something else, like a time it happened to you or another book that said the opposite.',
+          'Even asking “Why would this be true?” helps.',
+        ],
+      },
+      {
+        heading: '5. Use it',
+        paragraphs: [
+          'The surest way to keep an idea is to need it. Bring it up at dinner. Or try it for a week and see if it holds up. If you think the author got it wrong, argue back in your notes.',
+          'Each time, you’re pulling the idea out of your head again, the same as a quiz.',
+        ],
+      },
+      {
+        heading: 'A system you can start tonight',
+        paragraphs: [
+          'You don’t need an app for this. A pack of index cards works fine.',
+        ],
+        list: [
+          'Pick no more than three ideas from the book you’re reading. Three is plenty.',
+          'Put each idea on its own card.',
+          'Write a question on the front. On the back, write the answer in your own words, plus one line that connects it to your life or another book.',
+          'Set a reminder for a week from now.',
+          'When it goes off, read each question and answer it before you flip the card.',
+          'Keep the cards that still feel worth knowing, and look at them again in a few weeks. Toss the rest.',
+        ],
+      },
+      {
+        heading: 'If you’d rather use your phone',
+        paragraphs: [
+          'In Thought Reps, each idea is a thought on your iPhone or iPad, and a week later it shows up on your timeline again by itself. Put the answer in a [blurred block](/help/blurred-blocks) and it stays hidden until you tap it, so every return is a small quiz. [See how resurfacing works](/help/how-resurfacing-works).',
+        ],
+      },
+      {
+        heading: 'Keep one idea',
+        paragraphs: [
+          'This isn’t a new problem. For centuries, readers kept a [commonplace book](/blog/commonplace-book) so the best things they read stayed close at hand.',
+          'Next time you finish a good book, write down one idea before it goes back on the shelf.',
+        ],
+      },
+    ],
+  },
+  {
     slug: 'commonplace-book',
     title: 'What is a commonplace book? A history and how-to',
     description:
@@ -86,6 +180,7 @@ export const POSTS: BlogPost[] = [
         paragraphs: [
           'The old method had two halves. Copying things down was one. Going back to them was the other. Keepers read their books again and again, and Locke’s index existed so they could find things fast.',
           'That second half is where the value is. An idea you meet once is easy to lose. An idea you meet five times starts to become part of how you think. That is what Seneca meant by honey.',
+          'Memory research backs this up. See [how to remember what you read](/blog/how-to-remember-what-you-read).',
         ],
       },
       {
