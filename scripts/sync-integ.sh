@@ -21,7 +21,7 @@
 # Coordination: each scenario is one test method in `SyncScenarioTests`, run on both devices with a role (A asserts what
 # the user sees, B does the other side's work). The two test runners hand steps to each other through empty marker files
 # in a per-scenario directory on the host (TR_SYNC_DIR), which both simulators can read and write because simulators share
-# the Mac's filesystem. A device syncs by sending the app to the background and back and checks in a loop, so no step
+# the Mac's filesystem. A device syncs by asking the app (Darwin notification, then the hidden syncNowProbe button, then Home + activate) and checks in a loop, so no step
 # depends on a long sleep. The script passes everything through TEST_RUNNER_-prefixed variables; the app itself gets the
 # THOUGHTREPS_SYNC_* variables from the test's launch environment.
 #

@@ -145,6 +145,7 @@ struct RootTabView: View {
         .environment(viewHandoff)
         #if DEBUG
         .overlay(alignment: .topLeading) { SyncStatusProbeView() }
+        .overlay(alignment: .top) { SyncNowProbeView() }
         #endif
         .onAppear { thoughtSelection.viewHandoff = viewHandoff }
         .onChange(of: usesSplitView) { _, usesSplit in

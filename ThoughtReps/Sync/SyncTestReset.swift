@@ -84,4 +84,41 @@ struct SyncStatusProbeView: View {
         }
     }
 }
+
+/// Lets the UI tests start a sync cycle without foregrounding the app, which does nothing in iPadOS Windowed Apps mode. Both
+/// ways are off unless `THOUGHTREPS_SYNC_NOW_NOTIFICATION` names a Darwin notification: the app syncs when that notification
+/// is posted, or when the hidden `syncNowProbe` button is tapped.
+enum SyncNowTrigger {
+    nonisolated static let name = ProcessInfo.processInfo.environment["THOUGHTREPS_SYNC_NOW_NOTIFICATION"] ?? ""
+    nonisolated static var isOn: Bool { !name.isEmpty }
+    @MainActor private static var installed = false
+
+    /// Observes the notification once; later calls do nothing.
+    @MainActor
+    static func installIfRequested() {
+        guard isOn, !installed else { return }
+        installed = true
+        CFNotificationCenterAddObserver(
+            CFNotificationCenterGetDarwinNotifyCenter(), nil,
+            { _, _, _, _, _ in Task { await SyncDebugSession.syncNow() } },
+            name as CFString, nil, .deliverImmediately
+        )
+    }
+}
+
+/// A 4 pt invisible button at the top center that starts a sync cycle, for UI tests when the notification isn't delivered.
+struct SyncNowProbeView: View {
+    var body: some View {
+        if SyncNowTrigger.isOn {
+            Button {
+                Task { await SyncDebugSession.syncNow() }
+            } label: {
+                Color.clear.frame(width: 4, height: 4)
+            }
+            .accessibilityIdentifier("syncNowProbe")
+            .accessibilityLabel("Sync now")
+            .onAppear { SyncNowTrigger.installIfRequested() }
+        }
+    }
+}
 #endif

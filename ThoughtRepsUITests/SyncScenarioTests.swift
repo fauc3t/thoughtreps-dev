@@ -7,8 +7,8 @@ import XCTest
 /// base URL with the run token) on devices. Without the script's variables every test skips, so the scheme stays safe to run
 /// on its own.
 ///
-/// A device makes the app sync by sending it to the background and back (the app runs a cycle on foreground), so waiting
-/// for a state is a loop of that and a check, never a long sleep.
+/// A device makes the app sync by posting a Darwin notification, tapping a hidden button, or sending it to the background
+/// and back, so waiting for a state is a loop of that and a check, never a long sleep.
 final class SyncScenarioTests: XCTestCase {
     private var app: XCUIApplication!
     private var role = "a"
@@ -19,6 +19,7 @@ final class SyncScenarioTests: XCTestCase {
     private var serverURL = ""
     private var vaultID = ""
     private var secret = ""
+    private var workingTrigger: SyncTrigger?
 
     private var isA: Bool { role == "a" }
     private var isPad: Bool { UIDevice.current.userInterfaceIdiom == .pad }
@@ -63,6 +64,7 @@ final class SyncScenarioTests: XCTestCase {
             "THOUGHTREPS_SYNC_URL": url, "THOUGHTREPS_SYNC_VAULT": vault,
             "THOUGHTREPS_SYNC_DEV_SECRET": secret, "THOUGHTREPS_SYNC_KEY": key,
         ]
+        app.launchEnvironment["THOUGHTREPS_SYNC_NOW_NOTIFICATION"] = "com.thoughtreps.debug.sync-now.\(role).\(vault)"
         if self.coordinator == nil {
             app.launchEnvironment["THOUGHTREPS_SYNC_STATUS_FILE"] = "\(directory)/status-\(role).json"
         } else {
@@ -476,7 +478,7 @@ final class SyncScenarioTests: XCTestCase {
     /// A seeds 500 thoughts and one whose record is over 64 KiB; B ends with all 501, bytes of the big one included.
     func testD6_volume() throws {
         launch(seeding: isA ? ["bulk", "large"] : [], timeout: 180)
-        assertConverged(thoughts: Seed.bulkCount + 1, timeout: 600, pause: 3)
+        assertConverged(thoughts: Seed.bulkCount + 1, timeout: 600, settle: 10)
         if !isA {
             openSection("Tags")
             XCTAssertTrue(app.staticTexts["#\(Seed.bulkTag)"].waitForExistence(timeout: 10), "the bulk tag should be here")
@@ -485,7 +487,7 @@ final class SyncScenarioTests: XCTestCase {
     }
 
     /// Both devices launch with automatic sync off and in sync on one thought of three paragraphs, and that thought is open on
-    /// both. From here they sync only when the test foregrounds them, so each can edit before the other's change arrives.
+    /// both. From here they sync only when the test triggers them, so each can edit before the other's change arrives.
     private func launchBothOffline(creating name: String) {
         launch(manualSync: true)
         if isA {
@@ -501,15 +503,15 @@ final class SyncScenarioTests: XCTestCase {
     // MARK: Steps and convergence
 
     /// Syncs until every local change is pushed and a cycle has run since.
-    private func pushAll(timeout: TimeInterval = 90, pause: TimeInterval = 0.5) {
+    private func pushAll(timeout: TimeInterval = 90, settle: TimeInterval = SyncScenarioTests.defaultSettle) {
         let before = snapshot()?.cycles ?? 0
-        XCTAssertTrue(syncUntil(timeout: timeout, pause: pause) { (self.snapshot().map { $0.cycles >= before + 2 && $0.outbox == 0 }) ?? false },
+        XCTAssertTrue(syncUntil(timeout: timeout, settle: settle) { (self.snapshot().map { $0.cycles >= before + 2 && $0.outbox == 0 }) ?? false },
                       "this device's changes should be pushed: \(snapshot()?.summary ?? "no status")")
     }
 
     /// Pushes everything, then tells the peer the digest of this device's store.
-    private func publishStep(_ step: String, timeout: TimeInterval = 90, pause: TimeInterval = 0.5) {
-        pushAll(timeout: timeout, pause: pause)
+    private func publishStep(_ step: String, timeout: TimeInterval = 90, settle: TimeInterval = SyncScenarioTests.defaultSettle) {
+        pushAll(timeout: timeout, settle: settle)
         guard let digest = snapshot()?.digest else {
             XCTFail("The status has no digest to publish for \(step)")
             return
@@ -518,18 +520,18 @@ final class SyncScenarioTests: XCTestCase {
     }
 
     /// Waits for the peer's step and syncs until this device's store has the digest it published.
-    private func awaitStep(_ step: String, timeout: TimeInterval = 120, pause: TimeInterval = 0.5) {
+    private func awaitStep(_ step: String, timeout: TimeInterval = 120, settle: TimeInterval = SyncScenarioTests.defaultSettle) {
         let expected = waitForSignalText(step)
-        XCTAssertTrue(syncUntil(timeout: timeout, pause: pause) { (self.snapshot().map { $0.outbox == 0 && $0.digest == expected }) ?? false },
+        XCTAssertTrue(syncUntil(timeout: timeout, settle: settle) { (self.snapshot().map { $0.outbox == 0 && $0.digest == expected }) ?? false },
                       "this device should reach the state of \(step): \(snapshot()?.summary ?? "no status")")
     }
 
     /// Both devices end with the same thought count and digest, an empty outbox, nothing parked or held, no stop reason, and a
     /// cursor at the server's head. Each publishes its own and compares with the peer's.
-    private func assertConverged(thoughts expected: Int, timeout: TimeInterval = 180, pause: TimeInterval = 0.5) {
+    private func assertConverged(thoughts expected: Int, timeout: TimeInterval = 180, settle: TimeInterval = SyncScenarioTests.defaultSettle) {
         let peer = isA ? "b" : "a"
         var last: Snapshot?
-        let converged = syncUntil(timeout: timeout, pause: pause) {
+        let converged = syncUntil(timeout: timeout, settle: settle) {
             guard let now = self.snapshot(), let count = now.thoughts, let digest = now.digest else { return false }
             last = now
             guard now.outbox == 0, now.parked == 0, now.held == 0, now.attention == nil, now.cursor >= self.serverHeadSeq() else { return false }
@@ -567,17 +569,63 @@ final class SyncScenarioTests: XCTestCase {
 
     // MARK: Waiting for a state
 
-    /// Syncs by foregrounding the app until `done` holds; false after `timeout` seconds.
-    private func syncUntil(timeout: TimeInterval = 60, pause: TimeInterval = 0.5, _ done: () -> Bool) -> Bool {
+    private static let defaultSettle: TimeInterval = 3
+
+    fileprivate enum SyncTrigger: String, CaseIterable {
+        case signal, button, foreground
+    }
+
+    /// Unique per device role and run: two simulators can share a Darwin notify center, and one device's signal must never
+    /// sync the other.
+    private var syncNowNotification: String { "com.thoughtreps.debug.sync-now.\(role).\(vaultID)" }
+
+    /// Starts sync cycles until `done` holds; false after `timeout` seconds. Each round tries the trigger that last advanced
+    /// `cycles` first, then the rest in order (Darwin notification, the app's hidden "sync now" button, backgrounding and
+    /// foregrounding it), and credits the first one whose own settle window sees `cycles` advance.
+    private func syncUntil(timeout: TimeInterval = 60, settle: TimeInterval = SyncScenarioTests.defaultSettle, _ done: () -> Bool) -> Bool {
         let end = Date().addingTimeInterval(timeout)
         while Date() < end {
             if done() { return true }
-            XCUIDevice.shared.press(.home)
-            app.activate()
-            Thread.sleep(forTimeInterval: pause)
-            if done() { return true }
+            let order = (workingTrigger.map { [$0] } ?? []) + SyncTrigger.allCases.filter { $0 != workingTrigger }
+            for trigger in order where Date() < end {
+                let before = snapshot()?.cycles ?? 0
+                guard fire(trigger) else { continue }
+                if settleUntil(min(settle, end.timeIntervalSinceNow), done) { return true }
+                if (snapshot()?.cycles ?? 0) > before {
+                    if workingTrigger != trigger { print("sync trigger: \(trigger.rawValue)") }
+                    workingTrigger = trigger
+                    break
+                }
+            }
         }
         return done()
+    }
+
+    private func fire(_ trigger: SyncTrigger) -> Bool {
+        switch trigger {
+        case .signal:
+            CFNotificationCenterPostNotification(
+                CFNotificationCenterGetDarwinNotifyCenter(), CFNotificationName(syncNowNotification as CFString), nil, nil, true
+            )
+        case .button:
+            let button = app.descendants(matching: .any).matching(identifier: "syncNowProbe").firstMatch
+            guard button.exists, button.isHittable else { return false }
+            button.tap()
+        case .foreground:
+            XCUIDevice.shared.press(.home)
+            app.activate()
+        }
+        return true
+    }
+
+    /// Polls `done` every half second for `seconds`; true as soon as it holds.
+    private func settleUntil(_ seconds: TimeInterval, _ done: () -> Bool) -> Bool {
+        let end = Date().addingTimeInterval(seconds)
+        while Date() < end {
+            Thread.sleep(forTimeInterval: 0.5)
+            if done() { return true }
+        }
+        return false
     }
 
     /// The app's status file (`SyncDebugSession.StatusSnapshot`), rewritten after every cycle. The convergence fields are nil
@@ -672,7 +720,7 @@ final class SyncScenarioTests: XCTestCase {
     }
 
     /// B launches first, then A; both launches may seed thoughts (`SyncTestSeed`) and may turn off the engine's automatic
-    /// triggers, so this device syncs only when `syncUntil` foregrounds it.
+    /// triggers, so this device syncs only when `syncUntil` triggers it (notification, hidden button or foregrounding).
     private func launch(seeding kinds: [String] = [], manualSync: Bool = false, timeout: TimeInterval = 30) {
         if !kinds.isEmpty { app.launchArguments += ["-TRSeedSyncTestData", "\(kinds.joined(separator: ",")):\(vaultID)"] }
         if manualSync { app.launchEnvironment["THOUGHTREPS_SYNC_MANUAL"] = "1" }
