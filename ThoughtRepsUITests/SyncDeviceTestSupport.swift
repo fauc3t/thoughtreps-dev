@@ -369,20 +369,21 @@ class SyncDeviceTestCase: XCTestCase {
         app.buttons["New thought"].tap()
         let field = app.textViews["Thought"]
         XCTAssertTrue(field.waitForExistence(timeout: 10))
-        field.tap()
-        dismissKeyboardPrompt()
-        let typed = "\(name)\n\(paragraphs)#\(Self.tag)"
-        field.typeText(typed)
-        XCTAssertEqual(fieldText(field), typed, "the new thought should hold exactly the typed text")
+        // The link goes in before typing: with the keyboard up, the iPad keyboard covers the Add block menu.
         if let target {
             app.staticTexts["Add block"].firstMatch.tap()
             let kind = app.descendants(matching: .any).matching(identifier: "Linked thought").firstMatch
             XCTAssertTrue(kind.waitForExistence(timeout: 10),"the Add block menu should offer Linked thought")
             kind.tap()
             let row = app.buttons.containing(.staticText, identifier: target).firstMatch
-            XCTAssertTrue(row.waitForExistence(timeout: 10))
+            XCTAssertTrue(row.waitForExistence(timeout: 10), "the link picker should list \(target)")
             row.tap()
         }
+        field.tap()
+        dismissKeyboardPrompt()
+        let typed = "\(name)\n\(paragraphs)#\(Self.tag)"
+        field.typeText(typed)
+        XCTAssertEqual(fieldText(field), typed, "the new thought should hold exactly the typed text")
         app.buttons["Save"].tap()
         XCTAssertTrue(app.navigationBars["New thought"].waitForNonExistence(timeout: 10))
     }
