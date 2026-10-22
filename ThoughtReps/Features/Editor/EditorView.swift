@@ -418,14 +418,8 @@ struct EditorView: View {
                     }
                     .onMove { drafts.move(fromOffsets: $0, toOffset: $1) }
 
-                    Menu {
-                        AddBlockMenuItems { addBlock($0) }
-                    } label: {
-                        Label("Add block", systemImage: "plus")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    }
-                    .bodyRow(vertical: 6)
+                    AddBlockMenuButton(onWillOpen: { focus = nil }, onAdd: { addBlock($0) })
+                        .bodyRow(vertical: 6)
 
                     if intake.isProcessing {
                         ImageProcessingIndicator(intake: intake)

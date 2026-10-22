@@ -26,7 +26,7 @@ xcodegen && open ThoughtReps.xcodeproj
 | Run the app | ⌘R in Xcode |
 | Run the tests in Xcode | ⌘U |
 | Run the tests from the terminal | `xcodebuild test -scheme ThoughtReps -destination 'platform=iOS Simulator,name=<simulator>'` (names from `xcrun simctl list devices available`); also run it on an iPad simulator, e.g. `iPad Pro 13-inch (M5)` |
-| Run the keyboard and iPad split view UI tests | `xcodebuild test -scheme ThoughtRepsScreenshots -destination 'platform=iOS Simulator,name=iPad Pro 13-inch (M5)' -only-testing:ThoughtRepsUITests/KeyboardAndSplitViewTests` (the editor's ⌘↩ and Esc need a device check) |
+| Run the keyboard and iPad split view UI tests | `xcodebuild test -scheme ThoughtRepsScreenshots -destination 'platform=iOS Simulator,name=iPad Pro 13-inch (M5)' -only-testing:ThoughtRepsUITests/KeyboardAndSplitViewTests` (the editor's ⌘↩ and Esc need a device check; the Add block menu test needs the simulator's software keyboard, so turn off I/O > Keyboard > Connect Hardware Keyboard) |
 
 `ThoughtReps.xcodeproj` is generated from `project.yml` and gitignored, so edit `project.yml` rather than the project's build settings.
 

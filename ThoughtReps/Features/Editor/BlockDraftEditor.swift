@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// The choices of every "Add block" menu, one per `BlockKind`, so the menus can't drift apart.
+/// The choices of the keyboard bar's "Add block" menu, one per `BlockKind`. The list's `AddBlockMenuButton` builds the same
+/// choices from `BlockKind.allCases` with `label` and `systemImage`.
 struct AddBlockMenuItems: View {
     let onAdd: (BlockKind) -> Void
 

@@ -58,6 +58,32 @@ final class KeyboardAndSplitViewTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Settings"].waitForExistence(timeout: 5))
     }
 
+    /// Needs the simulator's software keyboard (Connect Hardware Keyboard off); with a hardware keyboard there is nothing to dismiss.
+    func testAddBlockMenuDropsTheKeyboardAndInsertsAfterTheFocusedField() throws {
+        try XCTSkipUnless(isPad, "Checked on iPad, where the keyboard covers the menu")
+        app.buttons["New thought"].tap()
+        let field = app.textViews["Thought"]
+        XCTAssertTrue(field.waitForExistence(timeout: 10))
+        field.tap()
+        if app.buttons["Continue"].waitForExistence(timeout: 2) { app.buttons["Continue"].tap() }
+        field.typeText("FIRSTPARA")
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        app.buttons["addBlockInList"].tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 3), "the keyboard should go down as the menu opens")
+        let shot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        shot.name = "add-block-menu"
+        shot.lifetime = .keepAlways
+        add(shot)
+        for kind in ["Text", "Image gallery", "Linked thought", "File"] {
+            XCTAssertTrue(app.descendants(matching: .any).matching(identifier: kind).firstMatch.waitForExistence(timeout: 5), kind)
+        }
+        app.descendants(matching: .any).matching(identifier: "Text").firstMatch.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5), "the new block should take focus")
+        app.typeText("SECONDPARA")
+        let texts = app.textViews.allElementsBoundByIndex.compactMap { $0.value as? String }
+        XCTAssertEqual(texts.filter { $0 == "FIRSTPARA" || $0 == "SECONDPARA" }, ["FIRSTPARA", "SECONDPARA"])
+    }
+
     func testSplitViewSelectsAndClearsAThought() throws {
         try XCTSkipUnless(isPad, "The split view is iPad only")
         XCTAssertTrue(app.staticTexts["Select a thought"].exists)

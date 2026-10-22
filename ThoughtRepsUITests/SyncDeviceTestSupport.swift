@@ -369,9 +369,9 @@ class SyncDeviceTestCase: XCTestCase {
         app.buttons["New thought"].tap()
         let field = app.textViews["Thought"]
         XCTAssertTrue(field.waitForExistence(timeout: 10))
-        // The link goes in before typing: with the keyboard up, the iPad keyboard covers the Add block menu.
+        // The link goes in before typing.
         if let target {
-            app.staticTexts["Add block"].firstMatch.tap()
+            app.buttons["addBlockInList"].firstMatch.tap()
             let kind = app.descendants(matching: .any).matching(identifier: "Linked thought").firstMatch
             XCTAssertTrue(kind.waitForExistence(timeout: 10),"the Add block menu should offer Linked thought")
             kind.tap()
