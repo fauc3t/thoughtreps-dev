@@ -28,8 +28,6 @@ final class SyncAccountScenarioTests: SyncDeviceTestCase {
         static let deviceName = "syncDeviceName"
         static let deviceThisMarker = "syncDeviceThisMarker"
         static let deviceRename = "syncDeviceRename"
-        static let renameField = "syncRenameField"
-        static let renameSave = "syncRenameSave"
         static let deviceRemove = "syncDeviceRemove"
         static let removeConfirm = "syncRemoveConfirm"
         static let leave = "syncLeave"
@@ -87,7 +85,7 @@ final class SyncAccountScenarioTests: SyncDeviceTestCase {
             createThought(bSeed)
             let vault = waitForSignalText("account-vault", timeout: Self.peerWait)
             join(withInvite: waitForSignalText("invite-1", timeout: Self.peerWait), choice: .merge)
-            XCTAssertEqual(value(ID.accountVault), vault, "B should join A's vault")
+            XCTAssertEqual(revealedValue(ID.accountVault), vault, "B should join A's vault")
             signal("b-joined-1")
         }
         closeSyncLab()
@@ -147,7 +145,7 @@ final class SyncAccountScenarioTests: SyncDeviceTestCase {
             XCTAssertTrue(syncUntil(timeout: 240) { self.snapshot()?.attention?.hasPrefix("Server refused") ?? false },
                           "the engine should report that the server refused this device: \(snapshot()?.summary ?? "no status")")
             reopenSyncLab()
-            XCTAssertTrue(value(ID.engineAttention).hasPrefix("Server refused"), "the Sync lab should show the refusal")
+            XCTAssertTrue(revealedValue(ID.engineAttention).hasPrefix("Server refused"), "the Sync lab should show the refusal")
         }
     }
 
@@ -241,6 +239,7 @@ final class SyncAccountScenarioTests: SyncDeviceTestCase {
             tapDialogButton(ID.deleteDataConfirm, label: "Delete sync data")
             signal("action-siwa-a-maybe")
             waitSignedOut(timeout: Self.signInWait)
+            _ = reveal(ID.accountMessage)
             XCTAssertEqual(accountMessage(), "Sync data deleted. This device keeps its thoughts.")
             signal("a-deleted")
         } else {
@@ -275,7 +274,7 @@ final class SyncAccountScenarioTests: SyncDeviceTestCase {
         }, "Sign in with Apple wasn't approved in time")
         XCTAssertTrue(vault.exists, "Sign in didn't create a vault: \(accountMessage())")
         XCTAssertEqual(accountMessage(), "Vault created.", "This Apple ID already had a vault; the test needs a fresh account")
-        let id = value(ID.accountVault)
+        let id = revealedValue(ID.accountVault)
         XCTAssertFalse(id.isEmpty, "the vault id should show")
         print("account vault: \(id)")
         return id
@@ -344,10 +343,17 @@ final class SyncAccountScenarioTests: SyncDeviceTestCase {
                 }
                 break asking
             }
-            if vault.exists { break asking }
+            if vault.exists || joined() { break asking }
             Thread.sleep(forTimeInterval: 0.3)
         }
-        XCTAssertTrue(vault.waitForExistence(timeout: 90), "Joining should finish: \(accountMessage())")
+        // The vault row is at the top of the lab, often scrolled out of the hierarchy after a join from a field below it;
+        // the message beside the Join buttons says when it is done, and only then is a reopen to reach the row safe.
+        XCTAssertTrue(waitUntil(90) { vault.exists || self.joined() }, "Joining should finish: \(accountMessage())")
+        XCTAssertTrue(reveal(ID.accountVault, timeout: 30, reopening: true).exists, "the vault should show: \(accountMessage())")
+    }
+
+    private func joined() -> Bool {
+        accountMessage() == "Joined the vault."
     }
 
     private func leave(erase: Bool) {
@@ -364,7 +370,7 @@ final class SyncAccountScenarioTests: SyncDeviceTestCase {
     }
 
     private func waitSignedOut(timeout: TimeInterval = 90) {
-        let signIn = reveal(ID.signIn, timeout: timeout)
+        let signIn = reveal(ID.signIn, timeout: timeout, reopening: true)
         XCTAssertTrue(signIn.exists, "This device should be signed out: \(accountMessage())")
     }
 
@@ -386,7 +392,7 @@ final class SyncAccountScenarioTests: SyncDeviceTestCase {
     // MARK: Devices
 
     private func deviceNames() -> [String] {
-        app.staticTexts.matching(identifier: ID.deviceName).allElementsBoundByIndex.map { $0.label }
+        app.staticTexts.matching(identifier: ID.deviceName).allElementsBoundByIndex.map { label($0) }.filter { !$0.isEmpty }
     }
 
     /// The lab loads the list when it opens, so waiting means closing and opening it again.
@@ -416,14 +422,21 @@ final class SyncAccountScenarioTests: SyncDeviceTestCase {
 
     private func rename(to name: String) {
         tapLab(ID.deviceRename)
-        let field = element(ID.renameField)
+        // SwiftUI doesn't pass an alert text field's identifier through, so find it by the alert's title.
+        let alert = app.alerts["Rename this device"]
+        let field = alert.textFields.firstMatch
         XCTAssertTrue(field.waitForExistence(timeout: 10), "the rename dialog should show")
         field.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
         dismissKeyboardPrompt()
         app.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: fieldText(field).count + 3))
         app.typeText(name)
         XCTAssertEqual(fieldText(field), name, "the rename field should hold exactly the new name")
-        tapDialogButton(ID.renameSave, label: "Rename")
+        // On the iPhone a tap on Rename while the field is focused can leave the alert up, so tap until it goes.
+        for _ in 0..<3 where alert.exists {
+            alert.buttons["Rename"].firstMatch.tap()
+            _ = alert.waitForNonExistence(timeout: 5)
+        }
+        XCTAssertFalse(alert.exists, "the rename dialog should close")
         XCTAssertTrue(waitUntil(30) { self.deviceNames().contains(name) }, "the device list should show the new name")
     }
 
@@ -437,9 +450,19 @@ final class SyncAccountScenarioTests: SyncDeviceTestCase {
         element(id).value as? String ?? ""
     }
 
+    /// The value of a lab row that may be scrolled out of the hierarchy. Reopens the lab to get back up, so not for fields.
+    private func revealedValue(_ id: String) -> String {
+        reveal(id, reopening: true).value as? String ?? ""
+    }
+
+    /// Read from one snapshot: the message can go between an `exists` check and a `label` read, which fails the test.
     private func accountMessage() -> String {
-        let message = element(ID.accountMessage)
-        return message.exists ? message.label : ""
+        label(element(ID.accountMessage))
+    }
+
+    /// The element's label from one snapshot, or empty if it's gone.
+    private func label(_ element: XCUIElement) -> String {
+        MainActor.assumeIsolated { (try? element.snapshot())?.label ?? "" }
     }
 
     private func waitUntil(_ timeout: TimeInterval, _ condition: () -> Bool) -> Bool {
@@ -481,7 +504,11 @@ final class SyncAccountScenarioTests: SyncDeviceTestCase {
 
     /// Scrolls the lab until the element is on screen and hittable, trying down first and then back up; the rows below the
     /// screen aren't in the hierarchy until they are scrolled to. Returns it either way, so callers check `exists`.
-    private func reveal(_ id: String, timeout: TimeInterval = 20, asButton: Bool = false) -> XCUIElement {
+    /// With `reopening`, going back up is a reopen of the lab, which always lands at the top: on the iPad the lab is a form
+    /// sheet, and an app-wide swipe down from the bottom of it never scrolled back up. (Swiping `collectionViews.firstMatch`
+    /// instead hits the list behind the sheet.) A reopen clears the lab's text fields, so only waits for a state change use it.
+    private func reveal(_ id: String, timeout: TimeInterval = 20, asButton: Bool = false,
+                        reopening: Bool = false) -> XCUIElement {
         let target = asButton ? app.buttons[id] : element(id)
         let end = Date().addingTimeInterval(timeout)
         var swipes = 0
@@ -491,6 +518,11 @@ final class SyncAccountScenarioTests: SyncDeviceTestCase {
             if swipes >= 6 {
                 down.toggle()
                 swipes = 0
+                if reopening && !down && app.navigationBars["Sync lab"].exists {
+                    reopenSyncLab()
+                    down = true
+                    continue
+                }
             }
             if down { app.swipeUp() } else { app.swipeDown() }
             swipes += 1
@@ -519,11 +551,16 @@ final class SyncAccountScenarioTests: SyncDeviceTestCase {
         return nil
     }
 
+    /// A tap while the dialog is still animating in is dropped on the iPhone, so it waits a moment first and taps again
+    /// (found by id only, since a label match could be the next dialog's button) while the button is still there.
     private func tapDialogButton(_ id: String, label: String, timeout: TimeInterval = 15) {
         let end = Date().addingTimeInterval(timeout)
         while Date() < end {
             if let button = dialogButton(id, label: label) {
+                Thread.sleep(forTimeInterval: 0.7)
                 button.tap()
+                let byID = element(id)
+                for _ in 0..<2 where !byID.waitForNonExistence(timeout: 3) && byID.exists && byID.isHittable { byID.tap() }
                 return
             }
             Thread.sleep(forTimeInterval: 0.3)

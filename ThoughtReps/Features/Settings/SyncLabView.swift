@@ -155,8 +155,8 @@ final class SyncLabModel {
         await loadDevices()
     }
 
-    func removePendingDevice() async {
-        guard let device = pendingRemoval else { return }
+    /// Takes the device from the alert's button: the alert's dismissal clears `pendingRemoval` before a Task runs.
+    func remove(_ device: SyncDeviceList.Device) async {
         pendingRemoval = nil
         isWorking = true
         defer { isWorking = false }
@@ -427,6 +427,9 @@ struct SyncLabView: View {
     @State private var model = SyncLabModel()
     @State private var recoveryEntry = ""
     @State private var inviteEntry = ""
+    /// Dropped when a Join button is tapped: on the iPad a keyboard left up dismisses the merge-or-erase popover, which
+    /// counts as Cancel.
+    @FocusState private var entryFocused: Bool
     @State private var showInvite = false
     @State private var showScan = false
     @State private var showRename = false
@@ -567,8 +570,10 @@ struct SyncLabView: View {
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .font(.system(.footnote, design: .monospaced))
+                        .focused($entryFocused)
                         .accessibilityIdentifier(SyncLabID.inviteTextField)
                     Button("Join with invite text") {
+                        entryFocused = false
                         let text = inviteEntry
                         inviteEntry = ""
                         Task { await model.requestJoin(inviteText: text, in: context) }
@@ -579,8 +584,10 @@ struct SyncLabView: View {
                         .textInputAutocapitalization(.characters)
                         .autocorrectionDisabled()
                         .font(.system(.footnote, design: .monospaced))
+                        .focused($entryFocused)
                         .accessibilityIdentifier(SyncLabID.recoveryCodeField)
                     Button("Join with recovery code") {
+                        entryFocused = false
                         let code = recoveryEntry
                         recoveryEntry = ""
                         Task { await model.requestJoin(.recoveryCode(code), in: context) }
@@ -705,7 +712,10 @@ struct SyncLabView: View {
             Text(LeaveGate.eraseMessage)
         }
         .alert(LeaveGate.removeTitle(name: model.pendingRemoval?.name ?? ""), isPresented: removeBinding) {
-            Button("Remove", role: .destructive) { Task { await model.removePendingDevice() } }
+            Button("Remove", role: .destructive) {
+                guard let device = model.pendingRemoval else { return }
+                Task { await model.remove(device) }
+            }
                 .accessibilityIdentifier(SyncLabID.removeConfirm)
             Button("Cancel", role: .cancel) { model.pendingRemoval = nil }
         } message: {
