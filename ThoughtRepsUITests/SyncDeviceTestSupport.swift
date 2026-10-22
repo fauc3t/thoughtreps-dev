@@ -408,8 +408,14 @@ class SyncDeviceTestCase: XCTestCase {
         app.buttons["Sync lab"].tap()
         scrollTo(app.buttons["Run checks"])
         app.buttons["Run checks"].tap()
+        // The result row goes under Run checks, which can sit at the bottom edge, so scroll until it is in the hierarchy.
         let result = app.staticTexts["syncLabChecksResult"]
-        XCTAssertTrue(result.waitForExistence(timeout: 30))
+        let end = Date().addingTimeInterval(30)
+        while !result.exists && Date() < end {
+            app.swipeUp()
+            _ = result.waitForExistence(timeout: 2)
+        }
+        XCTAssertTrue(result.exists, "the checks should finish")
         XCTAssertEqual(result.label, "Passed")
     }
 }
