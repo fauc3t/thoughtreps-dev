@@ -18,7 +18,7 @@ struct SyncAccountAPI: Sendable {
     }
 
     static func defaultKeyStore() -> KeyIdStore {
-        KeychainKeyIdStore(service: "com.thoughtreps.sync.appattest")
+        InstallBoundKeyIdStore(keychain: KeychainKeyIdStore(service: "com.thoughtreps.sync.appattest"))
     }
 
     var baseURL: URL
@@ -290,6 +290,20 @@ struct SyncAccountService: Sendable {
         return Joined(credentials: held, session: answer.session)
     }
 
+    /// Pairs again with the held vault key, for a session minted on an install with no device key (after a reinstall). If
+    /// the pair fails, the key it just registered is dropped so the next session rejoins again; it is no vault member, and
+    /// a registered key outside a vault doesn't count toward the device limit.
+    func rejoin(_ held: SyncCredentials) async throws -> SyncHTTPWireV1.SessionToken {
+        do {
+            return try await join(vaultID: held.vaultID, vaultKey: held.vaultKey, proof: .vaultKey).session
+        } catch let error as SyncAccountError where error == .keychainFailed {
+            throw error
+        } catch {
+            api.keyStore.clear()
+            throw error
+        }
+    }
+
     func joinFromICloudKeychain() async throws -> Joined {
         guard let copy = try? iCloud?.load() else { throw SyncAccountError.keychainFailed }
         return try await join(vaultID: copy.vaultID, vaultKey: copy.vaultKey, proof: .vaultKey)
@@ -340,6 +354,39 @@ struct SyncAccountService: Sendable {
     }
 }
 
+/// The sync keyId, kept only for the install that registered it. App Attest keys don't survive a reinstall but the
+/// Keychain does, and an assertion with an earlier install's key fails with an error other than `DCError.invalidKey`, so
+/// the stale-key retry never ran. A UserDefaults marker (gone with the app) names the keyId this install saved; a Keychain
+/// keyId without it is dropped.
+struct InstallBoundKeyIdStore: KeyIdStore {
+    static let markerKey = "syncAppAttestKeyIdThisInstall"
+
+    var keychain: KeyIdStore
+    /// Nil is the standard defaults; tests pass a throwaway suite.
+    var suiteName: String?
+
+    private var defaults: UserDefaults { suiteName.flatMap(UserDefaults.init(suiteName:)) ?? .standard }
+
+    func load() throws -> String? {
+        guard let stored = try keychain.load() else { return nil }
+        guard defaults.string(forKey: Self.markerKey) == stored else {
+            keychain.clear()
+            return nil
+        }
+        return stored
+    }
+
+    func save(_ keyId: String) throws {
+        try keychain.save(keyId)
+        defaults.set(keyId, forKey: Self.markerKey)
+    }
+
+    func clear() {
+        keychain.clear()
+        defaults.removeObject(forKey: Self.markerKey)
+    }
+}
+
 /// Keeps a vault session in memory only (never persisted or logged) and mints a new one through the device key when it
 /// is missing or within `refreshMargin` of expiring, by the server's clock. Concurrent callers share one mint.
 actor SyncSessionProvider: SyncSessionSource {
@@ -350,11 +397,18 @@ actor SyncSessionProvider: SyncSessionSource {
     private let serverNow: @Sendable () -> Date
     private var current: SyncHTTPWireV1.SessionToken?
     private var minting: Task<SyncHTTPWireV1.SessionToken, Error>?
+    /// Joins the vault again with the held vault key (`POST /pair`) when this install has no device key: after a reinstall
+    /// the old key is gone and a new one is no vault member, so Resume pairs as a new device.
+    private let rejoin: (@Sendable () async throws -> SyncHTTPWireV1.SessionToken)?
 
-    init(api: SyncAccountAPI, vaultID: String, serverNow: @escaping @Sendable () -> Date) {
+    init(
+        api: SyncAccountAPI, vaultID: String, serverNow: @escaping @Sendable () -> Date,
+        rejoin: (@Sendable () async throws -> SyncHTTPWireV1.SessionToken)? = nil
+    ) {
         self.api = api
         self.vaultID = vaultID
         self.serverNow = serverNow
+        self.rejoin = rejoin
     }
 
     func adopt(_ session: SyncHTTPWireV1.SessionToken) {
@@ -386,7 +440,10 @@ actor SyncSessionProvider: SyncSessionSource {
     }
 
     private func requestSession() async throws -> SyncHTTPWireV1.SessionToken {
-        guard let keyId = try api.storedKeyId() else { throw SyncAccountError.notRegistered }
+        guard let keyId = try api.storedKeyId() else {
+            guard let rejoin else { throw SyncAccountError.notRegistered }
+            return try await rejoin()
+        }
         let challenge = try await api.challenge()
         let answer: SyncHTTPWireV1.AccountSession = try await api.signedPost(
             "sessions/app-attest", keyId: keyId, body: SyncHTTPWireV1.SessionRequest(challenge: challenge)

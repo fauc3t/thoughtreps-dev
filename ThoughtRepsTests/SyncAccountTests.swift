@@ -474,6 +474,17 @@ fileprivate struct SyncSessionProviderTests {
         await #expect(throws: SyncAccountError.server(status: 403, code: "forbidden")) { try await provider.token() }
     }
 
+    @Test func noDeviceKeyRejoinsWhenARejoinIsGiven() async throws {
+        let http = FakeHTTP()
+        let api = SyncAccountAPI(baseURL: apiURL, transport: http, attest: FakeAttest(), keyStore: MemoryKeyIdStore())
+        let provider = SyncSessionProvider(api: api, vaultID: "vault-1", serverNow: { Date() }, rejoin: {
+            SyncHTTPWireV1.SessionToken(token: "rejoined", expiresAt: 9_999_999_999_999)
+        })
+        #expect(try await provider.token() == "rejoined")
+        #expect(try await provider.token() == "rejoined", "the rejoined session is kept like a minted one")
+        #expect(http.requests.isEmpty)
+    }
+
     @Test func noRegisteredKeyIsAnErrorBeforeAnyRequest() async {
         let http = FakeHTTP()
         let api = SyncAccountAPI(baseURL: apiURL, transport: http, attest: FakeAttest(), keyStore: MemoryKeyIdStore())
@@ -678,6 +689,22 @@ fileprivate struct SyncJoinTests {
         #expect(joined == .init(credentials: held, session: SyncHTTPWireV1.SessionToken(token: "session-token", expiresAt: 1_768_482_000_000)))
         #expect(try rig.credentials.load() == held)
         #expect(try rig.iCloudStore.load() == held)
+    }
+
+    @Test func aRejoinPairsWithTheHeldKeyAndReturnsTheSession() async throws {
+        let rig = Rig(http: Self.pairing())
+        let held = SyncCredentials(vaultKey: fixedKey, vaultID: realVaultID, userID: "user-1")
+        let session = try await rig.service.rejoin(held)
+        #expect(session == SyncHTTPWireV1.SessionToken(token: "session-token", expiresAt: 1_768_482_000_000))
+        #expect(try JSONDecoder().decode(SyncHTTPWireV1.PairKAuthRequest.self, from: try rig.pairBody()).kAuth == (try SyncKeys(vaultKey: fixedKey)).authBytes)
+        #expect(try rig.keys.load() == "key-1")
+    }
+
+    @Test func aFailedRejoinDropsTheKeyItRegistered() async throws {
+        let rig = Rig(http: Self.pairing { _ in (403, #"{"error":"device_limit"}"#) })
+        let held = SyncCredentials(vaultKey: fixedKey, vaultID: realVaultID, userID: "user-1")
+        await #expect(throws: SyncAccountError.server(status: 403, code: "device_limit")) { try await rig.service.rejoin(held) }
+        #expect(try rig.keys.load() == nil, "the next session rejoins instead of minting with a key outside the vault")
     }
 
     @Test func anInviteJoinsWithTheSecretAndNeverSendsTheKey() async throws {
@@ -922,4 +949,42 @@ fileprivate struct SyncJoinTests {
         #expect(try rig.credentials.load()?.vaultID == realVaultID)
     }
 }
+@Suite("Install-bound key id store")
+fileprivate struct InstallBoundKeyIdStoreTests {
+    static func rig() -> (InstallBoundKeyIdStore, MemoryKeyIdStore, UserDefaults) {
+        let suite = "InstallBoundKeyIdStoreTests-\(UUID().uuidString)"
+        let keychain = MemoryKeyIdStore()
+        return (InstallBoundKeyIdStore(keychain: keychain, suiteName: suite), keychain, UserDefaults(suiteName: suite)!)
+    }
+
+    @Test func aKeySavedByThisInstallLoads() throws {
+        let (store, _, _) = Self.rig()
+        try store.save("key-1")
+        #expect(try store.load() == "key-1")
+    }
+
+    @Test func aKeychainKeyFromAnEarlierInstallIsDropped() throws {
+        let (store, keychain, _) = Self.rig()
+        try keychain.save("old")
+        #expect(try store.load() == nil)
+        #expect(try keychain.load() == nil, "the stale keyId is cleared from the Keychain")
+    }
+
+    @Test func aMarkerForAnotherKeyDoesNotCount() throws {
+        let (store, keychain, defaults) = Self.rig()
+        defaults.set("other", forKey: InstallBoundKeyIdStore.markerKey)
+        try keychain.save("old")
+        #expect(try store.load() == nil)
+    }
+
+    @Test func clearRemovesBoth() throws {
+        let (store, keychain, defaults) = Self.rig()
+        try store.save("key-1")
+        store.clear()
+        #expect(try keychain.load() == nil)
+        #expect(defaults.string(forKey: InstallBoundKeyIdStore.markerKey) == nil)
+    }
+}
+
 #endif
+

@@ -283,8 +283,13 @@ enum SyncDebugSession {
     /// The engine's session if it is running, otherwise one minted through the device key.
     static func sessionSource(for held: SyncCredentials, service: SyncAccountService) -> SyncSessionSource {
         provider ?? SyncSessionProvider(
-            api: service.api, vaultID: held.vaultID, serverNow: { Date().addingTimeInterval(ServerClockOffset(defaults: .standard).current) }
+            api: service.api, vaultID: held.vaultID, serverNow: { Date().addingTimeInterval(ServerClockOffset(defaults: .standard).current) },
+            rejoin: rejoin(held, service: service)
         )
+    }
+
+    static func rejoin(_ held: SyncCredentials, service: SyncAccountService) -> @Sendable () async throws -> SyncHTTPWireV1.SessionToken {
+        { try await service.rejoin(held) }
     }
 
     // MARK: Launch and reinstall
@@ -359,10 +364,12 @@ enum SyncDebugSession {
     private static func beginAccount(
         container: ModelContainer, state: SyncState, credentials: SyncCredentials, seed: SyncHTTPWireV1.SessionToken?
     ) async {
-        let url = SyncAccountAPI.defaultBaseURL()
+        let service = accountService()
+        let url = service.api.baseURL
         let provider = SyncSessionProvider(
-            api: SyncAccountAPI(baseURL: url), vaultID: credentials.vaultID,
-            serverNow: { Date().addingTimeInterval(ServerClockOffset(defaults: .standard).current) }
+            api: service.api, vaultID: credentials.vaultID,
+            serverNow: { Date().addingTimeInterval(ServerClockOffset(defaults: .standard).current) },
+            rejoin: rejoin(credentials, service: service)
         )
         if let seed { await provider.adopt(seed) }
         Self.provider = provider
