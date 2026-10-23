@@ -107,11 +107,11 @@ Four SwiftData models cover v1. Every field has a default and every relationship
 | Field | Type | Notes |
 | --- | --- | --- |
 | id | UUID |  |
-| filename | String | File in `Images/<thoughtID>/` |
+| data, thumbnail | Data | `.externalStorage` (superseded the on-disk `filename`) |
 | width, height | Int | For layout before load |
 | thought | Thought? | Inverse |
 
-Images are stored as files in the app's Application Support folder, not inside the database, and referenced from Markdown as `![](img:<id>)`. Settings (default interval, notification time) live in `UserDefaults`.
+Image bytes are stored in SwiftData as `.externalStorage` (see "As built"), not as files we manage, and referenced from Markdown as `![](img:<id>)`. Settings (default interval, notification time) live in `UserDefaults`.
 
 ## Screens & flows
 
@@ -189,7 +189,7 @@ The app is SwiftUI + SwiftData with no server, split so that the resurfacing rul
 - **Views**: screens and reusable cards, no business logic.
 - **Scheduler**: pure functions — `isDue`, `markViewed`, `snooze`, `nextDue(interval:mode:)` — taking a `now` parameter so tests control time.
 - **Stores**: thin wrappers over `ModelContext` for queries (due list, by tag, search) and saves that run tag parsing.
-- **Services**: `TagParser`, `ImageStore` (files on disk), `NotificationScheduler`, `Exporter`.
+- **Services**: `TagParser`, `ImageProcessor`, `NotificationScheduler`, `Exporter`.
 
 **Repo layout**
 
@@ -201,7 +201,7 @@ ThoughtReps/
 │   ├── Models/         Thought, Tag, Block, ImageAsset
 │   ├── Scheduler/      Scheduler.swift, IntervalMode.swift
 │   ├── Stores/         ThoughtStore.swift, TagStore.swift
-│   ├── Services/       TagParser, ImageStore, NotificationScheduler, Exporter
+│   ├── Services/       TagParser, ImageProcessor, NotificationScheduler, Exporter
 │   ├── Features/
 │   │   ├── Timeline/   TimelineView, ThoughtCard
 │   │   ├── Thought/    ThoughtDetailView, ThoughtRenderer
@@ -221,18 +221,18 @@ A `#if DEBUG` sample-data loader seeds about 20 thoughts with mixed due dates so
 
 ## Notifications, backup & sync
 
-All three are local-first: notifications are scheduled on-device, backup is a file you own, and sync is optional iCloud.
+All three are local-first: notifications are scheduled on-device, backup is a file you own, and sync is our own server (see the Sync Spec), not iCloud.
 
 **Notifications (v1)**
 
-- One daily reminder at a user-set time (default 8:00 AM): "4 thoughts are back today."
-- Rescheduled whenever the app goes to the background, using the count of thoughts due by that time.
+- Superseded by "As built: Reminders": up to 7 daily reminders at a user-set time (default 8:00 AM), "4 thoughts are back today.", plus follow-ups at +14, +30 and +90 days, then silence.
+- Rescheduled whenever the app goes to the background, using the count of thoughts due by each time.
 - No reminder when nothing is due. Off until the user grants permission from Settings.
 
 **Export and import (v1)**
 
-- Export writes a `.thoughtreps` file (a zip, UTType `com.thoughtreps.export`) with `manifest.json`, `tags.jsonl`, `thoughts.jsonl` and `images/<uuid>`, shared via the system share sheet to Files, AirDrop or iCloud Drive.
-- Import reads the same format (also via Open in Thought Reps from Files or AirDrop) and merges by `id`, keeping the newer `updatedAt`.
+- Export writes a `.thoughtreps` file (a zip, UTType `com.thoughtreps.export`) with `manifest.json`, `tags.jsonl`, `thoughts.jsonl`, `images/<uuid>` and `files/<uuid>` (exact layout: "As built: Backup file layout"), shared via the system share sheet to Files, AirDrop or iCloud Drive.
+- Import reads the same format (also via Open in Thought Reps from Files or AirDrop) and merges by `id`, group by group (content, schedule, state, each by its own clock; "As built").
 - Optional Markdown export: one `.md` file per thought with front matter (tags, dates, pinned) for use in other apps.
 
 **One-time export link (fast follow)**
@@ -299,21 +299,23 @@ What the shipped code does, kept here so CLAUDE.md can stay short. Where this co
 
 **Save failures.** `ThoughtStore.persist()` logs, rolls back, and reports to `SaveErrorCenter` (shown as an alert). Store writers return `Bool` (`@discardableResult`); a failed create returns a detached thought (`modelContext == nil`). The editor closes only on success so drafts survive. Rolling back certain write shapes crashes SwiftData, so new writes on a stored thought follow the rules in the `persist()` note (`update` saves in steps and may be partly saved on failure; `delete` removes children explicitly). New inline images are saved in their own step before the body edit, and inline images whose `![](img:<uuid>)` token left the body are deleted explicitly. `PendingImageSaves` marks a thought across that step; if the edit and the take-back both fail (or the app dies), the mark stays and `cleanUpPendingImageSaves()` (run at launch from `RootTabView`, and by `update` first) deletes the thought's tokenless inline images. `IntegrityChecker` covers images: data and thumbnails present, every inline image has a token and every token resolves, gallery images match their block's thought with contiguous order, images sit only in galleries or inline, no duplicate ids.
 
-**Reminders.** `ReminderPlanner` (pure) plans; only `NotificationScheduler.reschedule` touches `UNUserNotificationCenter`, serialized, removing stale reminders before adding planned ones: at most 10 pending (7 daily plus follow-ups at +14, +30 and +90 days, then silence). Counts come from `fetchCount` with `countedPredicate`; `plan` takes the count as a closure.
+**Reminders.** `ReminderPlanner` (pure) plans; only `NotificationScheduler.reschedule` touches `UNUserNotificationCenter`, serialized, removing stale reminders before adding planned ones: at most 10 pending (7 daily plus follow-ups at +14, +30 and +90 days, then silence). Counts come from `fetchCount` with `countedPredicate`, never by loading thoughts; `plan` takes the count as a closure.
 
 **Search index.** SQLite FTS5 in `Search/`, next to the store and excluded from backup. `SearchReconciler` repairs drift at launch (off the main thread, via an `updatedAt` + archive-flag fingerprint) and rebuilds a missing or damaged file. `SearchModel` takes an optional `isIncluded` filter (the link picker's exclusions) and keeps paging until a page's worth is visible. Index errors are logged, never shown. Known gaps: after a mid-session index failure search is incomplete until next launch, and a write that leaves `updatedAt` unchanged can leave stale text until the next edit.
 
 **Layout.** Regular width is the three-column `SplitRootView`, compact is the iPhone tab view. `ThoughtSelection` (environment object) exists only in the split layout; list rows are `ThoughtLink` (a selection button there, a `NavigationLink` otherwise), and anything that leaves a thought (snooze, archive, delete) goes through `leave()`. The editor's keyboard format bar follows its text view's size class, not the device idiom or the keyboard window's traits. Never auto-select a thought: opening one is a view and requeues it. The one exception is a fold or unfold, which carries the selected tab's already-open thought and pushed screens across (`LayoutCarry`, `RootTabView.carryAcrossLayouts`) with a `ViewHandoff` that counts every carried thought entry (selection and linked-thought pushes, which stay pushes on the detail column's `ThoughtSelection.detailPath`, without changing the selection; `clear(ifSelected:)` truncates it), so no remounted detail, covered ones popped to later included, records a second view; it doesn't expire and is cleared by the next `select`/`clear` or carry. Editor sheets are presented from the root, so they survive a window resize.
 
-**One scene.** Multiple windows are disabled (`UIApplicationSupportsMultipleScenes` off) because `AppNavigation`, `EditorShortcuts` and `BackupModel` are singletons. Keyboard shortcuts (`AppCommands`, the editor's ⌘↩/Esc) are guarded by `ModalPresence`. Dropped images go through `ImageIntake`, the same processing as the picker; other dropped files become File blocks via `FileIntake`; non-file links are ignored, never fetched.
+**One scene.** Multiple windows are disabled (`UIApplicationSupportsMultipleScenes` off) because `AppNavigation`, `EditorShortcuts` and `BackupModel` are singletons; per-scene state comes first. Keyboard shortcuts (`AppCommands`, the editor's ⌘↩/Esc) are guarded by `ModalPresence`. Dropped images go through `ImageIntake`, the same processing as the picker; other dropped files become File blocks via `FileIntake`; non-file links are ignored, never fetched.
 
-**Prompts and requests.** The rating prompt state is in UserDefaults (`RatingPrompt`): a due open is decided by the pure `Scheduler.countsAsDueOpen` inside `markViewed`, a Learn rating (`review`) counts too, and at 10 the prompt is asked once ever, from the main timeline. The reminder prompt is `ReminderPrompt` (key `reminderPromptAsked`), offered once ever after the editor closes on the first thought created there. Tests inject throwaway suites (`RatingPrompt.throwaway()`). New-thought requests go through `AppNavigation.requestNewThought`, held as `pendingNewThought` until `RootTabView` consumes it (so it works on cold launch) and dropped while a sheet is up; App Intents only call it and open the editor empty.
+**Prompts and requests.** The rating prompt state is in UserDefaults (`RatingPrompt`): a due open is decided by the pure `Scheduler.countsAsDueOpen` inside `markViewed`, a Learn rating (`review`) counts too, and at 10 the prompt is asked once ever, from the main timeline. The reminder prompt is `ReminderPrompt` (key `reminderPromptAsked`), offered once ever after the editor closes on the first thought created there. Any test touching `RatingPrompt` or `ReminderPrompt` injects a throwaway suite (`RatingPrompt.throwaway()`), never the standard defaults. New-thought requests go through `AppNavigation.requestNewThought`, held as `pendingNewThought` until `RootTabView` consumes it (so it works on cold launch) and dropped while a sheet is up; App Intents only call it and open the editor empty.
 
 **Network.** The app's only network calls are to our API (`transfer.thoughtreps.com/api/v1`) and presigned S3 (sync's debug exceptions: see the Sync Spec, "As built: client rules"). Feedback and creating or revoking an export link go through `AppAttestClient`; the public, unsigned export-link `status`/`claim`/`done` calls (`ExportLinkImportService`) and the presigned S3 `PUT`/`GET` of the encrypted export need no App Attest. Feedback never includes thought content; an export link upload does, but only as a file encrypted on device (AES-GCM) whose key never leaves the device except in the link's URL fragment. The share extension stays network-free. App Attest is unavailable in the simulator, so feedback and export links need a real device; Universal Links (`applinks:transfer.thoughtreps.com`) can't be tested there either.
 
 **Blocks, images and backup.** A link block holds only `Block.linkedThoughtID` (see the Linked Thoughts Spec). A file block holds one `FileAsset` (any type, capped at 5 MB by `FileAttachment.maxBytes`, which the share extension shares; images aren't capped, they go through `ImageProcessor`) and opens in Quick Look, whose share button covers Save to Files and Open in; its filename is indexed in the search `titles` column, contents never. Old stored or exported kind "blurred" means blurred markdown (`migrateLegacyBlurredBlocks` at launch; import maps it). Images and files are `.externalStorage`, so large bytes sit in `.default_SUPPORT/_EXTERNAL_DATA` beside `default.store`; any file-level backup must include that folder. `ImageProcessor` downsizes to 2048 px HEIC (JPEG fallback) and strips metadata; the renderer resolves `img:` URLs only from the thought's own images. Backup import merges by thought id, group by group, each clock following the winning side (tag colors by `Tag.updatedAt`); tags are derived from the body. Importing from an export link downloads to a temp file and hands it to `BackupModel.beginImport`; opening a link only shows status and never claims, since claiming burns the one-time link. The uploaded file is the same backup, encrypted on device (`TRB1` + nonce + ciphertext + tag, AES-256-GCM); the key stays in the link's `#` fragment and, until expiry, in the Keychain so Settings can re-offer or revoke it. Known limit: ZIPFoundation rewrites the central directory per entry, so export time is quadratic in image count (~1 s at 4k images, ~100 s at 40k).
 
-**Learn mode.** The growth math is pure, in `Scheduler.afterReview`: the first Got it waits 3 days (`Scheduler.learnFirstGapDays`; the thought's interval isn't used in Learn mode, and the editor shows "Back" with the due day in its place), then each Got it multiplies the last wait (`Thought.learnIntervalDays`) by 1.7, at least +1 day, capped at 365; Again is tomorrow and resets the wait. Learn state is in the backup. The default Timeline freezes row order per snapshot (`TimelineOrder`); pinned thoughts are ordered by pin time (`stateChangedAt`, oldest first; `TimelineOrder.pinnedSorted`).
+**Learn mode.** The growth math is pure, in `Scheduler.afterReview`: the first Got it waits 3 days (`Scheduler.learnFirstGapDays`; the thought's interval isn't used in Learn mode, and the editor shows "Back" with the due day in its place), then each Got it multiplies the last wait (`Thought.learnIntervalDays`) by 1.7, at least +1 day, capped at 365; Again is tomorrow and resets the wait. Learn state is in the backup.
+
+**Timeline order.** The default Timeline freezes row order per snapshot (`TimelineOrder`), so an opened row stays put until the next refresh. Pinned thoughts aren't frozen but ordered by pin time (`stateChangedAt`, oldest first; `TimelineOrder.pinnedSorted`), so opening one never moves it.
 
 **Themes.** Colors, fonts and card shapes come from `InkStyle.swift`, which reads `ThemeManager` (`AppTheme.swift`). Always-dark themes pin the windows' `overrideUserInterfaceStyle`, since `preferredColorScheme(nil)` can't reliably undo a forced scheme. The choice is in UserDefaults (no schema change). Premium themes are only an idea (TODO.md).
 

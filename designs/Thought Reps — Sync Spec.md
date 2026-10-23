@@ -105,7 +105,7 @@ The rest of this spec is written for **B**. Notes on A describe the QR-only join
 
 In order of preference:
 
-1. **iCloud Keychain (main path).** K is a synchronizable Keychain item, which iCloud Keychain end-to-end encrypts. On a device signed into the same Apple ID it's just there: sign in and you're syncing. A toggle, "Save sync key to iCloud Keychain," defaulted on with an explanation.
+1. **iCloud Keychain (main path).** K is also saved as a separate synchronizable Keychain item, which iCloud Keychain end-to-end encrypts. On a device signed into the same Apple ID it's just there: sign in and you're syncing. A toggle, "Save sync key to iCloud Keychain," defaulted on with an explanation.
 2. **QR code from a paired device.** Fallback when iCloud Keychain is off (and the main path under option A).
    - The paired device creates an invite: the server stores `SHA256(pairingSecret)` with a 10-minute TTL, single use.
    - The QR code holds `vaultId`, `pairingSecret` and K. The new device scans, attests, and calls `POST /pair`.
@@ -118,10 +118,10 @@ iCloud Keychain is a convenience, not a dependency: sync works with QR and the r
 
 ### Key storage on the device
 
-- **Synced item** (iCloud Keychain on): `kSecAttrSynchronizable = true`, holding K and the `vaultId` together, so a new device can find its vault without asking.
-- **Local item** (iCloud Keychain off, or after joining by QR or code): `kSecAttrSynchronizable = false`, `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`.
+- **Local item** (always, authoritative): `kSecAttrSynchronizable = false`, `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`, holding K, the `vaultId` and the user id.
   - "AfterFirstUnlock" lets `BGAppRefreshTask` read the key while the phone is locked; "WhenUnlocked" would quietly break background pulls.
   - "ThisDeviceOnly" keeps it out of backups and device-to-device migration. A new phone set up without iCloud Keychain gets the key by QR or code, and setup says so.
+- **iCloud copy** (optional, toggle on): a separate `kSecAttrSynchronizable = true` item (service `com.thoughtreps.sync.credentials.icloud`) so a new device can find its vault without asking. It never replaces the local item.
 - **Reinstall:** Keychain items survive deleting the app. A key with no matching `sync.sqlite` state (no state file, another vault's state, or empty state) doesn't auto-start; the Sync lab asks "Resume syncing with this vault?" (Resume or Forget). A brand-new device whose first cycle never succeeded can be asked too (harmless).
 - **Turning sync off or leaving the vault** deletes the key from that device but keeps the iCloud copy; "Delete sync data" (account deletion) removes the iCloud copy too.
 - No Secure Enclave wrapping; the Keychain's hardware-backed protection is enough.
