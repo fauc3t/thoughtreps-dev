@@ -481,6 +481,10 @@ struct EditorView: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel", action: requestCancel)
                         .keyboardShortcut(.cancelAction)
+                        .confirmationDialog("Discard changes?", isPresented: $isConfirmingDiscard, titleVisibility: .visible) {
+                            Button("Discard", role: .destructive) { dismiss() }
+                            Button("Keep editing", role: .cancel) {}
+                        }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save", action: save)
@@ -488,10 +492,6 @@ struct EditorView: View {
                         .fontWeight(.semibold)
                         .disabled(!canSave)
                 }
-            }
-            .confirmationDialog("Discard changes?", isPresented: $isConfirmingDiscard, titleVisibility: .visible) {
-                Button("Discard", role: .destructive) { dismiss() }
-                Button("Keep editing", role: .cancel) {}
             }
             .sheet(isPresented: $isPickingInterval) {
                 IntervalPickerSheet(initialDays: intervalDays ?? defaultIntervalDays) { days in
@@ -750,6 +750,7 @@ struct SuggestionBar: View {
                         .accessibilityLabel("Tag \(candidate.display), \(candidate.count) \(candidate.count == 1 ? "thought" : "thoughts")")
                 }
             }
+            .padding(.horizontal, 12)
         }
     }
 

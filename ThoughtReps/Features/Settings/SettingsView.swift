@@ -154,6 +154,11 @@ struct SettingsView: View {
                         Button("Delete all thoughts", role: .destructive) {
                             confirmWipe = true
                         }
+                        .confirmationDialog("Delete every thought and tag?", isPresented: $confirmWipe, titleVisibility: .visible) {
+                            Button("Delete all", role: .destructive) {
+                                ThoughtStore(context: context).deleteAll()
+                            }
+                        }
                     }
                 }
                 #endif
@@ -227,11 +232,6 @@ struct SettingsView: View {
                     : "Notifications are off for Thought Reps. Turn them on in iOS Settings.")
             }
             .backupImportSheet(backup, host: .settings)
-            .confirmationDialog("Delete every thought and tag?", isPresented: $confirmWipe, titleVisibility: .visible) {
-                Button("Delete all", role: .destructive) {
-                    ThoughtStore(context: context).deleteAll()
-                }
-            }
         }
     }
 }

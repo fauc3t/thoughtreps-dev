@@ -96,11 +96,6 @@ struct ThoughtDetailView: View {
         .toolbar { toolbarContent }
         .imageViewer(item: $viewingImage, images: { thought.orderedImages })
         .navigationDestination(item: $tappedTag) { TagTimelineView(tag: $0) }
-        .confirmationDialog("Delete this thought?", isPresented: $confirmDelete, titleVisibility: .visible) {
-            Button("Delete", role: .destructive, action: deleteThought)
-        } message: {
-            Text("This can't be undone.")
-        }
         .onAppear {
             recordView()
             refreshLinks()
@@ -332,6 +327,12 @@ struct ThoughtDetailView: View {
                 Image(systemName: "ellipsis.circle")
             }
             .accessibilityLabel("More")
+            // Anchored on the menu, since the Delete item inside it is gone once the menu closes.
+            .confirmationDialog("Delete this thought?", isPresented: $confirmDelete, titleVisibility: .visible) {
+                Button("Delete", role: .destructive, action: deleteThought)
+            } message: {
+                Text("This can't be undone.")
+            }
         }
     }
 

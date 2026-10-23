@@ -36,9 +36,8 @@ private struct ConflictResolveContent: View {
     @State private var note: String?
     @State private var saveErrors = SaveErrorCenter()
 
-    private enum Confirmation: Identifiable {
+    private enum Confirmation {
         case keepOriginal, delete
-        var id: Self { self }
     }
 
     init(copy: Thought, originalID: UUID) {
@@ -100,16 +99,6 @@ private struct ConflictResolveContent: View {
                     Button("Close") { dismiss() }
                 }
             }
-            .confirmationDialog(
-                confirmation == .delete ? "Delete this thought?" : "Delete the copy?",
-                isPresented: Binding(get: { confirmation != nil }, set: { if !$0 { confirmation = nil } }),
-                titleVisibility: .visible,
-                presenting: confirmation
-            ) { choice in
-                Button(choice == .delete ? "Delete" : "Keep the original", role: .destructive) { confirmed(choice) }
-            } message: { _ in
-                Text("This can't be undone.")
-            }
             .saveErrorAlert(saveErrors)
         }
     }
@@ -126,6 +115,11 @@ private struct ConflictResolveContent: View {
                     .buttonStyle(.bordered)
                     .controlSize(.large)
                     .frame(maxWidth: .infinity)
+                    .confirmationDialog("Delete this thought?", isPresented: isConfirming(.delete), titleVisibility: .visible) {
+                        Button("Delete", role: .destructive) { confirmed(.delete) }
+                    } message: {
+                        Text("This can't be undone.")
+                    }
             } else {
                 Button("Keep this version") {
                     resolve(leaving: true, failure: "Couldn't keep this version. The original may be gone, or the copy's files can't be read.") { store.keepCopy(copy, now: .now) }
@@ -138,6 +132,11 @@ private struct ConflictResolveContent: View {
         .frame(maxWidth: .infinity, alignment: .topLeading)
     }
 
+    /// Each confirmation hangs off its own button so it opens next to it.
+    private func isConfirming(_ choice: Confirmation) -> Binding<Bool> {
+        Binding(get: { confirmation == choice }, set: { if !$0 { confirmation = nil } })
+    }
+
     private func originalPanel(_ original: Thought) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             ConflictVersion(label: "Original", thought: original)
@@ -145,6 +144,11 @@ private struct ConflictResolveContent: View {
                 .buttonStyle(.bordered)
                 .controlSize(.large)
                 .frame(maxWidth: .infinity)
+                .confirmationDialog("Delete the copy?", isPresented: isConfirming(.keepOriginal), titleVisibility: .visible) {
+                    Button("Keep the original", role: .destructive) { confirmed(.keepOriginal) }
+                } message: {
+                    Text("This can't be undone.")
+                }
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
     }
