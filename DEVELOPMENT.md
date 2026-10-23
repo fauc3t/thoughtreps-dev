@@ -132,6 +132,10 @@ cd infra && npx cdk synth -c env=prod
 
 Local dev: `pnpm --filter @thoughtreps/site-landing dev` (likewise `@thoughtreps/transfer-web`; `/help` only exists in the built output, since dev has no client router: preview with `pnpm --filter @thoughtreps/site-landing build` and a static server on `dist/`; it needs no env, but a real link needs a deployed Share stack and a device-made export). For the mail UI, copy `infra/mail-web/.env.example` to `.env.local` and fill in the `VITE_*` values from the Mail stack outputs.
 
+### Help center and blog content
+
+`site-landing/src/content/help.ts` (/help) and `blog.ts` (/blog) share one section format and inline syntax. Help: keep `related` slugs pointing at existing articles and link new articles to and from related ones; casual, plain voice (a Flesch-Kincaid test caps each article; blog caps at grade 7); refer to icons with `{icon:name}` tokens; when a UI label or screen changes, update or add the matching `example` mockup in `HelpExamples.tsx` (real labels and states from the Swift app). New icon glyphs come only from Lucide, and `site-landing/public/third-party-licenses.txt` (and `transfer-web/public/`'s) stays current. Tests enforce title (<=70) and description (<=160) lengths. The sitemap, robots.txt, per-page SEO and JSON-LD (`BlogPosting` for the blog), and the Open Graph tags and link-preview cards (`og/*.png`, rendered by `src/og-image.tsx` at prerender) generate from `help.ts`, so don't hand-edit them. Each article's "Updated" date is its newest line in `git blame` at prerender (`content/helpDates.ts`), so deploy from committed changes. Blog: essays first, mention the app lightly and only for what it ships; check historical or factual claims before publishing.
+
 ### Deploying (manual, no CI)
 
 The AWS account is shared with strands prod, so only touch `ThoughtReps-prod-*` stacks. Use `--profile thoughtreps-prod-legacy`; cdk's "could not assume cdk-hnb659fds-*-role ... Proceeding anyway" warnings are harmless (the profile is the root user).

@@ -149,3 +149,9 @@ A1 to A6 run in order in one session. `/pair`, the device routes and leave need 
 ## Estimate
 
 About 3 days plus fixes: phase 1 one day, phase 2 one day, phase 3 one day, phase 4 an hour.
+
+## As built: cleanup and probes
+
+- The harness records every `test-` vault in a ledger and erases it through the dev-only `POST /dev/vaults/{id}/erase` (exit trap, next-run sweep, final check that fails the run). Account-mode vaults (real Sign in with Apple) are ledgered too and cleaned through the dev-only `POST /dev/vaults/{id}/delete-account`, then the erase.
+- Before each uninstall it runs the DEBUG-only "Reset sync test state" (Sync lab, or launch arg `-TRResetSyncTestState <nonce>`; `SyncTestReset`), which deletes the local vault key, sync App Attest key id and `sync.sqlite`, and the iCloud Keychain copy only for `test-` vaults. UI tests launch with `syncSaveKeyToICloudKeychain` off.
+- The UI test runners read the status snapshot through the DEBUG-only `syncStatusProbe` accessibility element (`THOUGHTREPS_SYNC_STATUS_PROBE`; a relative status file path resolves inside the app container). Only the runners talk to the Mac's coordinator (`scripts/sync-coordinator.py`); the app adds no network calls.
