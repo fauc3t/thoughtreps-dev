@@ -35,7 +35,7 @@ Sync (off) ──"Continue with Apple"──► Sign in with Apple
           if already paid)          │yes        │no          with another account"
                 │                Join prompt   "Unlock your synced thoughts":
           Create vault + key        │          Scan QR / Enter recovery code /
-                │                   │          Start over (lost key)
+                │                   │          Support (lost key)    
           Key safety step           └─────┬─────┘
                 │                      Join prompt (merge or erase, Sync Spec §9)
                 └─────────► Status screen (first upload / download progress)
@@ -89,7 +89,7 @@ After a successful purchase (or an already-active entitlement), the vault is cre
 After sign-in the account already has a vault:
 
 - **Key found in iCloud Keychain:** the standard join prompt ("Join this sync vault?" / "Thoughts from your other devices will be added to this iPhone.", then merge or erase if the device has thoughts; Sync Spec §9). No subscription step: the vault's entitlement covers the device.
-- **No key:** "Unlock your synced thoughts" screen. "This Apple Account already syncs thoughts from another device. To read them here, use that device to add this one." Buttons: "Scan QR Code" (camera; the other device shows Add a Device), "Enter Recovery Code", and at the bottom "Lost your key? Start over" (see Decisions).
+- **No key:** "Unlock your synced thoughts" screen. "This Apple Account already syncs thoughts from another device. To read them here, use that device to add this one." Buttons: "Scan QR Code" (camera; the other device shows Add a Device), "Enter Recovery Code", and at the bottom "Lost your key? Contact Support" (see Decisions).
 - **Device limit reached** (409 `device_limit` on the invite, shown on the inviting device): "You're syncing 3 devices, the most this plan allows. Remove one to add another."
 
 ### S6. Join without signing in
@@ -112,7 +112,7 @@ Sections, top to bottom:
 6. **Leave** (destructive group, each with a confirm that says what stays):
    - "Turn Off Sync on This iPhone": leaves the vault (server call skipped when the device was already removed), clears this device's key, App Attest key id and sync state; thoughts stay; the iCloud Keychain copy stays so the user can come back. One action for both cases (it replaces the Sync lab's "Sign out and forget key").
    - "Erase This iPhone and Leave": the existing erase-and-leave, with its second confirm.
-   - "Delete Sync Account…": `DELETE /account` (Apple-required in-app deletion). Confirm: "This deletes your synced thoughts from our server and stops sync on every device. Thoughts on your devices stay. Your App Store subscription isn't cancelled by this; manage it in Settings." Needs a fresh Sign in with Apple when the server asks (`reauthentication_required`). Uses the same typed `DELETE` confirmation as Start over, and its screen says plainly that without another device or the recovery code the synced copy is the only copy of thoughts not on this device.
+   - "Delete Sync Account…": `DELETE /account` (Apple-required in-app deletion). Confirm: "This deletes your synced thoughts from our server and stops sync on every device. Thoughts on your devices stay. Your App Store subscription isn't cancelled by this; manage it in Settings." Needs a fresh Sign in with Apple when the server asks (`reauthentication_required`). Needs a typed `DELETE` confirmation, and its screen says plainly that without another device or the recovery code the synced copy is the only copy of thoughts not on this device.
 
 ### Attention states
 
@@ -152,17 +152,18 @@ Gated by device owner authentication (Face ID, Touch ID or passcode via `LocalAu
 1. **6a Plumbing:** DEBUG gates, base URL, `SyncController`, split sign-in and vault creation, 402/413 engine handling, wire fixture decoding. Sync lab moved onto `SyncController`. Tests.
 2. **6b Screens:** S1, S2, S4 to S8 and the Settings row, against dev with the subscription gate off.
 3. **6c Subscription:** StoreKit, S3, the subscription section, lapse and purge states, storage meter, Timeline notice. Gate on in dev.
-4. **6d Launch prep:** background session, privacy, help article, camera string, App Store Connect products and notification URLs, prod `realAuthEnabled` and session secret, device harness driving the real screens.
+4. **6d Launch prep:** background session, privacy, help article, camera string, App Store Connect products and notification URLs, the support admin script for account deletion (`thoughtreps-aws`), prod `realAuthEnabled` and session secret, device harness driving the real screens.
 5. **Then the deferred device checks** (pairing steps 3 to 5, harness A5 and A6 and a full run, Needs a look) on the production flow, and the TestFlight week.
 
 ## Decisions (2026-11-03)
 
 1. **API host:** `sync.thoughtreps.com`, an API Gateway custom domain on the prod Sync stack in `thoughtreps-aws` (dev gets its own, e.g. `sync.dev.thoughtreps.com`, or keeps its `execute-api` URL in DEBUG). `transfer.thoughtreps.com` stays the export-link and feedback host. Release builds hard-code only `https://sync.thoughtreps.com/api/v1`.
-2. **Lost key, "Start over":** option (a). Fresh Sign in with Apple, `DELETE /account`, a new account and vault, then the app reposts StoreKit's current entitlement (`Transaction.currentEntitlements` → `POST /entitlement`), so the subscription follows with no Restore tap and no new charge. The button sits below Scan QR and Enter Recovery Code. Deleting the account can destroy the only way back into the old synced thoughts, so it is never one tap:
-   - **Start over screen** (not an alert): "Your synced thoughts can only be read with your sync key. If any of your devices still syncs, or you have your recovery code, use that instead: starting over deletes the synced copy for good and it can't be recovered, by you or by us." It lists what to try first, each a button: "Check iCloud Keychain Again", "Scan QR Code", "Enter Recovery Code".
-   - **Typed confirmation:** the destructive button stays disabled until the user types `DELETE`, then reads "Delete Synced Thoughts and Start Over". Then the fresh Sign in with Apple.
-   - **Before deleting,** the app checks iCloud Keychain once more and stops if a key for this vault turns up.
-   - Thoughts on this device are never touched; the copy says "Thoughts on this iPhone stay." Other devices on the old vault are cut off and rejoin the new one. Other devices on the old vault are cut off and rejoin the new one.
+2. **Lost key, "Start over": a support case** (decided 2026-11-03). Deleting the account can destroy the only way back into the old synced thoughts, so a device without the key can't do it alone. The "Unlock your synced thoughts" screen's last button is "Lost your key? Contact Support":
+   - **Screen first** (not an alert): "Your synced thoughts can only be read with your sync key, and we never have it. If any of your devices still syncs, or you have your recovery code, use that instead." Buttons for what to try first: "Check iCloud Keychain Again", "Scan QR Code", "Enter Recovery Code"; then "Contact Support".
+   - **The request** goes through the existing feedback route (App Attest, no thought content), prefilled and carrying the account's `userId` and this device's key id so support can find it. Reply goes to the Sign in with Apple email.
+   - **Support** confirms by email that the user has no device or recovery code left and understands the synced copy is deleted for good, then deletes the account with an admin script in `thoughtreps-aws` (the `DELETE /account` path by `userId`, logged). The `TX#` claim goes with it.
+   - **After,** the user signs in again, gets a new account and vault, and the app reposts StoreKit's current entitlement (`Transaction.currentEntitlements` → `POST /entitlement`), so the subscription follows with no new charge. Thoughts on the device are never touched; other devices on the old vault are cut off and rejoin.
+   - **App Review risk:** Apple requires account deletion inside the app and allows a support flow only in regulated industries. Devices with the key have "Delete Sync Account" in-app (S7), but a user whose only device lacks the key can't delete in-app. If Review objects, the fallback is a self-serve "Delete Sync Account" on that screen with the typed `DELETE` confirmation.
 3. **Reminders:** per device; off by default on a device that joins a vault.
 4. **Paywall:** a custom view (S3); the purchase sheet is Apple's.
 5. **First-upload progress:** a count only, no time estimate.
