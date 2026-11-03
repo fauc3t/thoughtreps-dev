@@ -119,6 +119,68 @@ struct SyncHTTPWireTests {
         }
     }
 
+    static let appAccountToken = "0f8fad5b-d9cb-469f-a165-70867728950e"
+
+    @Test func entitlementResponses() throws {
+        let active = try decode(SyncHTTPWireV1.Entitlement.self, "entitlement-response-active")
+        #expect(active == SyncHTTPWireV1.Entitlement(
+            status: .active, tier: .init(id: "tier1", storageBytes: 1_073_741_824, deviceLimit: 3),
+            productId: "com.thoughtreps.sync.tier1.monthly", nextProductId: nil,
+            storage: .init(usedBytes: 312_000_000, limitBytes: 1_073_741_824), expiresAt: 1_792_000_000_000, willRenew: true, purgeAt: nil,
+            appAccountToken: Self.appAccountToken, serverTime: Self.serverTime
+        ))
+        try expectReEncodesToTheFixture(active, "entitlement-response-active")
+
+        let none = try decode(SyncHTTPWireV1.Entitlement.self, "entitlement-response-none")
+        #expect(none == SyncHTTPWireV1.Entitlement(
+            status: .none, tier: nil, productId: nil, nextProductId: nil, storage: nil, expiresAt: nil, willRenew: nil, purgeAt: nil,
+            appAccountToken: Self.appAccountToken, serverTime: Self.serverTime
+        ))
+        try expectReEncodesToTheFixture(none, "entitlement-response-none")
+    }
+
+    @Test func theEntitlementSubmitRequestEncodesToTheFixture() throws {
+        let request = try decode(SyncHTTPWireV1.EntitlementSubmitRequest.self, "entitlement-submit-request")
+        #expect(request.signedTransaction.hasPrefix("eyJhbGciOiJFUzI1NiJ9.") && request.signedRenewalInfo?.hasPrefix("eyJhbGciOiJFUzI1NiJ9.") == true)
+        try expectReEncodesToTheFixture(request, "entitlement-submit-request")
+        let sent = try JSONSerialization.jsonObject(with: SyncAccountAPI.encode(request)) as? NSDictionary
+        let fixture = try JSONSerialization.jsonObject(with: bytes("entitlement-submit-request")) as? NSDictionary
+        #expect(sent != nil && sent == fixture)
+    }
+
+    @Test func theSubscriptionAndQuotaRefusalsDecodeToTheirStructs() throws {
+        let lapse = try decode(SyncHTTPWireV1.SubscriptionRequired.self, "error-subscription-required")
+        #expect(lapse == SyncHTTPWireV1.SubscriptionRequired(
+            error: "subscription_required", message: "Subscription required", entitledUntil: 1_767_225_600_000, purgeAt: 1_769_817_600_000,
+            serverTime: Self.serverTime
+        ))
+        try expectReEncodesToTheFixture(lapse, "error-subscription-required")
+
+        let quota = try decode(SyncHTTPWireV1.PushQuotaExceeded.self, "push-quota-exceeded")
+        #expect(quota == SyncHTTPWireV1.PushQuotaExceeded(
+            error: "quota_exceeded", message: "Storage limit reached", usedBytes: 1_073_700_000, limitBytes: 1_073_741_824, deltaBytes: 90_000,
+            serverTime: Self.serverTime
+        ))
+        try expectReEncodesToTheFixture(quota, "push-quota-exceeded")
+        #expect(try decode(SyncHTTPWireV1.QuotaExceeded.self, "push-quota-exceeded").limitBytes == 1_073_741_824, "the blob struct reads it too")
+
+        for (name, code, message) in [
+            ("error-transaction-invalid", "transaction_invalid", "Transaction not accepted"),
+            ("error-subscription-other-account", "subscription_other_account", "This subscription belongs to another account"),
+        ] {
+            let body = try decode(SyncHTTPWireV1.ErrorBody.self, name)
+            #expect(body.error == code && body.message == message && body.serverTime == Self.serverTime, "\(name)")
+            #expect(SyncAccountError.Code(rawValue: code) != nil)
+        }
+    }
+
+    @Test func aNeverSubscribedLapseHasNullDates() throws {
+        let body = Data(#"{"error":"subscription_required","message":"Subscription required","entitledUntil":null,"purgeAt":null,"serverTime":1}"#.utf8)
+        let lapse = try JSONDecoder().decode(SyncHTTPWireV1.SubscriptionRequired.self, from: body)
+        #expect(lapse.entitledUntil == nil && lapse.purgeAt == nil)
+        #expect(SyncAccountError.from(status: 402, body: body) == .subscriptionRequired(entitledUntil: nil, purgeAt: nil))
+    }
+
     @Test func thePushRequestDecodesAndReEncodesToTheSameObject() throws {
         let request = try decode(SyncHTTPWireV1.PushRequest.self, "push-request")
         #expect(request.epoch == 1)

@@ -54,7 +54,7 @@ actor SyncTriggers {
         debounceTask?.cancel()
         debounceTask = Task { [sleep, debounce, engine] in
             do { try await sleep(debounce) } catch { return }
-            await engine.syncNow()
+            await engine.syncAfterLocalChange()
         }
     }
 }

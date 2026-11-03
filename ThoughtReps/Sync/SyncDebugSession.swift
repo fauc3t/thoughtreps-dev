@@ -3,8 +3,9 @@ import Foundation
 import SwiftData
 import os
 
-/// DEBUG only: runs the sync engine against a dev server when the launch environment names one. Not a write path; the
-/// engine reaches the store through `ThoughtSyncLocal`, like in tests.
+/// DEBUG only: the launch environment's way to run the sync engine against a dev server, the Sync lab's account actions and
+/// the status file. The engine itself is `SyncController`'s. Not a write path; the engine reaches the store through
+/// `ThoughtSyncLocal`, like in tests.
 ///
 ///     THOUGHTREPS_SYNC_URL         http://127.0.0.1:8787/api/v1
 ///     THOUGHTREPS_SYNC_VAULT       the vault id (also turns on the outbox, see `SyncState.enableForDebugging`)
@@ -36,21 +37,22 @@ enum SyncDebugSession {
     }
 
     private static let logger = Logger(subsystem: "com.thoughtreps", category: "sync")
-    private static var engine: SyncEngine?
-    private static var triggers: SyncTriggers?
-    private static var container: ModelContainer?
-    private static var stateForReports: SyncState = .shared
+
+    /// The shared controller, set up for this launch's debug options.
+    static let controller: SyncController = {
+        let controller = SyncController.shared
+        controller.automaticTriggers = !manualSyncOnly
+        controller.statusTap = { report($0) }
+        return controller
+    }()
+
     /// When the engine last finished a cycle without an error or attention state.
-    private(set) static var lastSuccessfulSync: Date?
+    static var lastSuccessfulSync: Date? { controller.lastSyncedAt }
 
     /// The server and vault this launch syncs with (never the secret or key), or nil when it isn't configured.
     static var target: (url: String, vault: String)? {
-        Environment().map { ($0.url.absoluteString, $0.vault) } ?? accountTarget
+        Environment().map { ($0.url.absoluteString, $0.vault) } ?? controller.target
     }
-
-    private static var provider: SyncSessionProvider?
-
-    private(set) static var accountTarget: (url: String, vault: String)?
 
     /// A launch that names a vault in the environment syncs with that, never with the account in the Keychain.
     static var usesEnvironmentVault: Bool {
@@ -59,8 +61,7 @@ enum SyncDebugSession {
 
     /// The engine's status, or nil before it has started.
     static func status() async -> SyncEngine.Status? {
-        guard let engine else { return nil }
-        return await engine.status
+        await controller.currentEngineStatus()
     }
 
     /// Builds the engine and triggers and runs a first cycle: against the launch environment's dev server if it names one
@@ -69,7 +70,7 @@ enum SyncDebugSession {
     static func start(
         container: ModelContainer, state: SyncState = .shared, credentials: SyncCredentialStore = KeychainSyncCredentialStore()
     ) async {
-        guard engine == nil else { return }
+        guard !controller.isRunning else { return }
         if let environment = Environment() {
             do {
                 let transport = HTTPSyncTransport(
@@ -77,14 +78,14 @@ enum SyncDebugSession {
                     offset: ServerClockOffset(defaults: .standard)
                 )
                 try await transport.createVault()
-                await begin(container: container, state: state, transport: transport, key: environment.key, vaultID: environment.vault)
+                await controller.start(container: container, state: state, transport: transport, key: environment.key, vaultID: environment.vault)
             } catch {
                 logger.error("Starting debug sync failed: \(error)")
             }
         } else if !usesEnvironmentVault {
             do {
                 guard let held = try credentials.load() else { return }
-                await beginAccount(container: container, state: state, credentials: held, seed: nil)
+                await controller.startAccount(container: container, state: state, credentials: held, seed: nil)
             } catch {
                 logger.error("Reading the sync credentials failed: \(error)")
             }
@@ -94,17 +95,17 @@ enum SyncDebugSession {
     /// Signs in with Apple, creates the account's vault if it has none, and starts the engine with it. The text is what the
     /// Sync lab shows.
     static func signInAndCreateVault(container: ModelContainer, state: SyncState = .shared) async -> String {
-        guard engine == nil else { return "Already syncing. Forget the key first." }
+        guard !controller.isRunning else { return "Already syncing. Forget the key first." }
         let service = accountService()
         do {
             switch try await service.signInAndCreateVault() {
             case .vaultCreated(let held, let session):
                 try await enableOutbox(state: state, container: container, vaultID: held.vaultID)
-                await beginAccount(container: container, state: state, credentials: held, seed: session)
+                await controller.startAccount(container: container, state: state, credentials: held, seed: session)
                 return "Vault created."
             case .signedIn(let held, let session):
                 try await enableOutbox(state: state, container: container, vaultID: held.vaultID)
-                await beginAccount(container: container, state: state, credentials: held, seed: session)
+                await controller.startAccount(container: container, state: state, credentials: held, seed: session)
                 return "Signed in."
             case .accountHasVault:
                 return "This account already has a vault. Join it from iCloud Keychain, with a recovery code or by scanning a QR code."
@@ -113,6 +114,8 @@ enum SyncDebugSession {
             }
         } catch SyncAccountError.appleSignInCancelled {
             return "Sign in cancelled."
+        } catch SyncAccountError.subscriptionRequired {
+            return "A subscription is required to create a vault."
         } catch {
             logger.error("Sign in failed: \(error)")
             return "Sign in failed: \(error)"
@@ -147,7 +150,7 @@ enum SyncDebugSession {
         _ source: JoinSource, container: ModelContainer, state: SyncState = .shared, service: SyncAccountService = accountService(),
         beforeStart: () -> Bool = { true }, start: ((SyncAccountService.Joined) async throws -> Void)? = nil
     ) async -> String {
-        guard engine == nil else { return "Already syncing. Forget the key first." }
+        guard !controller.isRunning else { return "Already syncing. Forget the key first." }
         do {
             let joined: SyncAccountService.Joined
             switch source {
@@ -162,7 +165,7 @@ enum SyncDebugSession {
                 try await start(joined)
             } else {
                 try await enableOutbox(state: state, container: container, vaultID: joined.credentials.vaultID)
-                await beginAccount(container: container, state: state, credentials: joined.credentials, seed: joined.session)
+                await controller.startAccount(container: container, state: state, credentials: joined.credentials, seed: joined.session)
             }
             return "Joined the vault."
         } catch let failure as SyncRecoveryCode.Failure {
@@ -184,7 +187,7 @@ enum SyncDebugSession {
 
     /// Opens an invitation to this device's vault. Needs the engine's session, so only while syncing.
     static func createInvitation(credentials: SyncCredentialStore = KeychainSyncCredentialStore()) async throws -> SyncAccountService.Invitation {
-        guard let provider, let held = try credentials.load() else { throw SyncAccountError.notRegistered }
+        guard let provider = controller.session, let held = try credentials.load() else { throw SyncAccountError.notRegistered }
         return try await accountService().createInvitation(credentials: held, session: provider)
     }
 
@@ -195,12 +198,7 @@ enum SyncDebugSession {
         try iCloud.setEnabled(enabled, local: try credentials.load())
     }
 
-    static func accountService() -> SyncAccountService {
-        SyncAccountService(
-            api: SyncAccountAPI(baseURL: SyncAccountAPI.defaultBaseURL()), apple: AuthenticationServicesSignIn(),
-            credentials: KeychainSyncCredentialStore(), iCloud: ICloudKeyCopy()
-        )
-    }
+    static func accountService() -> SyncAccountService { SyncController.accountService() }
 
     /// Stops syncing, empties the outbox and deletes the vault key and the sync App Attest keyId from the Keychain, so the
     /// next sign-in registers a fresh device with the server. Returns once the state file is gone, so nothing written after
@@ -209,18 +207,7 @@ enum SyncDebugSession {
         state: SyncState = .shared, credentials: SyncCredentialStore = KeychainSyncCredentialStore(),
         attestKeys: KeyIdStore = SyncAccountAPI.defaultKeyStore()
     ) async {
-        await triggers?.stop(observing: state)
-        await engine?.stop()
-        engine = nil
-        triggers = nil
-        container = nil
-        provider = nil
-        accountTarget = nil
-        awaitingResume = false
-        state.disable()
-        await state.flush()
-        credentials.clear()
-        attestKeys.clear()
+        await controller.forget(state: state, credentials: credentials, attestKeys: attestKeys)
     }
 
     // MARK: Leaving and deleting
@@ -282,7 +269,7 @@ enum SyncDebugSession {
 
     /// The engine's session if it is running, otherwise one minted through the device key.
     static func sessionSource(for held: SyncCredentials, service: SyncAccountService) -> SyncSessionSource {
-        provider ?? SyncSessionProvider(
+        controller.session ?? SyncSessionProvider(
             api: service.api, vaultID: held.vaultID, serverNow: { Date().addingTimeInterval(ServerClockOffset(defaults: .standard).current) },
             rejoin: rejoin(held, service: service)
         )
@@ -295,20 +282,10 @@ enum SyncDebugSession {
     // MARK: Launch and reinstall
 
     /// True after a launch found a vault key but no sync history: the engine waits for `resume` or `forgetAccount`.
-    private(set) static var awaitingResume = false
+    static var awaitingResume: Bool { controller.awaitingResume }
 
-    /// The sync state at launch; nil when there is no state file (`SyncState` is on from an existing file).
     static func progress(of state: SyncState) async -> SyncProgress? {
-        guard state.isEnabled else { return nil }
-        do {
-            return SyncProgress(
-                vaultID: try await state.configuredVaultID(), cursor: try await state.cursor(), epoch: try await state.epoch(),
-                records: try await state.recordCount(), outbox: try await state.outboxCount()
-            )
-        } catch {
-            logger.error("Reading the sync state failed: \(error)")
-            return nil
-        }
+        await SyncController.progress(of: state)
     }
 
     /// A new device whose first cycle never succeeded has no history either, so it is asked too; Resume is harmless there.
@@ -322,12 +299,12 @@ enum SyncDebugSession {
             SyncTestReset.writeResult(await SyncTestReset.run(nonce: nonce, state: state))
             return
         }
-        if !usesEnvironmentVault, Environment() == nil, let held = try? credentials.load(),
-           SyncResumeGate.needsConfirmation(heldVaultID: held.vaultID, progress: await progress(of: state)) {
-            awaitingResume = true
-            return
+        let startUp: () async -> Void = { await begin(container: container, state: state, credentials: credentials) }
+        if usesEnvironmentVault || Environment() != nil {
+            await startUp()
+        } else {
+            await controller.launch(container: container, state: state, credentials: credentials, begin: startUp)
         }
-        await begin(container: container, state: state, credentials: credentials)
     }
 
     /// `start` replaces the engine start in tests.
@@ -335,13 +312,9 @@ enum SyncDebugSession {
         container: ModelContainer, state: SyncState = .shared, credentials: SyncCredentialStore = KeychainSyncCredentialStore(),
         start: (() async -> Void)? = nil
     ) async {
-        guard awaitingResume else { return }
-        awaitingResume = false
-        if let start {
-            await start()
-        } else {
+        await controller.resume(container: container, state: state, credentials: credentials, begin: start ?? {
             await begin(container: container, state: state, credentials: credentials)
-        }
+        })
     }
 
     private static func begin(container: ModelContainer, state: SyncState, credentials: SyncCredentialStore) async {
@@ -361,56 +334,13 @@ enum SyncDebugSession {
         await SyncReconcileRunner.reconcile(container: container, state: state)
     }
 
-    private static func beginAccount(
-        container: ModelContainer, state: SyncState, credentials: SyncCredentials, seed: SyncHTTPWireV1.SessionToken?
-    ) async {
-        let service = accountService()
-        let url = service.api.baseURL
-        let provider = SyncSessionProvider(
-            api: service.api, vaultID: credentials.vaultID,
-            serverNow: { Date().addingTimeInterval(ServerClockOffset(defaults: .standard).current) },
-            rejoin: rejoin(credentials, service: service)
-        )
-        if let seed { await provider.adopt(seed) }
-        Self.provider = provider
-        let transport = HTTPSyncTransport(
-            baseURL: url, vaultID: credentials.vaultID, auth: .session(provider), offset: ServerClockOffset(defaults: .standard)
-        )
-        accountTarget = (url.absoluteString, credentials.vaultID)
-        await begin(container: container, state: state, transport: transport, key: credentials.vaultKey, vaultID: credentials.vaultID)
-    }
-
-    private static func begin(container: ModelContainer, state: SyncState, transport: HTTPSyncTransport, key: Data, vaultID: String) async {
-        do {
-            var store = ThoughtStore(context: container.mainContext)
-            store.syncState = state
-            let local = ThoughtSyncLocal(store: store, reconcile: {
-                await SyncReconcileRunner.reconcile(container: container, state: state)
-            })
-            let engine = SyncEngine(transport: transport, state: state, local: local, keys: try SyncKeys(vaultKey: key), vaultID: vaultID)
-            let triggers = SyncTriggers(engine: engine)
-            if !manualSyncOnly { await triggers.start(observing: state) }
-            await engine.setObserver(Self.noteStatus)
-            self.engine = engine
-            self.triggers = triggers
-            self.container = container
-            self.stateForReports = state
-            let status = await engine.syncNow()
-            logger.info("Debug sync started against \(transport.baseURL.absoluteString): \(String(describing: status))")
-        } catch {
-            logger.error("Starting debug sync failed: \(error)")
-        }
-    }
-
     /// `THOUGHTREPS_SYNC_MANUAL`: no debounce after a local change and no 30 s head check, so the engine runs only on launch,
     /// when the app comes to the foreground, or from the Sync lab. Lets a test edit on two devices before either syncs.
     private nonisolated static let manualSyncOnly = !(ProcessInfo.processInfo.environment["THOUGHTREPS_SYNC_MANUAL"] ?? "").isEmpty
 
-    /// A cycle when the app comes to the foreground, or from the Sync lab.
     @discardableResult
     static func syncNow() async -> SyncEngine.Status? {
-        guard let engine else { return nil }
-        return await engine.syncNow()
+        await controller.syncNow()
     }
 
     /// What the status file holds: enough for a test to tell that a cycle has pushed its outbox and pulled up to a seq, and
@@ -466,29 +396,19 @@ enum SyncDebugSession {
     private nonisolated static let statusFile: URL? = ProcessInfo.processInfo.environment["THOUGHTREPS_SYNC_STATUS_FILE"]
         .flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0, relativeTo: .homeDirectory) }
 
-    private static let noteStatus: @Sendable (SyncEngine.Status) -> Void = { status in
-        if status.phase == .idle || status.phase == .stopped { Task { @MainActor in report(status) } }
-        guard status.phase == .idle, status.lastError == nil, status.attention == nil, status.cycles > 0 else { return }
-        Task { @MainActor in
-            if status.cycles != lastCycles {
-                lastCycles = status.cycles
-                lastSuccessfulSync = .now
-            }
-        }
-    }
-
     private static var reportTail: Task<Void, Never>?
     private static var reportGeneration = 0
 
     /// Writes the snapshot for `status` after the previous report, skipping it if a newer status arrived meanwhile. The digest
     /// is computed off the main actor.
     private static func report(_ status: SyncEngine.Status) {
+        guard status.phase == .idle || status.phase == .stopped else { return }
         guard statusFile != nil || SyncStatusProbe.isOn else { return }
         reportGeneration += 1
         let generation = reportGeneration
         let previous = reportTail
-        let container = container
-        let state = stateForReports
+        let container = controller.container
+        let state = controller.state
         reportTail = Task {
             await previous?.value
             guard generation == reportGeneration else { return }
@@ -510,7 +430,5 @@ enum SyncDebugSession {
             thoughts: digest.count, digest: digest.digest, parked: try await state.parkedCount(), heldRecords: try await state.heldCount()
         )
     }
-
-    private static var lastCycles = 0
 }
 #endif

@@ -1,4 +1,3 @@
-#if DEBUG
 import Foundation
 
 enum SyncDevicePath {
@@ -188,4 +187,3 @@ enum SyncResumeGate {
     static let title = "Resume syncing with this vault?"
     static let message = "This device has the vault key but no sync history, as after a reinstall. Resuming queues every thought on this device to sync."
 }
-#endif

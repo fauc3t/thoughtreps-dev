@@ -1,4 +1,3 @@
-#if DEBUG
 import AuthenticationServices
 import CryptoKit
 import DeviceCheck
@@ -6,16 +5,47 @@ import Foundation
 import UIKit
 import os
 
-/// DEBUG only: the sync server's account calls. Sync has its own App Attest key (a separate Keychain item from the export
+/// The sync server's account calls. Sync has its own App Attest key (a separate Keychain item from the export
 /// link and feedback key), because the sync server keeps its own device table.
 struct SyncAccountAPI: Sendable {
-    /// The dev deployment (phase 4a). `THOUGHTREPS_SYNC_URL` overrides it.
-    static let devBaseURL = URL(string: "https://glbchxtwj9.execute-api.us-east-1.amazonaws.com/api/v1")!
+    static let productionBaseURL = URL(string: "https://sync.thoughtreps.com/api/v1")!
 
-    static func defaultBaseURL(_ environment: [String: String] = ProcessInfo.processInfo.environment) -> URL {
-        if let url = environment["THOUGHTREPS_SYNC_URL"].flatMap(URL.init(string:)), url.scheme != nil { return url }
-        return devBaseURL
+    #if DEBUG
+    /// The dev deployment (phase 4a).
+    static let devBaseURL = URL(string: "https://glbchxtwj9.execute-api.us-east-1.amazonaws.com/api/v1")!
+    static let localBaseURL = URL(string: "http://127.0.0.1:8787/api/v1")!
+
+    /// Which server a DEBUG build talks to, chosen in the Sync lab. `THOUGHTREPS_SYNC_URL` overrides it.
+    enum Environment: String, CaseIterable, Identifiable {
+        case dev, local, production
+
+        var id: String { rawValue }
+        var url: URL {
+            switch self {
+            case .dev: SyncAccountAPI.devBaseURL
+            case .local: SyncAccountAPI.localBaseURL
+            case .production: SyncAccountAPI.productionBaseURL
+            }
+        }
+
+        static let defaultsKey = "syncDebugEnvironment"
+
+        static func selected(_ defaults: UserDefaults = .standard) -> Environment {
+            defaults.string(forKey: defaultsKey).flatMap(Environment.init(rawValue:)) ?? .dev
+        }
+
+        static func select(_ environment: Environment, _ defaults: UserDefaults = .standard) {
+            defaults.set(environment.rawValue, forKey: defaultsKey)
+        }
     }
+
+    static func defaultBaseURL(_ environment: [String: String] = ProcessInfo.processInfo.environment, defaults: UserDefaults = .standard) -> URL {
+        if let url = environment["THOUGHTREPS_SYNC_URL"].flatMap(URL.init(string:)), url.scheme != nil { return url }
+        return Environment.selected(defaults).url
+    }
+    #else
+    static func defaultBaseURL() -> URL { productionBaseURL }
+    #endif
 
     static func defaultKeyStore() -> KeyIdStore {
         InstallBoundKeyIdStore(keychain: KeychainKeyIdStore(service: "com.thoughtreps.sync.appattest"))
@@ -182,20 +212,61 @@ struct SyncAccountService: Sendable {
         SHA256.hash(data: Data(challenge.utf8)).map { String(format: "%02x", $0) }.joined()
     }
 
-    func signInAndCreateVault() async throws -> Outcome {
+    /// Where a sign-in landed. The caller decides what comes next: create a vault (after a subscription, if the entitlement
+    /// says none), join the account's existing vault, or stop.
+    struct SignedIn: Equatable {
+        var account: SyncHTTPWireV1.AccountSession
+        /// `GET /entitlement` right after sign-in; nil if that call failed (the vault calls still enforce it).
+        var entitlement: SyncHTTPWireV1.Entitlement?
+
+        var hasVault: Bool { account.vaultId != nil }
+    }
+
+    enum SignInResult: Equatable {
+        case signedIn(SignedIn)
+        /// This device is registered to a vault of another account (409 `device_in_vault`).
+        case deviceInVault
+    }
+
+    /// Sign in with Apple, then the server's sign-in, which registers the account on first use. Nothing is created.
+    func signIn() async throws -> SignInResult {
+        guard let account = try await signInAccount() else { return .deviceInVault }
+        let entitlement: SyncHTTPWireV1.Entitlement? = try? await api.bodyless("GET", "entitlement", bearer: account.session.token)
+        return .signedIn(SignedIn(account: account, entitlement: entitlement))
+    }
+
+    /// The account session, or nil when this device is registered to a vault of another account.
+    private func signInAccount() async throws -> SyncHTTPWireV1.AccountSession? {
         guard api.attest.isSupported else { throw SyncAccountError.unsupported }
         let keyId = try await api.registeredKeyId()
-        let account: SyncHTTPWireV1.AccountSession
         do {
-            account = try await signIn(keyId: keyId)
+            return try await signIn(keyId: keyId)
         } catch let error as SyncAccountError where error.code == .deviceInVault {
-            return .deviceInVault
+            return nil
         }
+    }
+
+    /// Sign in and, if the account has no vault, create one, without the entitlement lookup: the Sync lab's one tap. A lapsed subscription throws
+    /// `SyncAccountError.subscriptionRequired`.
+    func signInAndCreateVault() async throws -> Outcome {
+        guard let account = try await signInAccount() else { return .deviceInVault }
         if let vaultID = account.vaultId {
             guard let held = try stored(), held.vaultID == vaultID, held.userID == account.userId else { return .accountHasVault }
             return .signedIn(held, account.session)
         }
         return try await createVault(account)
+    }
+
+    /// The account's entitlement: `GET /entitlement` with the vault session.
+    func entitlement(session: SyncSessionSource) async throws -> SyncHTTPWireV1.Entitlement {
+        try await withBearer(session) { token in try await api.bodyless("GET", "entitlement", bearer: token) }
+    }
+
+    /// `POST /entitlement` with the JWS strings of a StoreKit transaction (and its renewal info) the server verifies.
+    /// Refusals: `transactionInvalid` (400), `subscriptionOtherAccount` (409).
+    func submitTransaction(_ request: SyncHTTPWireV1.EntitlementSubmitRequest, session: SyncSessionSource) async throws -> SyncHTTPWireV1.Entitlement {
+        let body = try SyncAccountAPI.encode(request)
+        return try await withBearer(session) { token in try await api.post("entitlement", body: body, bearer: token) }
     }
 
     /// An identity token Apple issued for a stale or already used challenge is rejected; one more try with new ones.
@@ -214,7 +285,9 @@ struct SyncAccountService: Sendable {
         }
     }
 
-    private func createVault(_ account: SyncHTTPWireV1.AccountSession) async throws -> Outcome {
+    /// Creates the vault for a signed-in account that has none. Throws `SyncAccountError.subscriptionRequired` (402) when the
+    /// account has no active subscription.
+    func createVault(_ account: SyncHTTPWireV1.AccountSession) async throws -> Outcome {
         let key = makeVaultKey()
         let verifier = try SyncKeys(vaultKey: key).authVerifier
         let created: SyncHTTPWireV1.CreateAccountVaultResponse
@@ -393,7 +466,7 @@ actor SyncSessionProvider: SyncSessionSource {
     static let refreshMargin: TimeInterval = 300
 
     private let api: SyncAccountAPI
-    private let vaultID: String
+    nonisolated let vaultID: String
     private let serverNow: @Sendable () -> Date
     private var current: SyncHTTPWireV1.SessionToken?
     private var minting: Task<SyncHTTPWireV1.SessionToken, Error>?
@@ -471,7 +544,7 @@ private final class AppleSignInSession: NSObject, ASAuthorizationControllerDeleg
 
     func run(nonce: String) async throws -> String {
         let request = ASAuthorizationAppleIDProvider().createRequest()
-        request.requestedScopes = []
+        request.requestedScopes = [.email]
         request.nonce = nonce
         let controller = ASAuthorizationController(authorizationRequests: [request])
         controller.delegate = self
@@ -504,4 +577,3 @@ private final class AppleSignInSession: NSObject, ASAuthorizationControllerDeleg
         continuation = nil
     }
 }
-#endif

@@ -184,9 +184,7 @@ struct RootTabView: View {
             switch phase {
             case .active:
                 importInbox()
-                #if DEBUG
-                Task { await SyncDebugSession.syncNow() }
-                #endif
+                Task { await SyncController.shared.syncNow() }
                 Task { await NotificationScheduler.reschedule(context: context, now: .now) }
             case .background:
                 let assertion = BackgroundAssertion()
@@ -219,6 +217,8 @@ struct RootTabView: View {
             #if DEBUG
             await SearchIndexChecker.logViolations(in: context)
             await SyncDebugSession.launch(container: context.container)
+            #else
+            await SyncController.shared.launch(container: context.container)
             #endif
         }
     }

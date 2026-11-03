@@ -149,7 +149,7 @@ Gated by device owner authentication (Face ID, Touch ID or passcode via `LocalAu
 
 ## Build rounds
 
-1. **6a Plumbing:** DEBUG gates, base URL, `SyncController`, split sign-in and vault creation, 402/413 engine handling, wire fixture decoding. Sync lab moved onto `SyncController`. Tests.
+1. **6a Plumbing (done):** DEBUG gates, base URL, `SyncController`, split sign-in and vault creation, 402/413 engine handling, wire fixture decoding. Sync lab moved onto `SyncController`. Tests.
 2. **6b Screens:** S1, S2, S4 to S8 and the Settings row, against dev with the subscription gate off.
 3. **6c Subscription:** StoreKit, S3, the subscription section, lapse and purge states, storage meter, Timeline notice. Gate on in dev.
 4. **6d Launch prep:** background session, privacy, help article, camera string, App Store Connect products and notification URLs, the support admin script for account deletion (`thoughtreps-aws`), prod `realAuthEnabled` and session secret, device harness driving the real screens.

@@ -56,12 +56,21 @@ actor SyncEngine {
         case serverRefused(status: Int, message: String)
     }
 
+    /// The server answered 402: the account's subscription lapsed. Syncing is paused, not stopped: nothing is pulled or pushed,
+    /// the outbox is kept, and a later call the server accepts (after resubscribing) ends the hold. Times are ms since the epoch.
+    struct SubscriptionHold: Sendable, Equatable {
+        var entitledUntil: Int64?
+        /// When the server deletes the synced copy, if it said.
+        var purgeAt: Int64?
+    }
+
     struct Status: Sendable, Equatable {
         var phase: Phase = .idle
         /// Outbox entries left; during a first sync, how much is still to upload.
         var pending = 0
         var lastError: String?
         var attention: Attention?
+        var subscriptionHold: SubscriptionHold?
         var cursor: Int64 = 0
         /// The server head this device last pulled up to; nil until a pull has caught up. Not moved by a pull that is cut
         /// short, so the head check keeps seeing the difference and finishes it.
@@ -84,8 +93,9 @@ actor SyncEngine {
         /// record over `maxInlinePayload`. The whole thought waits, so its meta changes (pin, archive, snooze) wait with
         /// it until the transport has blobs. Retried every cycle, without a request.
         var waitingForBlobs = 0
-        /// Queued thoughts whose blobs the server refused because the vault is over its storage limit. Retried every cycle, so
-        /// they go out once space is freed; everything else still syncs.
+        /// Queued thoughts the server refused because the vault is over its storage limit (a blob it would not store, or a push
+        /// that would grow the vault: 413 `quota_exceeded`). Retried every cycle, so they go out once space is freed; deletes,
+        /// shrinks and everything else still sync.
         var quotaExceededThoughts = 0
         /// The usage the server last reported with a refusal; nil while no thought is held for it.
         var blobQuota: BlobQuota?
@@ -135,14 +145,18 @@ actor SyncEngine {
     private var observer: (@Sendable (Status) -> Void)?
     private var running: Task<Void, Never>?
     private var rerun = false
-    private var isShutDown = false
+    private(set) var isShutDown = false
     private var cycleNumber = 0
     /// Queued thoughts left alone in this push because the server holds a version this device couldn't apply yet.
     private var waitingEntities: Set<SyncEntity> = []
     private var oversizedEntities: Set<SyncEntity> = []
     private var blobHeldEntities: Set<SyncEntity> = []
     private var missingAttachmentEntities: Set<SyncEntity> = []
-    private var quotaHeldEntities: Set<SyncEntity> = []
+    /// Thoughts a push 413 refused, with the outbox generation they had: not sent again until the generation changes (a new
+    /// local write) or a foreground, explicit or head-moved run releases them. Kept in memory, so a relaunch retries them.
+    private var quotaHeldGeneration: [SyncEntity: Int64] = [:]
+    private var releaseHeldNext = false
+    private var quotaHeldEntities: Set<SyncEntity> { Set(quotaHeldGeneration.keys) }
     private var lastQuota: BlobQuota?
     /// Set once a hold for the storage limit has asked for a run, until no thought is held: a hold that outlasts the run
     /// waits for the next week's run instead of asking every cycle. Kept in memory.
@@ -181,8 +195,9 @@ actor SyncEngine {
 
     /// Runs a cycle, or asks the one in progress to run once more when it finishes, and returns when that is done.
     @discardableResult
-    func syncNow() async -> Status {
+    func syncNow(releasingHeld: Bool = true) async -> Status {
         guard !isShutDown else { return status }
+        if releasingHeld { releaseHeldNext = true }
         if let running {
             rerun = true
             await running.value
@@ -192,6 +207,13 @@ actor SyncEngine {
         running = task
         await task.value
         return status
+    }
+
+    /// The debounced run after a local write: not while the subscription is lapsed (the head check probes for that), and it
+    /// leaves thoughts held for the storage limit alone.
+    func syncAfterLocalChange() async {
+        guard status.subscriptionHold == nil else { return }
+        await syncNow(releasingHeld: false)
     }
 
     /// Ends the engine for good. It awaits the running cycle, so nothing of this engine runs after it returns; the cycle's
@@ -218,23 +240,27 @@ actor SyncEngine {
     @discardableResult
     func syncIfHeadMoved() async -> Bool {
         guard status.attention == nil else { return false }
+        let head: SyncHead
         do {
-            let head = try await transport.head()
+            head = try await transport.head()
             if let known = try await state.epoch(), known != head.epoch {
                 stop(.epochChanged(known: known, server: head.epoch))
                 return false
             }
             let heldBack = waitingEntities.union(oversizedEntities).union(missingAttachmentEntities).union(blobHeldEntities).union(quotaHeldEntities).count
             let hasPushable = try await state.outboxCount() > heldBack
-            guard head.headSeq != status.headSeq || status.lastError != nil || hasPushable else { return false }
+            guard head.headSeq != status.headSeq || status.lastError != nil || hasPushable || status.subscriptionHold != nil else { return false }
         } catch SyncTransportError.refused(let status, let message) {
             stop(.serverRefused(status: status, message: message))
+            return false
+        } catch SyncTransportError.subscriptionRequired(let entitledUntil, let purgeAt) {
+            hold(entitledUntil: entitledUntil, purgeAt: purgeAt)
             return false
         } catch {
             record(error)
             return false
         }
-        await syncNow()
+        await syncNow(releasingHeld: head.headSeq != status.headSeq)
         return true
     }
 
@@ -254,6 +280,7 @@ actor SyncEngine {
                 update {
                     $0.phase = .idle
                     $0.lastError = nil
+                    $0.subscriptionHold = nil
                     $0.cycles += 1
                 }
                 await collectGarbageIfDue()
@@ -261,6 +288,8 @@ actor SyncEngine {
                 stop(failure.attention)
             } catch SyncTransportError.refused(let status, let message) {
                 stop(.serverRefused(status: status, message: message))
+            } catch SyncTransportError.subscriptionRequired(let entitledUntil, let purgeAt) {
+                hold(entitledUntil: entitledUntil, purgeAt: purgeAt)
             } catch {
                 if isShutDown {
                     update { $0.phase = .stopped }
@@ -269,7 +298,7 @@ actor SyncEngine {
                 }
             }
             if !isShutDown { await refreshPending() }
-        } while rerun && status.lastError == nil && status.attention == nil && !isShutDown
+        } while rerun && status.lastError == nil && status.attention == nil && status.subscriptionHold == nil && !isShutDown
         running = nil
     }
 
@@ -283,6 +312,19 @@ actor SyncEngine {
         update {
             $0.phase = .stopped
             $0.attention = attention
+        }
+    }
+
+    private func hold(entitledUntil: Int64?, purgeAt: Int64?) {
+        guard !isShutDown else { return }
+        let hold = SubscriptionHold(entitledUntil: entitledUntil, purgeAt: purgeAt)
+        guard status.subscriptionHold != hold || status.phase != .idle else { return }
+        Self.logger.error("Sync paused: subscription required")
+        releaseHeldNext = true
+        update {
+            $0.phase = .idle
+            $0.lastError = nil
+            $0.subscriptionHold = hold
         }
     }
 
@@ -835,8 +877,10 @@ actor SyncEngine {
         oversizedEntities = []
         blobHeldEntities = []
         missingAttachmentEntities = []
-        quotaHeldEntities = []
-        lastQuota = nil
+        if releaseHeldNext { quotaHeldGeneration = [:] }
+        releaseHeldNext = false
+        if quotaHeldGeneration.isEmpty { lastQuota = nil }
+        var seen: Set<SyncEntity> = []
         defer {
             let waiting = waitingEntities.count
             let oversized = oversizedEntities.count
@@ -857,7 +901,12 @@ actor SyncEngine {
             try checkActive()
             let entries = try await state.outbox(limit: config.pushEntities, after: after)
             guard let last = entries.last else { break }
-            switch try await pushBatch(entries) {
+            for entry in entries {
+                seen.insert(entry.entity)
+                if let held = quotaHeldGeneration[entry.entity], held != entry.generation { quotaHeldGeneration[entry.entity] = nil }
+            }
+            let sendable = entries.filter { quotaHeldGeneration[$0.entity] == nil }
+            switch sendable.isEmpty ? .done : try await pushBatch(sendable) {
             case .done:
                 after = last.entity
             case .conflict:
@@ -869,6 +918,7 @@ actor SyncEngine {
             }
             await refreshPending()
         }
+        quotaHeldGeneration = quotaHeldGeneration.filter { seen.contains($0.key) }
     }
 
     private struct PlannedRecord {
@@ -1020,7 +1070,7 @@ actor SyncEngine {
         var chunk = planned
         if !uploads.overQuota.isEmpty {
             let held = chunk.filter { !uploads.overQuota.isDisjoint(with: $0.blobs) }
-            quotaHeldEntities.formUnion(held.map(\.entry.entity))
+            for entity in held { quotaHeldGeneration[entity.entry.entity] = entity.entry.generation }
             chunk.removeAll { !uploads.overQuota.isDisjoint(with: $0.blobs) }
             guard !chunk.isEmpty else { return .done }
         }
@@ -1049,6 +1099,15 @@ actor SyncEngine {
                 pushed = try await transport.push(wire, epoch: epoch)
             }
             result = pushed
+        } catch SyncTransportError.quotaExceeded(let used, let limit) {
+            lastQuota = BlobQuota(usedBytes: used, limitBytes: limit)
+            guard chunk.count > 1 else {
+                quotaHeldGeneration[chunk[0].entry.entity] = chunk[0].entry.generation
+                return .done
+            }
+            let middle = chunk.count / 2
+            if try await send(Array(chunk[..<middle]), epoch: epoch) == .conflict { return .conflict }
+            return try await send(Array(chunk[middle...]), epoch: epoch)
         } catch SyncTransportError.tooLarge {
             guard chunk.count > 1 else {
                 oversizedEntities.insert(chunk[0].entry.entity)
@@ -1075,7 +1134,10 @@ actor SyncEngine {
             let deleted = chunk.filter { $0.records.contains { $0.payload.isDeletion } }.map { $0.entry.entity.id }
             try checkActive()
             try await state.markSynced(synced, dequeuing: chunk.map(\.entry))
-            if !deleted.isEmpty { try await state.releaseHeld(entityIDs: deleted) }
+            if !deleted.isEmpty {
+                try await state.releaseHeld(entityIDs: deleted)
+                if !quotaHeldGeneration.isEmpty { releaseHeldNext = true }
+            }
             return .done
         }
     }
@@ -1091,7 +1153,7 @@ actor SyncEngine {
                 }
                 uploaded.append(entity)
             } catch SyncTransportError.quotaExceeded(let used, let limit) {
-                quotaHeldEntities.insert(entity.entry.entity)
+                quotaHeldGeneration[entity.entry.entity] = entity.entry.generation
                 lastQuota = BlobQuota(usedBytes: used, limitBytes: limit)
             }
         }

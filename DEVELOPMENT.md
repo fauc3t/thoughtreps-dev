@@ -75,7 +75,7 @@ Each test makes its own vault with a random id. The blob cases (upload, present,
 
 **Two simulators.** A DEBUG build starts syncing when all four launch variables are set (any missing and it only fills the outbox):
 
-- `THOUGHTREPS_SYNC_URL`: `http://127.0.0.1:8787/api/v1`
+- `THOUGHTREPS_SYNC_URL` (DEBUG; the Sync lab's environment picker offers dev / local / production, Release always uses `sync.thoughtreps.com`): `http://127.0.0.1:8787/api/v1`
 - `THOUGHTREPS_SYNC_VAULT`: any id of letters, digits, `_` or `-`; the vault is created on first launch
 - `THOUGHTREPS_SYNC_DEV_SECRET`: the runner's secret
 - `THOUGHTREPS_SYNC_KEY`: base64 of 32 bytes, the same on both devices. Make one with `openssl rand -base64 32`.

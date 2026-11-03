@@ -86,6 +86,11 @@ struct HTTPSyncTransport: SyncTransport {
             }
             if refusal.error == "blob_missing" { return .blobsMissing(names: refusal.missingBlobs ?? []) }
             return .conflict(keys: refusal.conflicts ?? [])
+        case 413:
+            if let quota = try? JSONDecoder().decode(SyncHTTPWireV1.PushQuotaExceeded.self, from: response.data), quota.error == "quota_exceeded" {
+                throw SyncTransportError.quotaExceeded(usedBytes: quota.usedBytes, limitBytes: quota.limitBytes)
+            }
+            throw failure(response)
         default:
             throw failure(response)
         }
@@ -352,11 +357,15 @@ struct HTTPSyncTransport: SyncTransport {
         }
     }
 
-    /// The error for a status the call has no other meaning for: 413 is `tooLarge`; 400, 401, 403, 404 and 410 are the server
+    /// The error for a status the call has no other meaning for: 413 is `tooLarge`, 402 `subscriptionRequired`; 400, 401, 403, 404 and 410 are the server
     /// saying this request will never work (a bad request, a refused secret, an unknown vault), which retrying can't fix.
     /// Anything else is treated as a failed call.
     private func failure(_ response: Response) -> SyncTransportError {
         if response.status == 413 { return .tooLarge }
+        if response.status == 402 {
+            let lapse = try? JSONDecoder().decode(SyncHTTPWireV1.SubscriptionRequired.self, from: response.data)
+            return .subscriptionRequired(entitledUntil: lapse?.entitledUntil, purgeAt: lapse?.purgeAt)
+        }
         guard [400, 401, 403, 404, 410].contains(response.status) else { return .unavailable }
         let body = try? JSONDecoder().decode(SyncHTTPWireV1.ErrorBody.self, from: response.data)
         return .refused(status: response.status, message: body?.message ?? body?.error ?? "")

@@ -58,6 +58,9 @@ enum SyncTransportError: Error, Equatable {
     /// Storing this blob would pass the vault's byte limit (413 `quota_exceeded`). Nothing was uploaded; the engine holds the
     /// thought that needs it and tries again every cycle, and everything else still syncs.
     case quotaExceeded(usedBytes: Int64, limitBytes: Int64)
+    /// The account's subscription lapsed (402 `subscription_required`; ms since the epoch, nil if it never subscribed). Not a
+    /// refusal: the engine pauses with its outbox intact and resumes when a later call is accepted.
+    case subscriptionRequired(entitledUntil: Int64?, purgeAt: Int64?)
 }
 
 /// How the server answered a request to start a garbage collection run. Each refusal is routine: the engine records it

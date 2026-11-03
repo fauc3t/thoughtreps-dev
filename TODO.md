@@ -45,11 +45,9 @@
 - Sync (4c-2): device-test pairing on real devices: QR pair iPhone to iPad, recovery code join, iCloud Keychain join, and the merge and erase paths of the join prompt.
 - Sync (4c-2): the camera usage string is the photo wording; it needs a scan-specific one (QR pairing) before sync ships.
 - Sync (4c-3): device-test on real devices: device list, rename, remove another device, leave, erase-and-leave, Delete sync data, the "Resume syncing" prompt after a reinstall.
-- Sync (phase 5, app side; server 5a is built): handle 402 `subscription_required` as a hold, not a stop (the engine stops for good on 403 only).
-- Sync (phase 5): on push 413 `quota_exceeded`, hold growing thoughts but keep pushing deletes and shrinks (the server lets non-growing pushes through).
+- Sync (6a): the engine decides purge vs. erase after an epoch change from `SyncController`'s memory of a lapse in this run, or `GET /entitlement` after a relaunch; check on a real server that a purged vault reads as `expired`/`revoked`.
 - Sync (phase 5): a storage meter, and StoreKit purchase and restore passing `appAccountToken` from `GET /entitlement`, then `POST /entitlement`.
 - Sync (phase 5): after a purge's epoch change, show "your synced copy was removed, everything on this device is safe, resubscribe to upload again".
-- Sync (phase 5): mirror decoding for the new wire fixtures (`entitlement-*`, `error-subscription-*`, `error-transaction-invalid`, `push-quota-exceeded`).
 - Sync (phase 5): set `appAppleId` in `thoughtreps-aws` `env-config.ts` once the App Store app exists (Production transactions are refused until then).
 - Sync (phase 5): create the subscription group and the tier1 product (`com.thoughtreps.sync.tier1.monthly`) in App Store Connect, Billing Grace Period on.
 - Sync (phase 5): in App Store Connect set both App Store Server Notifications v2 URLs (Production and Sandbox) to the prod API's `/api/v1/app-store/notifications`, then send a test notification.
@@ -61,3 +59,5 @@
 - Sync (4c-1): the "failing Keychain save keeps the old key" path is untested.
 - Sync (4b leftovers): `/pair` on dev with a real device (the smoke test covers every other route); cleanup failures take about 2 h to reach the dead-letter queue (30-min visibility); erase of a 600k-row vault takes 10+ min and isn't load-tested; a presigned upload issued just before deletion can orphan an encrypted blob; legacy pre-4b dev devices get their vault backfilled only on sign-in or re-pair.
 - Sync (4b, optional): sweep empty accounts (no vault, no subscription, no devices) after about 30 days; pairing leaves them behind.
+
+- ThoughtReps/Sync/SyncEngine.swift:1009 — the server should delete a pointer's blob once a newer version supersedes it (phase 2/3)

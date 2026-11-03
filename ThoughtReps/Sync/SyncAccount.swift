@@ -151,6 +151,9 @@ enum SyncAccountError: Error, Equatable {
         case deviceLimit = "device_limit"
         case tooManyInvites = "too_many_invites"
         case reauthenticationRequired = "reauthentication_required"
+        case subscriptionRequired = "subscription_required"
+        case transactionInvalid = "transaction_invalid"
+        case subscriptionOtherAccount = "subscription_other_account"
     }
 
     case unsupported
@@ -167,6 +170,9 @@ enum SyncAccountError: Error, Equatable {
     case invalidResponse
     /// A fresh Sign in with Apple belongs to an account whose vault is not the one this device holds.
     case differentAccount
+    /// 402: the account has no active subscription, so it can't create a vault (or, for a vault call, sync). Times are ms
+    /// since the epoch and nil if the account never subscribed.
+    case subscriptionRequired(entitledUntil: Int64?, purgeAt: Int64?)
     case server(status: Int, code: String?)
 
     var code: Code? {
@@ -198,12 +204,19 @@ enum SyncAccountError: Error, Equatable {
     }
 
     static func from(status: Int, body: Data) -> SyncAccountError {
+        if status == 402 {
+            let lapse = try? JSONDecoder().decode(SyncHTTPWireV1.SubscriptionRequired.self, from: body)
+            return .subscriptionRequired(entitledUntil: lapse?.entitledUntil, purgeAt: lapse?.purgeAt)
+        }
         let raw = (try? JSONDecoder().decode(SyncHTTPWireV1.ErrorBody.self, from: body))?.error
         return .server(status: status, code: raw)
     }
 
     /// A refusal the request can't recover from (400, 401, 403, 404, 410) stops the engine; anything else is a failed call.
     var transportError: SyncTransportError {
+        if case .subscriptionRequired(let entitledUntil, let purgeAt) = self {
+            return .subscriptionRequired(entitledUntil: entitledUntil, purgeAt: purgeAt)
+        }
         guard case .server(let status, let code) = self, [400, 401, 403, 404, 410].contains(status) else { return .unavailable }
         return .refused(status: status, message: code ?? "")
     }

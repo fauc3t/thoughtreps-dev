@@ -21,6 +21,30 @@ enum SyncLabText {
         }
     }
 
+    static func display(_ display: SyncDisplayStatus) -> String {
+        switch display {
+        case .off: "Off"
+        case .syncing: "Syncing"
+        case .upToDate: "Up to date"
+        case .paused: "Paused"
+        case .needsAttention(let attention): "Needs attention: \(needsAttention(attention))"
+        }
+    }
+
+    static func needsAttention(_ attention: SyncAttention?) -> String {
+        switch attention {
+        case nil: "None"
+        case .subscriptionLapsed(let purgeAt):
+            "Subscription ended" + (purgeAt.map { ", copy deleted \($0.formatted(date: .abbreviated, time: .omitted))" } ?? "")
+        case .syncedCopyPurged: "Synced copy removed after the subscription ended"
+        case .resetFromAnotherDevice: "Reset from another device"
+        case .storageFull(let waiting): "Storage full, \(waiting) waiting"
+        case .updateRequired: "Newer version needed"
+        case .removedFromSync: "Removed from sync"
+        case .syncStopped(let status): "Stopped (\(status))"
+        }
+    }
+
     /// The last garbage collection attempt: what happened and when, plus the earliest time the server allows another.
     static func garbageCollection(_ log: GarbageCollectionLog) -> String {
         guard let outcome = log.lastOutcome, let at = log.lastAttemptAt else { return "Never" }
@@ -425,6 +449,8 @@ enum SyncLabID {
 struct SyncLabView: View {
     @Environment(\.modelContext) private var context
     @State private var model = SyncLabModel()
+    private let controller = SyncController.shared
+    @State private var environment = SyncAccountAPI.Environment.selected()
     @State private var recoveryEntry = ""
     @State private var inviteEntry = ""
     /// Dropped when a Join button is tapped: on the iPad a keyboard left up dismisses the merge-or-erase popover, which
@@ -501,6 +527,18 @@ struct SyncLabView: View {
 
     var body: some View {
         Form {
+            Section {
+                Picker("Server", selection: $environment) {
+                    ForEach(SyncAccountAPI.Environment.allCases) { Text($0.rawValue.capitalized).tag($0) }
+                }
+                .onChange(of: environment) { _, next in SyncAccountAPI.Environment.select(next) }
+                .disabled(controller.isRunning)
+            } header: {
+                Text("Account server")
+            } footer: {
+                Text("Where Sign in with Apple and the vault live. Takes effect for the next sign in; forget the key to switch.")
+            }
+
             Section("Debug sync") {
                 if let target = SyncDebugSession.target {
                     LabeledContent("Server", value: target.url)
@@ -637,6 +675,9 @@ struct SyncLabView: View {
                 if let status = model.snapshot.status {
                     singleElementRow("Phase", value: SyncLabText.phase(status.phase), id: SyncLabID.enginePhase)
                     singleElementRow("Attention", value: SyncLabText.attention(status.attention), id: SyncLabID.engineAttention)
+                    LabeledContent("Status", value: SyncLabText.display(controller.display))
+                    LabeledContent("Needs attention", value: SyncLabText.needsAttention(controller.attention))
+                    LabeledContent("Held (footer)", value: "\(controller.heldThoughts)")
                     LabeledContent("Last error", value: status.lastError ?? "None")
                     LabeledContent("Update required", value: status.updateRequired ? "Yes" : "No")
                     LabeledContent("Cycles", value: "\(status.cycles)")

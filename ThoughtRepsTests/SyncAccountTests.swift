@@ -319,6 +319,114 @@ fileprivate struct SyncAccountServiceTests {
         let first = service.makeVaultKey()
         #expect(first.count == SyncKeys.keyLength && first != service.makeVaultKey())
     }
+
+    // MARK: Sign in, then decide, then create
+
+    static let entitlementNone = #"{"status":"none","tier":null,"productId":null,"nextProductId":null,"storage":null,"expiresAt":null,"willRenew":null,"purgeAt":null,"appAccountToken":"0f8fad5b-d9cb-469f-a165-70867728950e","serverTime":1768478400000}"#
+    static let subscriptionRequired = #"{"error":"subscription_required","message":"Subscription required","entitledUntil":1767225600000,"purgeAt":1769817600000,"serverTime":1768478400000}"#
+
+    static func gated(vault: String? = nil, entitlement: (Int, String) = (200, entitlementNone), create: (Int, String) = (200, "{}"), signIn: (Int, String)? = nil) -> FakeHTTP {
+        FakeHTTP { request, _ in
+            switch request.url!.lastPathComponent {
+            case "register": return (200, #"{"registered":true,"serverTime":1}"#)
+            case "sign-in-with-apple": return signIn ?? (200, accountJSON(vault: vault))
+            case "entitlement": return entitlement
+            case "vaults": return create
+            default: return (500, "{}")
+            }
+        }
+    }
+
+    @Test func signInStopsBeforeCreatingAndReportsTheEntitlement() async throws {
+        let rig = Rig(http: Self.gated())
+        let result = try await rig.service.signIn()
+        guard case .signedIn(let signedIn) = result else { Issue.record("\(result)"); return }
+        #expect(!signedIn.hasVault && signedIn.account.userId == "user-1")
+        #expect(signedIn.entitlement?.status == SyncHTTPWireV1.Entitlement.Status.none && signedIn.entitlement?.appAccountToken == "0f8fad5b-d9cb-469f-a165-70867728950e")
+        #expect(rig.http.paths == [
+            "devices/app-attest/challenge", "devices/app-attest/register", "devices/app-attest/challenge", "accounts/sign-in-with-apple", "entitlement",
+        ])
+        let lookup = try #require(rig.http.requests(to: "entitlement").first)
+        #expect(lookup.httpMethod == "GET" && lookup.value(forHTTPHeaderField: "Authorization") == "Bearer session-token")
+        #expect(try rig.credentials.load() == nil)
+    }
+
+    @Test func signInReportsAnExistingVaultWithoutJoining() async throws {
+        let rig = Rig(http: Self.gated(vault: "vault-9"))
+        guard case .signedIn(let signedIn) = try await rig.service.signIn() else { Issue.record("not signed in"); return }
+        #expect(signedIn.hasVault && signedIn.account.vaultId == "vault-9")
+        #expect(rig.http.requests(to: "vaults").isEmpty)
+        #expect(try rig.credentials.load() == nil)
+    }
+
+    @Test func signInStillSucceedsWhenTheEntitlementCallFails() async throws {
+        let rig = Rig(http: Self.gated(entitlement: (500, "{}")))
+        guard case .signedIn(let signedIn) = try await rig.service.signIn() else { Issue.record("not signed in"); return }
+        #expect(signedIn.entitlement == nil)
+    }
+
+    @Test func signInReportsADeviceInAnotherVault() async throws {
+        let rig = Rig(http: Self.gated(signIn: (409, errorJSON("device_in_vault"))))
+        #expect(try await rig.service.signIn() == .deviceInVault)
+        #expect(rig.http.requests(to: "entitlement").isEmpty)
+    }
+
+    @Test func createVaultAfterSignInMakesTheVault() async throws {
+        let rig = Rig(http: Self.gated(create: (200, #"{"vaultId":"vault-1","epoch":1,"session":{"token":"vault-token","expiresAt":1768482000000},"serverTime":1}"#)))
+        guard case .signedIn(let signedIn) = try await rig.service.signIn() else { Issue.record("not signed in"); return }
+        let outcome = try await rig.service.createVault(signedIn.account)
+        let held = SyncCredentials(vaultKey: fixedKey, vaultID: "vault-1", userID: "user-1")
+        #expect(outcome == .vaultCreated(held, SyncHTTPWireV1.SessionToken(token: "vault-token", expiresAt: 1_768_482_000_000)))
+        #expect(try rig.credentials.load() == held)
+    }
+
+    @Test func aLapsedSubscriptionIsATypedErrorFromCreateVaultAndSavesNoKey() async throws {
+        let rig = Rig(http: Self.gated(create: (402, Self.subscriptionRequired)))
+        guard case .signedIn(let signedIn) = try await rig.service.signIn() else { Issue.record("not signed in"); return }
+        await #expect(throws: SyncAccountError.subscriptionRequired(entitledUntil: 1_767_225_600_000, purgeAt: 1_769_817_600_000)) {
+            try await rig.service.createVault(signedIn.account)
+        }
+        #expect(try rig.credentials.load() == nil)
+    }
+
+    @Test func theOneTapPathSurfacesTheSameTypedErrorAndSkipsTheEntitlementLookup() async throws {
+        let rig = Rig(http: Self.gated(create: (402, Self.subscriptionRequired)))
+        await #expect(throws: SyncAccountError.subscriptionRequired(entitledUntil: 1_767_225_600_000, purgeAt: 1_769_817_600_000)) {
+            try await rig.service.signInAndCreateVault()
+        }
+        #expect(rig.http.requests(to: "entitlement").isEmpty)
+    }
+
+    struct StaticSession: SyncSessionSource {
+        func token() async throws -> String { "bearer-1" }
+        func refresh(after rejected: String) async throws -> String { "bearer-2" }
+    }
+
+    @Test func theEntitlementCallsCarryTheSessionAndMapTheirRefusals() async throws {
+        let submit = SyncHTTPWireV1.EntitlementSubmitRequest(signedTransaction: "jws-1", signedRenewalInfo: "jws-2")
+        let ok = Rig(http: Self.gated(entitlement: (200, Self.entitlementNone)))
+        let read = try await ok.service.entitlement(session: StaticSession())
+        #expect(read.status == .none)
+        let posted = try await ok.service.submitTransaction(submit, session: StaticSession())
+        #expect(posted.status == .none)
+        let requests = ok.http.requests(to: "entitlement")
+        #expect(requests.map(\.httpMethod) == ["GET", "POST"])
+        #expect(requests.allSatisfy { $0.value(forHTTPHeaderField: "Authorization") == "Bearer bearer-1" })
+        let sent = try JSONDecoder().decode(SyncHTTPWireV1.EntitlementSubmitRequest.self, from: try #require(requests[1].httpBody))
+        #expect(sent == submit)
+
+        let invalid = Rig(http: Self.gated(entitlement: (400, errorJSON("transaction_invalid"))))
+        await #expect(throws: SyncAccountError.server(status: 400, code: "transaction_invalid")) {
+            try await invalid.service.submitTransaction(submit, session: StaticSession())
+        }
+        let other = Rig(http: Self.gated(entitlement: (409, errorJSON("subscription_other_account"))))
+        do {
+            _ = try await other.service.submitTransaction(submit, session: StaticSession())
+            Issue.record("expected a refusal")
+        } catch let error as SyncAccountError {
+            #expect(error.code == .subscriptionOtherAccount)
+        }
+    }
 }
 
 @Suite("Sync credentials in the Keychain")

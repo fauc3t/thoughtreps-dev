@@ -168,6 +168,88 @@ enum SyncHTTPWireV1 {
         var serverTime: Int64?
     }
 
+    /// 413 `quota_exceeded`, from `POST /push`: nothing was committed. The server lets a push that doesn't grow the vault's
+    /// storage through, so only growing pushes get this. `deltaBytes` is how much this push would have added.
+    struct PushQuotaExceeded: Codable, Equatable {
+        var error: String
+        var message: String
+        var usedBytes: Int64
+        var limitBytes: Int64
+        var deltaBytes: Int64
+        var serverTime: Int64?
+    }
+
+    /// 402 `subscription_required`, from any vault route: the account's entitlement lapsed. `entitledUntil` and `purgeAt`
+    /// (ms since the epoch) are null for an account that never subscribed. A 402 rather than a 403, because a 403 stops the
+    /// shipped engine for good.
+    struct SubscriptionRequired: Codable, Equatable {
+        var error: String
+        var message: String
+        var entitledUntil: Int64?
+        var purgeAt: Int64?
+        var serverTime: Int64?
+
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(error, forKey: .error)
+            try container.encode(message, forKey: .message)
+            try container.encode(entitledUntil, forKey: .entitledUntil)
+            try container.encode(purgeAt, forKey: .purgeAt)
+            try container.encode(serverTime, forKey: .serverTime)
+        }
+    }
+
+    /// `GET /entitlement` and the answer to `POST /entitlement`. `none` has no tier, product, storage or dates (and, for an
+    /// account without a vault, no storage). `purgeAt` is set only for `expired` and `revoked`. `appAccountToken` is the
+    /// account's `userId` as a UUID, which StoreKit's purchase carries so the server can match the transaction.
+    struct Entitlement: Codable, Equatable {
+        enum Status: String, Codable, Equatable {
+            case none, active, grace, expired, revoked
+        }
+
+        struct Tier: Codable, Equatable {
+            var id: String
+            var storageBytes: Int64
+            var deviceLimit: Int
+        }
+
+        struct Storage: Codable, Equatable {
+            var usedBytes: Int64
+            var limitBytes: Int64
+        }
+
+        var status: Status
+        var tier: Tier?
+        var productId: String?
+        var nextProductId: String?
+        var storage: Storage?
+        var expiresAt: Int64?
+        var willRenew: Bool?
+        var purgeAt: Int64?
+        var appAccountToken: String
+        var serverTime: Int64?
+
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(status, forKey: .status)
+            try container.encode(tier, forKey: .tier)
+            try container.encode(productId, forKey: .productId)
+            try container.encode(nextProductId, forKey: .nextProductId)
+            try container.encode(storage, forKey: .storage)
+            try container.encode(expiresAt, forKey: .expiresAt)
+            try container.encode(willRenew, forKey: .willRenew)
+            try container.encode(purgeAt, forKey: .purgeAt)
+            try container.encode(appAccountToken, forKey: .appAccountToken)
+            try container.encode(serverTime, forKey: .serverTime)
+        }
+    }
+
+    /// `POST /entitlement`: the JWS strings StoreKit 2 hands out for a transaction and its renewal info.
+    struct EntitlementSubmitRequest: Codable, Equatable {
+        var signedTransaction: String
+        var signedRenewalInfo: String?
+    }
+
     struct CreateVault: Codable, Equatable {
         var vaultId: String
         var epoch: Int64

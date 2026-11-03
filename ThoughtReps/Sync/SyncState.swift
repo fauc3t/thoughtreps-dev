@@ -222,6 +222,8 @@ actor SyncState {
     }
 
     /// Called after every accepted `enqueue`, from any thread; the sync triggers use it to debounce a push.
+    nonisolated var hasEnqueueObserver: Bool { gate.withLock { $0.observer != nil } }
+
     nonisolated func setEnqueueObserver(_ observer: (@Sendable () -> Void)?) {
         gate.withLock { $0.observer = observer }
     }
@@ -858,15 +860,27 @@ actor SyncState {
     }
 }
 
+extension SyncState {
+    /// Turns the outbox on for the vault whose key the Keychain holds, if any. Nothing syncs for a person who never set
+    /// sync up.
+    func enableFromCredentials(_ credentials: SyncCredentialStore = KeychainSyncCredentialStore()) async {
+        do {
+            guard let vault = try credentials.load()?.vaultID else { return }
+            try configure(vaultID: vault)
+        } catch {
+            Self.logger.error("Enabling sync failed: \(error)")
+        }
+    }
+}
+
 #if DEBUG
 extension SyncState {
-    /// Sync has no UI yet: launching with `THOUGHTREPS_SYNC_VAULT=<id>` turns it on for that vault, and without it the vault
-    /// of the account signed in from the Sync lab, if the Keychain holds one.
+    /// Launching with `THOUGHTREPS_SYNC_VAULT=<id>` turns the outbox on for that vault, and without it for the account's vault.
     func enableForDebugging(credentials: SyncCredentialStore = KeychainSyncCredentialStore()) async {
         let named = ProcessInfo.processInfo.environment["THOUGHTREPS_SYNC_VAULT"] ?? ""
+        guard !named.isEmpty else { return await enableFromCredentials(credentials) }
         do {
-            guard let vault = named.isEmpty ? try credentials.load()?.vaultID : named else { return }
-            try configure(vaultID: vault)
+            try configure(vaultID: named)
         } catch {
             Self.logger.error("Enabling sync failed: \(error)")
         }

@@ -59,6 +59,8 @@ actor FakeSyncServer: SyncTransport {
     private var stallingPulls = false
     private var garbageCollectionAnswers: [GarbageCollectionStart] = []
     private var blobQuotaBytes: Int?
+    private var subscriptionLapse: (entitledUntil: Int64?, purgeAt: Int64?)?
+    private var refusesGrowth = false
     private var garbageCollectionFailure: SyncTransportError?
     private var referenceWatcher: (keys: SyncKeys, vaultID: String)?
 
@@ -123,6 +125,20 @@ actor FakeSyncServer: SyncTransport {
         blobQuotaBytes = limit
     }
 
+    /// Every call is refused with 402 until `clearSubscriptionRequirement`.
+    func requireSubscription(entitledUntil: Int64? = nil, purgeAt: Int64? = nil) {
+        subscriptionLapse = (entitledUntil, purgeAt)
+    }
+
+    func clearSubscriptionRequirement() {
+        subscriptionLapse = nil
+    }
+
+    /// A push that would grow the stored record bytes is refused with 413 `quota_exceeded`; deletes and shrinks go through.
+    func refuseGrowingPushes(_ refuses: Bool = true) {
+        refusesGrowth = refuses
+    }
+
     var storedBlobBytes: Int { blobs.values.reduce(0) { $0 + $1.count } }
 
     /// The vault is erased: every record and blob is gone and the epoch moves on.
@@ -161,6 +177,7 @@ actor FakeSyncServer: SyncTransport {
     }
 
     private func begin() throws {
+        if let lapse = subscriptionLapse { throw SyncTransportError.subscriptionRequired(entitledUntil: lapse.entitledUntil, purgeAt: lapse.purgeAt) }
         if let countdown = failCountdown {
             if countdown == 0 {
                 failCountdown = nil
@@ -209,6 +226,13 @@ actor FakeSyncServer: SyncTransport {
         guard failed.isEmpty else {
             conflicts += 1
             return .conflict(keys: failed.map(\.recordKey))
+        }
+        if refusesGrowth {
+            let delta = records.reduce(0) { total, record in
+                let existing = rows[record.recordKey].flatMap { $0.deleted ? nil : $0.payload.count } ?? 0
+                return total + (record.deleted ? 0 : record.payload.count) - existing
+            }
+            if delta > 0 { throw SyncTransportError.quotaExceeded(usedBytes: 100, limitBytes: 100) }
         }
         var seqs: [String: Int64] = [:]
         for (index, record) in records.enumerated() {
