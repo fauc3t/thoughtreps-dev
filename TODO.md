@@ -1,5 +1,7 @@
 # TODOs
 
+- **Before launch, very important: make DMARC strict.** `_dmarc.thoughtreps.com` is still `p=none` (report-only), so anyone can send mail that claims to be from @thoughtreps.com and receivers will deliver it. Once the aggregate reports (to `me@nickhorn.com`) show prod's SES mail passing SPF and DKIM, change the record in `~/dev/thoughtreps-aws/infra/lib/mail-stack.ts` (`DmarcRecord`) to `p=quarantine`, and later `p=reject`. Must be done before the launch email goes out.
+
 - transfer-web/index.html:14 — add the Smart App Banner (`apple-itunes-app`) once the App Store ID exists; must be added at runtime from `main.tsx` because `app-argument` needs the `#fragment`
 - After the launch email (and TestFlight invites), delete all WaitlistTable rows and the [Waitlist] notification emails; the privacy policy promises it.
 - Linked thoughts (built; checks left): device-check the link picker and the editor's "Linked thought" row on iPhone and iPad. On iPad with a hardware keyboard, check ⌘↩/Esc while the picker is open (the editor's SwiftUI Save/Cancel shortcuts are unverified under the sheet). Check iPad split visits and fold/unfold with a visit on the stack. See `designs/Thought Reps — Linked Thoughts Spec.md`.
