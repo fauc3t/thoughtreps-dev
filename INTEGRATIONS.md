@@ -10,14 +10,8 @@ Everything (DNS for `thoughtreps.com`, the landing site, mail and the mail UI at
 
 Until 2026-11-02 this repo's `infra/` deployed the same four stacks (`ThoughtReps-prod-Dns`, `-Landing`, `-Mail`, `-Share`) into account `041459489812` (profile `thoughtreps-prod-legacy`, the root user). That account is shared with strands prod. After the cutover, the stacks, the legacy `thoughtreps.com` SES identity and hosted zone `Z06229403C4P8HR6DYOGE` were deleted. Strands' resources there (`Strands-*`, `SimpleMail-*`, the `simple-mail-prod` receipt rule set, `DnsStack`, `ShortLinkDnsStack`, `CDKToolkit`) were not touched.
 
-These resources were RETAIN, so they still exist there and hold old data. Nothing uses them, and the new stacks started with fresh data:
-
-- Mail bucket `thoughtreps-prod-mail-mailbucketfabec941-faprsykfvfyq` (messages received before the cutover).
-- Cognito user pool `us-east-1_syDehk89q`.
-- Waitlist tables `ThoughtReps-prod-Share-WaitlistTable9B05A3AC-1IUQYLIYAVGYL` and `-1SNKK7GTCPI1E`.
-- The old stacks' Lambda log groups.
-- IAM user `herald-ses-sender` (see below).
+The resources those stacks kept on delete (RETAIN) were deleted later the same day: the mail bucket with all its versions, Cognito user pool `us-east-1_syDehk89q`, both waitlist tables, the Lambda log groups and the IAM user `herald-ses-sender`. The one real waitlist sign-up was copied to the prod table first. No thoughtreps resources are left in this account.
 
 ## Outside AWS: herald
 
-The daily social pipeline lives in its own repo, [`fauc3t/herald-ai`](https://github.com/fauc3t/herald-ai) (`~/dev/herald-ai`), configured for this app by `projects/thoughtreps.json`. It sent its digest through the legacy account's SES identity as the IAM user `herald-ses-sender`. That identity is gone, so the user can no longer send. **Herald is stopped as of 2026-11-02**: the launchd agent `ai.herald.daily` was booted out and disabled, and its plist is kept in `~/Library/LaunchAgents/`. Restarting it needs a sender in the prod account first, which hasn't been created.
+The daily social pipeline lives in its own repo, [`fauc3t/herald-ai`](https://github.com/fauc3t/herald-ai) (`~/dev/herald-ai`), configured for this app by `projects/thoughtreps.json`. It sent its digest through the legacy account's SES identity as the IAM user `herald-ses-sender`; both are deleted, and the local `herald` AWS profile now holds a dead key. **Herald is stopped as of 2026-11-02**: the launchd agent `ai.herald.daily` was booted out and disabled, and its plist is kept in `~/Library/LaunchAgents/`. Restarting it needs a sender in the prod account first, which hasn't been created.
