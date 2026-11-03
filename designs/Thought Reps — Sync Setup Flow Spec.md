@@ -112,7 +112,7 @@ Sections, top to bottom:
 6. **Leave** (destructive group, each with a confirm that says what stays):
    - "Turn Off Sync on This iPhone": leaves the vault (server call skipped when the device was already removed), clears this device's key, App Attest key id and sync state; thoughts stay; the iCloud Keychain copy stays so the user can come back. One action for both cases (it replaces the Sync lab's "Sign out and forget key").
    - "Erase This iPhone and Leave": the existing erase-and-leave, with its second confirm.
-   - "Delete Sync Account…": `DELETE /account` (Apple-required in-app deletion). Confirm: "This deletes your synced thoughts from our server and stops sync on every device. Thoughts on your devices stay. Your App Store subscription isn't cancelled by this; manage it in Settings." Needs a fresh Sign in with Apple when the server asks (`reauthentication_required`).
+   - "Delete Sync Account…": `DELETE /account` (Apple-required in-app deletion). Confirm: "This deletes your synced thoughts from our server and stops sync on every device. Thoughts on your devices stay. Your App Store subscription isn't cancelled by this; manage it in Settings." Needs a fresh Sign in with Apple when the server asks (`reauthentication_required`). Uses the same typed `DELETE` confirmation as Start over, and its screen says plainly that without another device or the recovery code the synced copy is the only copy of thoughts not on this device.
 
 ### Attention states
 
@@ -158,7 +158,11 @@ Gated by device owner authentication (Face ID, Touch ID or passcode via `LocalAu
 ## Decisions (2026-11-03)
 
 1. **API host:** `sync.thoughtreps.com`, an API Gateway custom domain on the prod Sync stack in `thoughtreps-aws` (dev gets its own, e.g. `sync.dev.thoughtreps.com`, or keeps its `execute-api` URL in DEBUG). `transfer.thoughtreps.com` stays the export-link and feedback host. Release builds hard-code only `https://sync.thoughtreps.com/api/v1`.
-2. **Lost key, "Start over":** option (a). Fresh Sign in with Apple, `DELETE /account`, a new account and vault, then the app reposts StoreKit's current entitlement (`Transaction.currentEntitlements` → `POST /entitlement`), so the subscription follows with no Restore tap and no new charge. The button sits below Scan QR and Enter Recovery Code, with the confirm "Only do this if you've lost every device and your recovery code. Your synced copy will be deleted for good. Thoughts on this iPhone stay." Other devices on the old vault are cut off and rejoin the new one.
+2. **Lost key, "Start over":** option (a). Fresh Sign in with Apple, `DELETE /account`, a new account and vault, then the app reposts StoreKit's current entitlement (`Transaction.currentEntitlements` → `POST /entitlement`), so the subscription follows with no Restore tap and no new charge. The button sits below Scan QR and Enter Recovery Code. Deleting the account can destroy the only way back into the old synced thoughts, so it is never one tap:
+   - **Start over screen** (not an alert): "Your synced thoughts can only be read with your sync key. If any of your devices still syncs, or you have your recovery code, use that instead: starting over deletes the synced copy for good and it can't be recovered, by you or by us." It lists what to try first, each a button: "Check iCloud Keychain Again", "Scan QR Code", "Enter Recovery Code".
+   - **Typed confirmation:** the destructive button stays disabled until the user types `DELETE`, then reads "Delete Synced Thoughts and Start Over". Then the fresh Sign in with Apple.
+   - **Before deleting,** the app checks iCloud Keychain once more and stops if a key for this vault turns up.
+   - Thoughts on this device are never touched; the copy says "Thoughts on this iPhone stay." Other devices on the old vault are cut off and rejoin the new one. Other devices on the old vault are cut off and rejoin the new one.
 3. **Reminders:** per device; off by default on a device that joins a vault.
 4. **Paywall:** a custom view (S3); the purchase sheet is Apple's.
 5. **First-upload progress:** a count only, no time estimate.
