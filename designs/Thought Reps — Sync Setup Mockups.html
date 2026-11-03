@@ -1,0 +1,446 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Thought Reps — Sync Setup Mockups</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root{--blue:#007aff;--green:#34c759;--red:#ff3b30;--orange:#ff9500;--bg:#f2f2f7;--sep:#c6c6c8;--sec:#8e8e93;--font:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",Helvetica,Arial,sans-serif}
+*{box-sizing:border-box}
+body{margin:0;font-family:var(--font);background:#e4e4e9;color:#111;display:flex;height:100vh;overflow:hidden}
+#side{width:260px;flex:none;background:#fff;border-right:1px solid #d0d0d5;overflow-y:auto;padding:14px 0 30px}
+#side h1{font-size:15px;margin:0 16px 4px}
+#side p.note{font-size:11px;color:#666;margin:0 16px 10px;line-height:1.4}
+#side h2{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#888;margin:16px 16px 4px}
+#side a{display:block;padding:5px 16px;font-size:13px;color:#222;cursor:pointer;text-decoration:none;border-left:3px solid transparent}
+#side a:hover{background:#f3f3f6}
+#side a.on{background:#e8f1ff;border-left-color:var(--blue);color:#0050b3;font-weight:600}
+#side a b{display:inline-block;min-width:56px;color:#888;font-weight:600;font-size:11px}
+#main{flex:1;overflow:auto;display:flex;flex-direction:column;align-items:center;padding:24px 20px 40px}
+#cap{margin-top:14px;max-width:440px;text-align:center;font-size:13px;color:#444;line-height:1.4}
+#cap b{color:#000}
+#nextprev{margin-top:8px;font-size:12px;color:#777}
+/* phone */
+.phone{width:393px;height:852px;flex:none;background:var(--bg);border-radius:48px;border:10px solid #111;box-shadow:0 12px 40px rgba(0,0,0,.25);position:relative;overflow:hidden;font-size:17px;letter-spacing:-.01em}
+.phone *{-webkit-user-select:none;user-select:none}
+.status{height:47px;display:flex;justify-content:space-between;align-items:flex-end;padding:0 30px 6px 34px;font-weight:600;font-size:15px;flex:none}
+.status i{font-style:normal;font-size:12px;letter-spacing:2px}
+.screen{display:flex;flex-direction:column;height:100%;position:relative}
+.nav{height:44px;flex:none;display:flex;align-items:center;justify-content:space-between;padding:0 8px;position:relative;background:var(--bg)}
+.nav .t{position:absolute;left:0;right:0;text-align:center;font-weight:600;font-size:17px;pointer-events:none}
+.nav .l,.nav .r{color:var(--blue);cursor:pointer;z-index:1;padding:6px 6px;font-size:17px}
+.nav .l.chev:before{content:"";display:inline-block;width:10px;height:10px;border-left:2.5px solid var(--blue);border-bottom:2.5px solid var(--blue);transform:rotate(45deg);margin:0 6px 1px 4px}
+.nav .r.dim{color:#b0b0b5}
+.body{flex:1;overflow-y:auto;padding:0 16px 24px;scrollbar-width:none}
+.body::-webkit-scrollbar{display:none}
+.body.big{padding-top:0}
+.large{font-size:34px;font-weight:700;letter-spacing:.2px;margin:2px 4px 10px}
+.sec{margin:22px 0 0}
+.sec>h3{font-size:13px;text-transform:uppercase;color:var(--sec);font-weight:400;margin:0 16px 6px;letter-spacing:0}
+.sec>.f{font-size:13px;color:var(--sec);margin:6px 16px 0;line-height:1.35}
+.sec>.f.red{color:var(--red)}
+.grp{background:#fff;border-radius:10px;overflow:hidden}
+.row{display:flex;align-items:center;min-height:44px;padding:0 16px;position:relative;gap:10px}
+.row+.row:before{content:"";position:absolute;top:0;left:16px;right:0;height:.5px;background:var(--sep)}
+.row.ic+.row.ic:before{left:58px}
+.row .lab{flex:1;line-height:1.2;padding:11px 0}
+.row .sub{display:block;font-size:13px;color:var(--sec);margin-top:2px}
+.row .val{color:var(--sec);white-space:nowrap}
+.row .val.red{color:var(--red)}
+.row.nav-r[data-go]:after,.row.chv:after{content:"";width:8px;height:8px;border-right:2px solid #c4c4c7;border-top:2px solid #c4c4c7;transform:rotate(45deg);margin-left:2px;flex:none}
+.row[data-go],.btn[data-go],.sw[data-go],.cell[data-go]{cursor:pointer}
+.row[data-go]:hover{background:#f6f6f8}
+.row.blue .lab{color:var(--blue)}
+.row.destr .lab{color:var(--red)}
+.row.ctr .lab{text-align:center}
+.row.off .lab{color:#b0b0b5}
+.tile{width:30px;height:30px;border-radius:7px;flex:none;color:#fff;display:flex;align-items:center;justify-content:center;font-size:16px}
+.dot{width:10px;height:10px;border-radius:50%;background:var(--red);display:inline-block}
+.sw{width:51px;height:31px;border-radius:16px;background:#e5e5ea;position:relative;flex:none;transition:.2s}
+.sw:after{content:"";position:absolute;top:2px;left:2px;width:27px;height:27px;border-radius:50%;background:#fff;box-shadow:0 2px 4px rgba(0,0,0,.25);transition:.2s}
+.sw.on{background:var(--green)}.sw.on:after{left:22px}
+.btn{display:block;border-radius:12px;text-align:center;padding:15px 12px;font-weight:600;font-size:17px;margin:12px 0 0}
+.btn.p{background:var(--blue);color:#fff}
+.btn.p.dis{background:#c9c9ce;color:#fff;cursor:not-allowed}
+.btn.s{background:transparent;color:var(--blue);font-weight:400;padding:10px}
+.btn.d{background:#fff;color:var(--red)}
+.btn.g{background:#e8e8ed;color:var(--blue)}
+.btn.sm{display:inline-block;padding:8px 18px;font-size:15px;margin:10px 0 0;border-radius:18px}
+.apple{background:#000;color:#fff;border-radius:8px;padding:14px;text-align:center;font-weight:600;font-size:17px;margin-top:14px;cursor:pointer;display:flex;justify-content:center;gap:8px;align-items:center}
+.apple svg{width:16px;height:18px;fill:#fff}
+.hero{display:flex;flex-direction:column;align-items:center;text-align:center;padding:6px 6px 0}
+.hero h2{font-size:26px;margin:14px 0 8px;letter-spacing:0}
+.hero p{margin:0;color:#444;font-size:15px;line-height:1.4}
+.facts{margin:16px 0 0}
+.fact{display:flex;gap:10px;align-items:center;padding:7px 4px;font-size:16px}
+.fact:before{content:"✓";color:var(--blue);font-weight:700;width:18px}
+.small{font-size:12px;color:var(--sec);line-height:1.4;text-align:center;margin:16px 6px 0}
+.small a{color:var(--blue);text-decoration:none}
+.banner{background:#fff;border-radius:10px;padding:12px 14px;margin:12px 0 0;display:flex;gap:10px;align-items:center;font-size:14px;border:1px solid #ffd0cc}
+.banner b{color:var(--red)}
+.banner span.try{margin-left:auto;color:var(--blue);font-weight:600;cursor:pointer}
+/* sheet */
+.dim{position:absolute;inset:0;background:rgba(0,0,0,.35);z-index:5}
+.sheet{position:absolute;left:0;right:0;bottom:0;top:54px;background:var(--bg);border-radius:12px 12px 0 0;z-index:6;display:flex;flex-direction:column;overflow:hidden}
+.sheet.short{top:auto;max-height:70%}
+.sheet.white{background:#fff}
+.sheet .nav{background:inherit}
+.grab{position:absolute;top:6px;left:50%;width:36px;height:5px;margin-left:-18px;border-radius:3px;background:#c4c4c7}
+.alert{position:absolute;z-index:9;left:50%;top:50%;width:270px;margin:-90px 0 0 -135px;background:rgba(250,250,250,.97);border-radius:14px;text-align:center;overflow:hidden;box-shadow:0 8px 30px rgba(0,0,0,.25)}
+.alert .a-b{padding:18px 16px 16px;font-size:13px;line-height:1.35}
+.alert .a-b b{display:block;font-size:17px;margin-bottom:4px}
+.alert .a-b input{width:100%;margin-top:10px;padding:6px 8px;border:1px solid #c6c6c8;border-radius:6px;font:inherit;font-size:14px}
+.alert .a-a{display:flex;border-top:.5px solid #b8b8bc}
+.alert .a-a.v{flex-direction:column}
+.alert .a-a div{flex:1;padding:12px;color:var(--blue);font-size:17px;cursor:pointer}
+.alert .a-a:not(.v) div+div{border-left:.5px solid #b8b8bc;font-weight:600}
+.alert .a-a.v div+div{border-top:.5px solid #b8b8bc}
+.alert .a-a div.red{color:var(--red)}
+.alert .a-a div.bold{font-weight:600}
+/* tab bar */
+.tabs{height:84px;flex:none;border-top:.5px solid var(--sep);background:rgba(249,249,249,.95);display:flex;padding-top:8px}
+.tabs div{flex:1;text-align:center;font-size:10px;color:#999;position:relative}
+.tabs div.on{color:var(--blue)}
+.tabs div u{display:block;text-decoration:none;font-size:22px;margin-bottom:2px;height:26px}
+.tabs div .dot{position:absolute;top:-2px;left:57%;width:9px;height:9px}
+/* status head */
+.sh{text-align:center;padding:10px 20px 4px}
+.sh .sym{width:64px;height:64px;border-radius:50%;margin:0 auto 10px;display:flex;align-items:center;justify-content:center;font-size:32px;color:#fff}
+.sh .l1{font-size:20px;font-weight:600;line-height:1.25}
+.sh .l2{font-size:14px;color:var(--sec);margin-top:5px;line-height:1.35}
+.bar{height:8px;background:#e5e5ea;border-radius:4px;margin:14px 6px 0;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--blue);border-radius:4px}
+.bar.warn i{background:var(--orange)}
+.meter{padding:14px 16px}
+.meter .lab{padding:0 0 8px}
+.meter .bar{margin:0}
+/* qr */
+.qr{width:200px;height:200px;margin:18px auto 0;background:#fff;padding:10px;border-radius:10px;display:grid;grid-template-columns:repeat(25,1fr);gap:0}
+.qr i{background:#111}.qr i.w{background:#fff}
+/* recovery */
+.code{background:#fff;border-radius:10px;padding:14px 12px;display:grid;grid-template-columns:repeat(4,1fr);gap:8px 6px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:14px;text-align:center}
+.code span em{display:block;font-style:normal;font-size:9px;color:#aaa;margin-bottom:1px}
+.entry{background:#fff;border-radius:10px;padding:12px 14px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:14px;line-height:1.7;word-break:break-all;min-height:120px}
+.entry.bad{outline:1.5px solid var(--red)}
+.entry.ok{outline:1.5px solid var(--green)}
+.entry .cur{border-right:2px solid var(--blue);margin-left:1px}
+.entry .x{color:var(--red);background:#ffe5e3;border-radius:3px}
+.cam{background:#1b1b1d;border-radius:14px;height:300px;margin-top:14px;position:relative;overflow:hidden}
+.cam:after{content:"";position:absolute;left:50%;top:50%;width:190px;height:190px;margin:-95px 0 0 -95px;border:3px solid #fff;border-radius:18px}
+/* auth overlay */
+.faceid{position:absolute;inset:0;z-index:8;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center}
+.faceid div{width:240px;background:rgba(250,250,250,.97);border-radius:20px;padding:26px 16px;text-align:center;font-size:14px}
+.faceid div b{display:block;font-size:34px;color:var(--blue);margin-bottom:8px;font-weight:400}
+/* timeline */
+.tl{background:#f4efe6;color:#1d1a16;font-family:"New York",Georgia,serif}
+.tl .nav{background:#f4efe6}
+.card{background:#fffdf8;border-radius:16px;padding:14px 16px;margin:0 0 12px;box-shadow:0 1px 0 rgba(0,0,0,.04),0 0 0 .5px rgba(60,40,10,.12)}
+.card .m{font-family:ui-monospace,Menlo,monospace;font-size:11px;color:#8a8070;margin-top:8px;display:flex;justify-content:space-between}
+.card p{margin:0;font-size:16px;line-height:1.4}
+.card.notice{background:#fbeede;position:relative;cursor:pointer}
+.card.notice b{font-family:var(--font);font-size:15px}
+.card.notice p{font-family:var(--font);font-size:14px;color:#5a4a36;margin-top:3px}
+.card.notice .x{position:absolute;top:8px;right:12px;color:#8a8070;font-size:18px;cursor:pointer}
+.card.notice .go{font-family:var(--font);font-size:13px;color:var(--blue);margin-top:6px;font-weight:600}
+.tl .tabs{background:#f4efe6}
+.sp{height:10px}
+/* apple sheet */
+.as{padding:26px 22px;text-align:center;flex:1;background:#fff}
+.as .ai{width:62px;height:62px;border-radius:14px;background:#1d1a16;color:#fff;margin:6px auto 12px;display:flex;align-items:center;justify-content:center;font-size:28px;font-family:Georgia,serif}
+.as h4{margin:0 0 6px;font-size:20px}
+.as p{margin:0;font-size:14px;color:#555;line-height:1.4}
+.as .opt{background:#f2f2f7;border-radius:10px;margin-top:16px;text-align:left}
+.as .opt div{padding:12px 14px;font-size:15px;display:flex;justify-content:space-between}
+.as .opt div+div{border-top:.5px solid var(--sep)}
+.as .opt em{font-style:normal;color:var(--blue)}
+.spin{width:34px;height:34px;border:3.5px solid #d6d6db;border-top-color:#777;border-radius:50%;margin:0 auto;animation:sp 1s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+.ill{display:flex;align-items:center;justify-content:center;gap:12px;margin-top:6px}
+.ill .dev{border:3px solid var(--blue);border-radius:12px;width:56px;height:96px;position:relative}
+.ill .dev.pad{width:100px;height:76px;border-radius:10px}
+.ill .dev i{position:absolute;left:8px;right:8px;top:14px;height:16px;border-radius:4px;background:#cfe3ff}
+.ill .dev i+i{top:36px;opacity:.6}
+.ill .mv{color:var(--blue);font-size:22px}
+.ill .th{width:34px;height:22px;background:var(--blue);border-radius:5px;position:relative;top:-6px}
+.hint{font-size:11px;color:#999;margin-top:6px}
+</style>
+</head>
+<body>
+<nav id="side"></nav>
+<div id="main"><div id="stage"></div><div id="cap"></div><div id="nextprev"></div></div>
+<script>
+"use strict";
+const APPLE='<svg viewBox="0 0 17 20"><path d="M14.1 10.6c0-2.4 2-3.5 2.1-3.6-1.1-1.700-2.900-1.900-3.500-1.900-1.500-.15-2.900.9-3.700.9s-1.900-.9-3.200-.8C4.200 5.200 2.700 6.200 1.800 7.600c-1.800 3.100-.5 7.700 1.300 10.200.9 1.200 1.900 2.600 3.200 2.500 1.300-.05 1.800-.8 3.300-.8s2 .8 3.300.8c1.400 0 2.200-1.200 3.100-2.400 1-1.400 1.400-2.800 1.400-2.900 0 0-2.700-1-2.700-4.100zM11.600 3.200c.7-.9 1.200-2 1-3.200-1 0-2.300.7-3 1.500-.6.700-1.200 1.900-1 3 1.100.1 2.300-.5 3-1.300z"/></svg>';
+const T2="Thought Reps works fully without sync. Signing in only creates a sync account; your email is used for subscription and account notices.";
+
+/* ---------- helpers ---------- */
+const g=(id)=>`data-go="${id}"`;
+const status=(dark)=>`<div class="status"><span>9:41</span><i>▂▄▆ ▮▮▮</i></div>`;
+const nav=(o)=>`<div class="nav">${o.back?`<div class="l chev" ${g(o.back[1])}>${o.back[0]}</div>`:(o.left?`<div class="l" ${o.left[1]?g(o.left[1]):''}>${o.left[0]}</div>`:'<div></div>')}<div class="t">${o.title||''}</div>${o.right?`<div class="r ${o.right[2]||''}" ${o.right[1]?g(o.right[1]):''}>${o.right[0]}</div>`:'<div></div>'}</div>`;
+const sec=(h,rows,f,fc)=>`<div class="sec">${h?`<h3>${h}</h3>`:''}<div class="grp">${rows}</div>${f?`<div class="f ${fc||''}">${f}</div>`:''}</div>`;
+const row=(lab,o={})=>`<div class="row ${o.cls||''} ${o.go?'chv':''}" ${o.go?g(o.go):''}>${o.tile?`<div class="tile" style="background:${o.tile[1]}">${o.tile[0]}</div>`:''}<div class="lab">${lab}${o.sub?`<span class="sub">${o.sub}</span>`:''}</div>${o.val?`<span class="val ${o.vcls||''}">${o.val}</span>`:''}${o.sw!==undefined?`<div class="sw ${o.sw?'on':''}" ${o.swgo?g(o.swgo):''}></div>`:''}</div>`;
+const btn=(t,cls,go)=>`<div class="btn ${cls}" ${go?g(go):''}>${t}</div>`;
+const tabs=(dot)=>`<div class="tabs"><div><u>◔</u>Timeline</div><div><u>⌕</u>Search</div><div class="on"><u>⚙︎</u>Settings${dot?'<span class="dot"></span>':''}</div></div>`;
+const phone=(inner)=>`<div class="phone">${status()}<div class="screen" style="height:calc(100% - 47px)">${inner}</div></div>`;
+const alertBox=(title,msg,acts,vert,input)=>`<div class="dim" style="z-index:8"></div><div class="alert"><div class="a-b"><b>${title}</b>${msg}${input?`<input value="${input}">`:''}</div><div class="a-a ${vert?'v':''}">${acts.map(a=>`<div ${g(a[1])} class="${a[2]||''}">${a[0]}</div>`).join('')}</div></div>`;
+const sheet=(o,body,cls)=>`<div class="dim"></div><div class="sheet ${cls||''}"><div class="grab"></div><div style="height:6px"></div>${nav(o)}<div class="body">${body}</div></div>`;
+const wrap=(o)=>phone(`${o.nav||''}<div class="body">${o.body||''}</div>${o.tab||''}${o.over||''}`);
+
+/* ---------- Settings parents ---------- */
+function settings(syncRow,dot,over){
+ return wrap({nav:nav({title:'Settings'}),tab:tabs(dot),over,body:
+  sec('',row('Appearance',{go:'',tile:['Aa','#5856d6'],cls:'ic'})+row('Theme',{tile:['◐','#34aadc'],val:'Ink',cls:'ic'}))+
+  sec('',row('Reminders',{tile:['!','#ff3b30'],val:'Off',cls:'ic'}))+
+  sec('',syncRow)+
+  sec('',row('Backup',{tile:['↧','#8e8e93'],cls:'ic',go:''})+row('Export Link',{tile:['↗','#30b0c7'],cls:'ic',go:''}))+
+  sec('',row('Help Center',{go:''})+row('Send Feedback',{go:''})+row('About',{val:'1.0',go:''}))});
+}
+const syncRowOf=(val,vcls,go,sub)=>row('Sync',{tile:['⇅','#007aff'],cls:'ic',val,vcls,go});
+
+/* ---------- Setup (S1) ---------- */
+function s1(over,banner){
+ return wrap({nav:nav({back:['Settings','set-off'],title:'Sync'}),over,body:`
+ <div class="hero"><div class="ill"><div class="dev"><i></i><i></i></div><span class="mv">⇄</span><div class="dev pad"><i></i><i></i></div></div>
+ <h2>Sync your thoughts</h2>
+ <p>Keep your thoughts, tags and images the same on your iPhone and iPad. They're encrypted on your devices before they're uploaded, so nobody else can read them, including us.</p></div>
+ <div class="facts"><div class="fact">Up to 3 devices</div><div class="fact">1 GB of storage</div><div class="fact">1 month free, then $2.99/month</div></div>
+ ${banner||''}
+ <div class="apple" ${g('S2')}>${APPLE} Continue with Apple</div>
+ ${btn('Join with a QR code or recovery code','s','S6a')}
+ <div class="small">${T2}<br><a>Terms of Use</a> · <a>Privacy Policy</a></div>`});
+}
+function s2(variant){
+ const sh=`<div class="dim"></div><div class="sheet short white"><div class="grab"></div><div class="as" style="padding-top:34px">
+ <div class="ai">T</div><h4>Sign in to Thought Reps with your Apple Account</h4><p>nick@icloud.com</p>
+ <div class="opt"><div>Email<em>Share My Email</em></div><div>Name<span style="color:#999">Not requested</span></div></div>
+ <div style="margin-top:22px;font-size:34px;color:var(--blue)">◉</div><p style="font-size:13px">Double-click the side button to continue</p>
+ <div class="btn p" style="margin-top:16px" ${g(variant==='fail'?'S2b':'S3a')}>Continue with Passcode</div>
+ <div class="btn s" ${g('S1')}>Cancel</div>${variant==='hint'?'':''}</div></div>`;
+ return s1(sh);
+}
+const s2b=()=>s1('', `<div class="banner"><b>⚠︎</b> Couldn't reach the server. Check your connection.<span class="try" ${g('S2')}>Try Again</span></div>`);
+const s2c=()=>s1('', `<div class="banner"><b>⚠︎</b> Sync isn't available on this device.</div>`);
+
+/* ---------- Subscribe ---------- */
+function s3full(eligible,conflict){
+ const inner=`<div class="hero" style="padding-top:8px"><h2 style="margin-top:0">${eligible?'Start your free month':'Subscribe to sync'}</h2></div>
+ <div class="facts" style="margin-top:6px"><div class="fact">Up to 3 devices</div><div class="fact">1 GB of storage</div><div class="fact">1 month free, then $2.99/month</div></div>
+ <p class="small" style="text-align:left;font-size:14px;color:#555;margin-top:10px">After the free month, $2.99/month. Cancel anytime in Settings › Apple Account › Subscriptions.</p>
+ ${conflict?`<div class="banner"><b>⚠︎</b><span>This subscription is already used by another sync account. <a style="color:var(--blue);font-weight:600">Contact Support</a></span></div>`:''}
+ ${btn(eligible?'Try It Free':'Subscribe','p',conflict?'':'S3pay'+(eligible?'':'n'))}
+ ${btn('Restore Purchases','s',conflict?'':'S4a')}
+ <div class="small"><a>Terms of Use</a> · <a>Privacy Policy</a></div>`;
+ return s1(sheet({left:['Cancel','S1']},inner));
+}
+function s3pay(eligible){
+ const over=`<div class="dim" style="z-index:7"></div><div class="sheet short white" style="z-index:8"><div class="grab"></div><div class="as" style="padding-top:30px">
+ <div class="ai">T</div><h4>Thought Reps Sync</h4><p>${eligible?'1 month free, then $2.99/month. Renews automatically.':'$2.99/month. Renews automatically.'}</p>
+ <div class="opt"><div>Account<em>nick@icloud.com</em></div><div>${eligible?'Due today':'Price'}<em>${eligible?'$0.00':'$2.99'}</em></div></div>
+ <div style="margin:18px 0 0;font-size:34px;color:var(--blue)">◉</div><p style="font-size:13px">Double-click to ${eligible?'Subscribe':'Pay'}</p>
+ <div class="btn p" style="margin-top:14px" ${g('S4a')}>Confirm</div><div class="btn s" ${g(eligible?'S3a':'S3b')}>Cancel</div></div></div>`;
+ return s1(over);
+}
+
+/* ---------- S4 ---------- */
+const s4a=()=>wrap({nav:nav({title:'Sync'}),body:`<div style="margin-top:210px;text-align:center"><div class="spin"></div><p style="margin-top:16px;color:#555">Setting up sync…</p><div class="btn s sm" ${g('S4')} style="margin-top:50px">Continue (mock)</div></div>`});
+function s4(on){
+ return wrap({nav:nav({title:'Sync'}),body:`
+ <div class="hero" style="padding-top:20px"><div class="tile" style="width:64px;height:64px;border-radius:16px;background:var(--blue);font-size:32px">⚿</div>
+ <h2>Keep your sync key safe</h2>
+ <p>Your thoughts are locked with a key that only your devices have. If you lose every device, you'll need this key to get them back.</p></div>
+ ${sec('',row('Save in iCloud Keychain',{sw:on,swgo:on?'S4b':'S4'}),'Your other devices signed in to this Apple Account can join without a code.')}
+ ${sec('',row('Show Recovery Code',{go:on?'S8a':'S8aSetup',cls:'blue'}))}
+ ${on?'':`<div class="small" style="color:var(--orange)">Show and confirm your recovery code to continue.</div>`}
+ ${btn('Continue',on?'p':'p dis',on?'S7b':'')}`});
+}
+
+/* ---------- S5 join ---------- */
+function joinPrompt(next){
+ return s1(`<div class="dim"></div>`+alertBox('Join this sync vault?','Thoughts from your other devices will be added to this iPhone.',[['Not Now','S1'],['Join',next]]));
+}
+const s5unlock=()=>wrap({nav:nav({back:['Sync','S1'],title:'Sync'}),body:`
+ <div class="hero" style="padding-top:30px"><div class="tile" style="width:64px;height:64px;border-radius:16px;background:var(--blue);font-size:32px">⚿</div>
+ <h2>Unlock your synced thoughts</h2><p>This Apple Account already syncs thoughts from another device. To read them here, use that device to add this one.</p></div>
+ ${btn('Scan QR Code','p','S6c')}${btn('Enter Recovery Code','g','S6b')}
+ <div style="height:60px"></div>${btn('Lost your key? Start over','s','S5lost')}`});
+const s5lost=()=>wrap({nav:nav({back:['Back','S5c'],title:'Sync'}),over:alertBox('Start over?','This deletes your sync account and the thoughts synced to our server, then creates a new one. Thoughts on your devices stay. Your subscription is restored onto the new account.',[['Delete and Start Over','S3a','red'],['Cancel','S5c','bold']],true),body:`<div></div>`});
+const mergePrompt=()=>s1(`<div class="dim"></div>`+alertBox('Join this sync vault?','This iPad has 120 thoughts. Merge them with your synced thoughts, or erase this iPad first?',[['Merge','S7a'],['Erase This iPad First…','S5e','red'],['Cancel','S1','bold']],true));
+const erasePrompt=()=>s1(`<div class="dim"></div>`+alertBox('Erase this iPad?','This permanently deletes the 120 thoughts on this iPad, then joins the vault. This can\'t be undone.',[['Erase and Join','S7b','red'],['Cancel','S5d','bold']],true));
+const limit=()=>wrap({nav:nav({back:['Sync','S7a'],title:'Add a Device'}),body:`<div class="banner" style="margin-top:18px"><b>⚠︎</b><span>You're syncing 3 devices, the most this plan allows. Remove one to add another.</span></div>${btn('Manage Devices','p','S7dev')}`});
+
+/* ---------- S6 ---------- */
+const s6a=()=>wrap({nav:nav({back:['Sync','S1'],title:'Join Sync'}),body:`<p class="small" style="font-size:14px;margin-top:12px">Join a vault from another device without signing in. The vault's account must have an active subscription.</p>
+ ${btn('Scan QR Code','p','S6c')}${btn('Enter Recovery Code','g','S6b')}`});
+const s6c=()=>wrap({nav:nav({left:['Cancel','S6a'],title:'Scan QR Code'}),body:`<div class="cam"></div><p class="small" style="font-size:14px">On your other device, open Settings › Sync › Add a Device, then point this camera at the code.</p>${btn('Enter Recovery Code Instead','s','S6b')}<div class="btn s sm" style="display:block" ${g('S5a')}>(mock) QR scanned</div>`});
+function groups(n,bad){const g4=['K7QM','4TX9','HB2V','R0ZN','8JDC','W5EA','FP3G','Y6SH','MN1T','XQ9B','D4VK','37CZ','JRHE','A8W2','TLP5','G0YN','6BMF','Q3XD','V9KS','E2R7'];return g4.slice(0,n)}
+function s6b(kind){
+ const valid=kind==='valid';
+ const gs=groups(20);
+ let text=valid?gs.join(' '):gs.slice(0,9).join(' ')+' <span class="x">I0O1</span> '+gs.slice(10,14).join(' ');
+ return wrap({nav:nav({back:['Back','S6a'],title:'Enter Recovery Code',right:['Join',valid?'S5a':'','' +(valid?'':'dim')]}),body:`
+ <p class="small" style="font-size:14px;text-align:left;margin-top:6px">Enter the 80-character recovery code. Spaces and dashes are fine.</p>
+ <div class="entry ${valid?'ok':'bad'}">${text}${valid?'':'<span class="cur"></span>'}</div>
+ ${valid?`<div class="f" style="font-size:13px;color:var(--green);margin:8px 16px">✓ 20 of 20 groups, checksum matches</div>`:`<div class="f" style="font-size:13px;color:var(--red);margin:8px 16px">That code doesn't look right. Check each group of four.</div>`}
+ ${valid?btn('Join','p','S5a'):btn('Join','p dis','')}
+ ${valid?'':`<div class="btn s sm" style="display:block" ${g('S6bv')}>(mock) show a valid code</div>`}`});
+}
+
+/* ---------- S7 ---------- */
+const devs=(extra)=>sec('Devices (2 of 3)',
+  row('This iPhone',{sub:'Last synced just now',go:'S7dev',tile:['▯','#8e8e93'],cls:'ic'})+
+  row('Nick’s iPad',{sub:'Last synced 3 hours ago',go:'S7dev',tile:['▭','#8e8e93'],cls:'ic'})+
+  row('Add a Device…',{cls:'blue',go:'S7qr'}),extra||'');
+const storage=(pct)=>`<div class="sec"><h3>Storage</h3><div class="grp"><div class="meter"><div class="lab">${pct>90?'950 MB':'312 MB'} of 1 GB used</div><div class="bar ${pct>90?'warn':''}"><i style="width:${pct}%"></i></div></div></div>${pct>90?'<div class="f">Almost full. Thoughts with new images will wait until space is freed.</div>':''}</div>`;
+const keySec=()=>sec('Sync Key',row('Save in iCloud Keychain',{sw:true})+row('Show Recovery Code',{go:'S8a'}));
+const subSec=(t)=>sec('Subscription',row(t)+row('Manage Subscription',{go:''})+row('Restore Purchases',{cls:'blue',go:''}));
+const leave=()=>sec('',row('Turn Off Sync on This iPhone',{cls:'destr',go:'S7off'})+row('Erase This iPhone and Leave',{cls:'destr',go:'S7erase'})+row('Delete Sync Account…',{cls:'destr',go:'S7del'}));
+function statusScreen(o){
+ const head=`<div class="sh"><div class="sym" style="background:${o.col||'var(--green)'}">${o.sym||'✓'}</div><div class="l1">${o.l1}</div>${o.l2?`<div class="l2">${o.l2}</div>`:''}${o.prog!==undefined?`<div class="bar"><i style="width:${o.prog}%"></i></div>`:''}${o.act?`<div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">${o.act.map((a,i)=>`<div class="btn sm ${i?'g':'p'}" ${g(a[1])}>${a[0]}</div>`).join('')}</div>`:''}</div>`;
+ return wrap({nav:nav({back:['Settings',o.dot?'set-attn':'set-off'],title:'Sync'}),tab:'',over:o.over||'',body:head+devs()+storage(o.pct||26)+keySec()+subSec(o.sub||'$2.99/month, renews Dec 3')+leave()+(o.held?`<div class="small" style="margin-top:8px">${o.held}</div>`:'<div style="height:10px"></div>')});
+}
+const S7={
+ a:()=>statusScreen({l1:'Up to date',l2:'Last synced 2 minutes ago',sub:'Free trial until Dec 3'}),
+ b:()=>statusScreen({sym:'↑',col:'var(--blue)',l1:'Uploading 1,240 of 4,800 thoughts',prog:26,l2:'You can keep using the app. Sync continues when you come back to it.',sub:'Free trial until Dec 3'}),
+ off:()=>statusScreen({sym:'⌁',col:'var(--sec)',l1:'Waiting for a connection',l2:'We’ll try again when you’re back online.'}),
+ c1:()=>statusScreen({sym:'!',col:'var(--orange)',l1:'Sync is paused. Your subscription ended.',l2:'Your synced copy will be deleted on Jan 2. Everything on this iPhone stays.',act:[['Resubscribe','S3b']],sub:'Ends Dec 3 (won’t renew)',dot:1}),
+ c2:()=>statusScreen({sym:'!',col:'var(--orange)',l1:'Your synced copy was removed after the subscription ended. Everything on this iPhone is safe.',act:[['Resubscribe to upload again','S3b']],sub:'Ended Dec 3',dot:1}),
+ c3:()=>statusScreen({sym:'↺',col:'var(--orange)',l1:'Sync was reset from another device.',act:[['Upload this iPhone’s thoughts','S7a'],['Turn off sync','S7off']],dot:1}),
+ c4:()=>statusScreen({sym:'!',col:'var(--orange)',l1:'Storage is full. 12 thoughts are waiting.',act:[['Manage subscription','']],pct:100,dot:1}),
+ c5:()=>statusScreen({sym:'!',col:'var(--orange)',l1:'Some thoughts came from a newer version of Thought Reps.',act:[['Open App Store','']],dot:1}),
+ c6:()=>statusScreen({sym:'✕',col:'var(--red)',l1:'This iPhone was removed from sync.',act:[['Turn off sync','S7off']],dot:1}),
+ c7:()=>statusScreen({sym:'!',col:'var(--red)',l1:'Sync stopped. Try again later or contact support.',act:[['Contact Support','']],dot:1}),
+ c8:()=>statusScreen({l1:'Up to date',l2:'Last synced 2 minutes ago',held:'3 thoughts couldn’t sync yet.',sub:'$2.99/month, renews Dec 3'}),
+};
+function statusOver(over){return statusScreen({l1:'Up to date',l2:'Last synced 2 minutes ago',sub:'Free trial until Dec 3',over});}
+const s7rename=()=>statusOver(alertBox('Rename Device','Choose a name for this device.',[['Cancel','S7a'],['Save','S7a']],false,'Nick’s iPad'));
+const s7dev=()=>statusOver(alertBox('Nick’s iPad','Last synced 3 hours ago.',[['Rename…','S7rename'],['Remove from Sync…','S7remove'],['Cancel','S7a','bold']],true));
+const s7remove=()=>statusOver(alertBox('Remove Nick’s iPad?','It stops syncing and can’t read new changes. Thoughts already on it stay there.',[['Remove','S7a','red'],['Cancel','S7a','bold']],true));
+const s7qr=()=>{
+ let cells='';const seed=[...'thoughtreps-pair'].reduce((a,c)=>a*31+c.charCodeAt(0)>>>0,7);let s=seed;
+ const fin=(x,y)=>{const f=(a,b)=>a<7&&b<7||a>17&&b<7||a<7&&b>17;return f(x,y)};
+ for(let y=0;y<25;y++)for(let x=0;x<25;x++){let on;
+  if(fin(x,y)){const lx=x%18,ly=y%18;on=!(lx>0&&lx<6&&ly>0&&ly<6)||(lx>1&&lx<5&&ly>1&&ly<5)}
+  else{s=(s*1664525+1013904223)>>>0;on=s>>>29>2?s>>>31&1:s>>>28&1}
+  cells+=`<i class="${on?'':'w'}"></i>`}
+ const body=`<div class="qr">${cells}</div><p class="small" style="font-size:14px;margin-top:16px">Open Thought Reps on your other device, go to Settings › Sync, and scan this code.</p><p class="small">Only scan this with your own devices.</p>`;
+ return statusScreen({l1:'Up to date',l2:'Last synced 2 minutes ago',sub:'Free trial until Dec 3',over:sheet({title:'Add a Device',right:['Done','S7a']},body)});
+};
+const confirm=(t,m,a,dest)=>statusOver(alertBox(t,m,a,true));
+const s7off=()=>confirm('Turn off sync on this iPhone?','Your thoughts stay on this iPhone. The key copy in iCloud Keychain stays, so you can come back.',[['Turn Off Sync','set-off','red'],['Cancel','S7a','bold']]);
+const s7erase=()=>confirm('Erase this iPhone and leave?','This removes this iPhone from sync, then erases its thoughts. Your synced copy and other devices keep theirs.',[['Continue…','S7erase2','red'],['Cancel','S7a','bold']]);
+const s7erase2=()=>confirm('Erase all thoughts on this iPhone?','This can’t be undone.',[['Erase and Leave','set-off','red'],['Cancel','S7a','bold']]);
+const s7del=()=>confirm('Delete sync account?','This deletes your synced thoughts from our server and stops sync on every device. Thoughts on your devices stay. Your App Store subscription isn’t cancelled by this; manage it in Settings.',[['Delete Sync Account','S7del2','red'],['Cancel','S7a','bold']]);
+const s7del2=()=>confirm('Sign in again to continue','Deleting your account needs a fresh Sign in with Apple.',[['Continue with Apple','set-off'],['Cancel','S7a','bold']]);
+
+/* ---------- S8 ---------- */
+function s8(stage,fromSetup){
+ const back=fromSetup?['Back','S4']:['Sync','S7a'];
+ const auth=stage==='auth'?`<div class="faceid"><div><b>◉</b>Face ID<br><span style="color:#777">to show your recovery code</span><div class="btn s" style="margin:12px 0 0;padding:6px" ${g(fromSetup?'S8setup':'S8b')}>(mock) Authenticated</div></div></div>`:'';
+ const gs=groups(20).map((x,i)=>`<span><em>${i+1}</em>${x}</span>`).join('');
+ const body=stage==='auth'?'':`
+  <div class="code" style="margin-top:10px">${gs}</div>
+  <div style="display:flex;gap:8px;margin-top:14px">${['Copy','Save to Files','Print'].map(t=>`<div class="btn g" style="flex:1;margin:0;font-size:14px;padding:11px 4px">${t}</div>`).join('')}</div>
+  <div class="small" style="text-align:left;font-size:13px">Anyone with this code can read your synced thoughts. Keep it somewhere safe and private.</div>
+  ${fromSetup?btn('I’ve Saved It','p','S4c'):''}`;
+ return wrap({nav:nav({back,title:'Recovery Code'}),over:auth,body});
+}
+const s4c=()=>wrap({nav:nav({title:'Sync'}),body:`
+ <div class="hero" style="padding-top:20px"><div class="tile" style="width:64px;height:64px;border-radius:16px;background:var(--blue);font-size:32px">⚿</div>
+ <h2>Keep your sync key safe</h2><p>Your thoughts are locked with a key that only your devices have. If you lose every device, you'll need this key to get them back.</p></div>
+ ${sec('',row('Save in iCloud Keychain',{sw:false,swgo:'S4'}),'Your other devices signed in to this Apple Account can join without a code.')}
+ ${sec('',row('Show Recovery Code',{go:'S8aSetup',cls:'blue'}))}
+ <div class="small" style="color:var(--green)">Recovery code saved.</div>${btn('Continue','p','S7b')}`});
+
+/* ---------- S9 ---------- */
+const s9=()=>phone(`<div class="tl screen" style="flex:1;display:flex;flex-direction:column;height:100%">
+ <div class="nav" style="background:#f4efe6"><div></div><div class="t" style="font-family:var(--font)">Timeline</div><div class="r" style="color:var(--blue)">＋</div></div>
+ <div class="body" style="padding-top:8px">
+ <div class="card notice" ${g('set-attn')}><span class="x" ${g('S9')}>×</span><b>Sync is paused.</b><p>Your synced copy will be deleted on Jan 2.</p><div class="go">Open Settings › Sync ›</div></div>
+ <div class="card"><p>The best way to remember something is to explain it to someone who doesn't know it yet.</p><div class="m"><span>#learning</span><span>7 days</span></div></div>
+ <div class="card"><p>Ask what the decision would look like if it were easy.</p><div class="m"><span>#decisions</span><span>7 days</span></div></div>
+ <div class="card"><p>Notes from the call: follow up with Sam about the pricing doc before Thursday.</p><div class="m"><span>#work</span><span>3 days</span></div></div></div>
+ <div class="tabs" style="background:#f4efe6"><div class="on"><u>◔</u>Timeline</div><div><u>⌕</u>Search</div><div><u>⚙︎</u>Settings<span class="dot"></span></div></div></div>`);
+
+/* ---------- registry ---------- */
+const SCREENS=[
+ ['Turn on','set-off','Settings row: Off','Settings · Sync row, Off. Tapping the row pushes SyncSettingsView, which shows S1 while sync is off.',()=>settings(syncRowOf('Off','','S1'),false),'S1'],
+ ['Turn on','set-up','Settings row: Uploading','Settings · Sync row while the first upload runs ("Up to date" once finished). Pushes S7.',()=>settings(syncRowOf('Uploading 1,240 of 4,800','','S7b'),false),'S7b'],
+ ['Turn on','set-attn','Settings row: Needs attention','Settings · Sync row when the engine needs the user; red dot also on the Settings tab. Pushes S7 with the matching attention state.',()=>settings(syncRowOf('⚠︎ Needs attention','red','S7c1'),true),'S7c1'],
+ ['Turn on','S1','Sync off','Pushed by the Settings › Sync row while sync is off.',()=>s1(),'S2'],
+ ['Turn on','S2','Sign in with Apple','"Continue with Apple" on S1. Native sheet, scope .email only.',()=>s2(),'S3a'],
+ ['Turn on','S2b','Sign in: network error','Network failure after S2; inline banner with Try Again. Cancel returns to S1 silently.',()=>s2b(),'S2'],
+ ['Turn on','S2c','Sign in: App Attest unsupported','App Attest unavailable (old or jailbroken device).',()=>s2c(),null],
+ ['Turn on','S3a','Subscribe: eligible for trial','After sign-in when GET /entitlement says none, expired or revoked and the user is eligible for the intro offer.',()=>s3full(true),'S3pay'],
+ ['Turn on','S3pay','StoreKit purchase sheet','"Try It Free" on S3a. Apple\'s own sheet; approximated here.',()=>s3pay(true),'S4a'],
+ ['Turn on','S3b','Subscribe: not eligible','Same sheet when isEligibleForIntroOffer is false ("Subscribe"). Also reached from Resubscribe actions.',()=>s3full(false),'S3payn'],
+ ['Turn on','S3payn','StoreKit purchase sheet (no trial)','"Subscribe" on S3b.',()=>s3pay(false),'S4a'],
+ ['Turn on','S3c','Subscribe: used by another account','POST /entitlement returns 409 subscription_other_account.',()=>s3full(true,true),null],
+ ['Turn on','S4a','Setting up sync','After purchase (or active entitlement): vault creation spinner.',()=>s4a(),'S4'],
+ ['Turn on','S4','Key safety: Keychain on','Vault created. Toggle on by default, Continue enabled.',()=>s4(true),'S7b'],
+ ['Turn on','S4b','Key safety: Keychain off','Toggle switched off: Continue disabled until the recovery code is shown and confirmed.',()=>s4(false),'S8aSetup'],
+ ['Second device','S5a','Join prompt','Account has a vault and the key is in iCloud Keychain (or a QR/code was accepted).',()=>joinPrompt('S5d'),'S5d'],
+ ['Second device','S5d','Join prompt: merge or erase','Joining on a device that already has thoughts (Sync Spec §9).',()=>mergePrompt(),'S7a'],
+ ['Second device','S5e','Erase confirm','"Erase This iPad First…": second destructive confirm; runs only after pairing succeeds.',()=>erasePrompt(),'S7b'],
+ ['Second device','S5c','Unlock your synced thoughts','Account has a vault but no key in iCloud Keychain.',()=>s5unlock(),'S6c'],
+ ['Second device','S5lost','Lost key: Start over','"Lost your key? Start over" (open question 2, option a).',()=>s5lost(),'S3a'],
+ ['Second device','S5f','Device limit reached','409 device_limit on the invite, shown on the inviting device.',()=>limit(),'S7dev'],
+ ['Second device','S7qr','Add a Device (QR)','"Add a Device…" on the status screen (SyncInviteSheet).',()=>s7qr(),'S7a'],
+ ['Join without sign-in','S6a','Join: choose method','"Join with a QR code or recovery code" on S1.',()=>s6a(),'S6c'],
+ ['Join without sign-in','S6c','Scan QR code','"Scan QR Code" (camera).',()=>s6c(),'S5a'],
+ ['Join without sign-in','S6b','Recovery code: invalid','"Enter Recovery Code"; checksum fails as you type, before any network call.',()=>s6b('bad'),'S6bv'],
+ ['Join without sign-in','S6bv','Recovery code: valid','All 80 characters entered and the checksum matches.',()=>s6b('valid'),'S5a'],
+ ['Status & attention','S7a','S7 Up to date','Sync on and idle. Pushed from the Settings row.',()=>S7.a(),null],
+ ['Status & attention','S7b','S7 First upload','First sync in progress; progress bar and count only.',()=>S7.b(),null],
+ ['Status & attention','S7w','S7 Waiting for connection','Offline or retrying.',()=>S7.off(),null],
+ ['Status & attention','S7c1','Attn: subscription ended','402 subscription_required with purgeAt.',()=>S7.c1(),'S3b'],
+ ['Status & attention','S7c2','Attn: removed after lapse','Epoch changed after a purge.',()=>S7.c2(),'S3b'],
+ ['Status & attention','S7c3','Attn: reset from other device','Epoch changed after another device\'s erase.',()=>S7.c3(),'S7a'],
+ ['Status & attention','S7c4','Attn: storage full','413 storage full (quotaExceededThoughts).',()=>S7.c4(),null],
+ ['Status & attention','S7c5','Attn: update required','updateRequired.',()=>S7.c5(),null],
+ ['Status & attention','S7c6','Attn: removed by other device','Server answers 401/403 for this device.',()=>S7.c6(),'set-off'],
+ ['Status & attention','S7c7','Attn: server refused','Other serverRefused.',()=>S7.c7(),null],
+ ['Status & attention','S7c8','Held thoughts (footer)','Oversized, missing attachments or blobs: footer only, no action.',()=>S7.c8(),null],
+ ['Status & attention','S7dev','Device actions','Tap a device row.',()=>s7dev(),'S7rename'],
+ ['Status & attention','S7rename','Rename device','"Rename…" from device actions.',()=>s7rename(),'S7a'],
+ ['Status & attention','S7remove','Remove device','"Remove from Sync…" from device actions.',()=>s7remove(),'S7a'],
+ ['Status & attention','S7off','Leave: Turn Off Sync','"Turn Off Sync on This iPhone".',()=>s7off(),'set-off'],
+ ['Status & attention','S7erase','Leave: Erase and Leave','"Erase This iPhone and Leave", first confirm.',()=>s7erase(),'S7erase2'],
+ ['Status & attention','S7erase2','Leave: second confirm','Second confirm of erase-and-leave.',()=>s7erase2(),'set-off'],
+ ['Status & attention','S7del','Delete Sync Account','"Delete Sync Account…" confirm.',()=>s7del(),'S7del2'],
+ ['Status & attention','S7del2','Delete: re-authenticate','Server answers reauthentication_required.',()=>s7del2(),'set-off'],
+ ['Recovery','S8a','S8 Face ID gate','"Show Recovery Code" on S7 (Face ID, Touch ID or passcode).',()=>s8('auth',false),'S8b'],
+ ['Recovery','S8b','S8 Recovery code','After authentication. Copy, Save to Files, Print.',()=>s8('code',false),null],
+ ['Recovery','S8aSetup','S8 from key safety: gate','"Show Recovery Code" on S4 with Keychain off.',()=>s8('auth',true),'S8setup'],
+ ['Recovery','S8setup','S8 from key safety: code','Same screen with "I\'ve Saved It" to confirm and return.',()=>s8('code',true),'S4c'],
+ ['Recovery','S4c','Key safety: code confirmed','Back on S4 after "I\'ve Saved It": Continue enabled.',()=>s4c(),'S7b'],
+ ['Lapse','S9','S9 Timeline lapse card','After a lapse: dismissible card on top of the Timeline; weekly, daily in the last 7 days.',()=>s9(),'set-attn'],
+];
+const ID={};SCREENS.forEach((s,i)=>ID[s[1]]=i);
+
+function render(id){
+ if(!(id in ID))return;
+ const s=SCREENS[ID[id]];
+ document.getElementById('stage').innerHTML=s[4]();
+ document.getElementById('cap').innerHTML='<b>'+s[1]+'</b> · '+s[2]+'<br>'+s[3];
+ const i=ID[id];
+ document.getElementById('nextprev').textContent=(i+1)+' / '+SCREENS.length;
+ document.querySelectorAll('#side a').forEach(a=>a.classList.toggle('on',a.dataset.id===id));
+ const on=document.querySelector('#side a.on');if(on)on.scrollIntoView({block:'nearest'});
+ if(location.hash!=='#'+id)history.replaceState(null,'','#'+id);
+}
+function buildSide(){
+ let h='<h1>Sync Setup Mockups</h1><p class="note">Click a screen, or tap buttons on the phone to follow the flow. Mock data only.</p>',grp='';
+ SCREENS.forEach(s=>{if(s[0]!==grp){grp=s[0];h+=`<h2>${grp}</h2>`}h+=`<a data-id="${s[1]}"><b>${s[1].replace(/^S7c(\d)/,'S7·$1')}</b>${s[2]}</a>`});
+ document.getElementById('side').innerHTML=h;
+}
+buildSide();
+document.addEventListener('click',e=>{
+ const a=e.target.closest('#side a');if(a){render(a.dataset.id);return}
+ const t=e.target.closest('[data-go]');if(!t)return;
+ const id=t.getAttribute('data-go');
+ if(id in ID)render(id);
+});
+render(location.hash.slice(1) in ID?location.hash.slice(1):'set-off');
+</script>
+</body>
+</html>
