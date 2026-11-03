@@ -8,7 +8,7 @@ set -euo pipefail
 STACK_NAME="ThoughtReps-prod-Share"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST="$REPO_ROOT/transfer-web/dist"
-AWS_ARGS=(--profile "${AWS_PROFILE:-thoughtreps-prod-legacy}" --region us-east-1)
+AWS_ARGS=(--profile "${AWS_PROFILE:-thoughtreps-prod}" --region us-east-1)
 
 get_output() {
   aws cloudformation describe-stacks \
@@ -24,8 +24,8 @@ DISTRIBUTION_ID=$(get_output TransferDistributionId)
 
 # `get_output` exits 0 with an empty string when a key is absent; guard before
 # syncing so a missing output can't turn into a sync to a bogus bucket.
-: "${SITE_BUCKET:?TransferSiteBucketName not found on $STACK_NAME — deploy infra first}"
-: "${DISTRIBUTION_ID:?TransferDistributionId not found on $STACK_NAME — deploy infra first}"
+: "${SITE_BUCKET:?TransferSiteBucketName not found on $STACK_NAME — deploy it from thoughtreps-aws first}"
+: "${DISTRIBUTION_ID:?TransferDistributionId not found on $STACK_NAME — deploy it from thoughtreps-aws first}"
 
 echo "==> Building @thoughtreps/transfer-web"
 pnpm --filter @thoughtreps/transfer-web build

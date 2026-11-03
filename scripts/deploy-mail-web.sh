@@ -9,7 +9,7 @@ set -euo pipefail
 STACK_NAME="ThoughtReps-prod-Mail"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST="$REPO_ROOT/infra/mail-web/dist"
-AWS_ARGS=(--profile "${AWS_PROFILE:-thoughtreps-prod-legacy}" --region us-east-1)
+AWS_ARGS=(--profile "${AWS_PROFILE:-thoughtreps-prod}" --region us-east-1)
 
 get_output() {
   aws cloudformation describe-stacks \
@@ -33,14 +33,14 @@ API_URL=$(get_output ApiUrl)
 # VITE_* values that is worse than a failed command: vite happily bakes an
 # empty string into the bundle, so the deploy "succeeds" and ships a UI whose
 # login or S3 reads are silently broken. Guard everything before the build.
-: "${MAIL_WEB_BUCKET:?MailWebBucketName not found on $STACK_NAME — deploy infra first}"
-: "${MAIL_WEB_DISTRIBUTION_ID:?MailWebDistributionId not found on $STACK_NAME — deploy infra first}"
-: "${USER_POOL_ID:?UserPoolId not found on $STACK_NAME — deploy infra first}"
-: "${USER_POOL_CLIENT_ID:?UserPoolClientId not found on $STACK_NAME — deploy infra first}"
-: "${IDENTITY_POOL_ID:?IdentityPoolId not found on $STACK_NAME — deploy infra first}"
-: "${MAIL_BUCKET:?MailBucketName not found on $STACK_NAME — deploy infra first}"
-: "${MAILBOX_ADDRESSES:?MailboxAddresses not found on $STACK_NAME — deploy infra first}"
-: "${API_URL:?ApiUrl not found on $STACK_NAME — deploy infra first}"
+: "${MAIL_WEB_BUCKET:?MailWebBucketName not found on $STACK_NAME — deploy it from thoughtreps-aws first}"
+: "${MAIL_WEB_DISTRIBUTION_ID:?MailWebDistributionId not found on $STACK_NAME — deploy it from thoughtreps-aws first}"
+: "${USER_POOL_ID:?UserPoolId not found on $STACK_NAME — deploy it from thoughtreps-aws first}"
+: "${USER_POOL_CLIENT_ID:?UserPoolClientId not found on $STACK_NAME — deploy it from thoughtreps-aws first}"
+: "${IDENTITY_POOL_ID:?IdentityPoolId not found on $STACK_NAME — deploy it from thoughtreps-aws first}"
+: "${MAIL_BUCKET:?MailBucketName not found on $STACK_NAME — deploy it from thoughtreps-aws first}"
+: "${MAILBOX_ADDRESSES:?MailboxAddresses not found on $STACK_NAME — deploy it from thoughtreps-aws first}"
+: "${API_URL:?ApiUrl not found on $STACK_NAME — deploy it from thoughtreps-aws first}"
 
 export VITE_COGNITO_USER_POOL_ID="$USER_POOL_ID"
 export VITE_COGNITO_CLIENT_ID="$USER_POOL_CLIENT_ID"

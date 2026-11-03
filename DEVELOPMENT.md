@@ -122,12 +122,11 @@ Before uploading a build to App Store Connect (TestFlight or release), check eve
 
 ## Web and infrastructure
 
-The landing site (`site-landing/`), the CDK app (`infra/`), the mail inbox UI (`infra/mail-web/`) and the export download page (`transfer-web/`) are a pnpm workspace (Node 24+, pnpm 11) separate from the iOS app. What's deployed is recorded in [INTEGRATIONS.md](INTEGRATIONS.md); infra rules are in `infra/CLAUDE.md`.
+The landing site (`site-landing/`), the mail inbox UI (`infra/mail-web/`) and the export download page (`transfer-web/`) are a pnpm workspace (Node 24+, pnpm 11) separate from the iOS app. The AWS side (stacks, Lambdas, DNS, mail) lives in `~/dev/thoughtreps-aws`; `infra/` here keeps only the two shared files the frontends import (see `infra/CLAUDE.md`). [INTEGRATIONS.md](INTEGRATIONS.md) says where things run.
 
 ```sh
 pnpm install
 pnpm test && pnpm typecheck && pnpm lint && pnpm format:check   # repo root
-cd infra && npx cdk synth -c env=prod
 ```
 
 Local dev: `pnpm --filter @thoughtreps/site-landing dev` (likewise `@thoughtreps/transfer-web`; `/help` only exists in the built output, since dev has no client router: preview with `pnpm --filter @thoughtreps/site-landing build` and a static server on `dist/`; it needs no env, but a real link needs a deployed Share stack and a device-made export). For the mail UI, copy `infra/mail-web/.env.example` to `.env.local` and fill in the `VITE_*` values from the Mail stack outputs.
@@ -136,23 +135,8 @@ Local dev: `pnpm --filter @thoughtreps/site-landing dev` (likewise `@thoughtreps
 
 `site-landing/src/content/help.ts` (/help) and `blog.ts` (/blog) share one section format and inline syntax. Help: keep `related` slugs pointing at existing articles and link new articles to and from related ones; casual, plain voice (a Flesch-Kincaid test caps each article; blog caps at grade 7); refer to icons with `{icon:name}` tokens; when a UI label or screen changes, update or add the matching `example` mockup in `HelpExamples.tsx` (real labels and states from the Swift app). New icon glyphs come only from Lucide, and `site-landing/public/third-party-licenses.txt` (and `transfer-web/public/`'s) stays current. Tests enforce title (<=70) and description (<=160) lengths. The sitemap, robots.txt, per-page SEO and JSON-LD (`BlogPosting` for the blog), and the Open Graph tags and link-preview cards (`og/*.png`, rendered by `src/og-image.tsx` at prerender) generate from `help.ts`, so don't hand-edit them. Each article's "Updated" date is its newest line in `git blame` at prerender (`content/helpDates.ts`), so deploy from committed changes. Blog: essays first, mention the app lightly and only for what it ships; check historical or factual claims before publishing.
 
-### Deploying (manual, no CI)
+### Deploying site content
 
-The AWS account is shared with strands prod, so only touch `ThoughtReps-prod-*` stacks. Use `--profile thoughtreps-prod-legacy`; cdk's "could not assume cdk-hnb659fds-*-role ... Proceeding anyway" warnings are harmless (the profile is the root user).
+The stacks are deployed by the thoughtreps-aws pipeline into the prod account (038635648573). This repo deploys only content: `scripts/deploy-landing.sh`, `scripts/deploy-mail-web.sh` and `scripts/deploy-transfer-web.sh` build, sync to S3 and invalidate CloudFront, reading the prod stacks' outputs. `AWS_PROFILE` defaults to `thoughtreps-prod` (sign in with `aws sso login --sso-session thoughtreps`).
 
-1. `cd infra && npx cdk deploy prod/DnsStack -c env=prod --profile thoughtreps-prod-legacy` (done 2026-10-05).
-2. Set the zone's nameservers at the registrar (listed in INTEGRATIONS.md) and wait until `dig NS thoughtreps.com +short` shows them. ACM certs and SES verification need the delegation.
-3. `npx cdk deploy "prod/*" -c env=prod --profile thoughtreps-prod-legacy`. Quote the pattern; `--all` doesn't reach Stage-nested stacks.
-4. `scripts/deploy-landing.sh`, `scripts/deploy-mail-web.sh` and `scripts/deploy-transfer-web.sh` build, sync to S3 and invalidate CloudFront, reading the stack outputs (`AWS_PROFILE` defaults to `thoughtreps-prod-legacy`).
-5. Create the Cognito user (self-signup is off), with `UserPoolId` from the Mail stack outputs:
-
-   ```sh
-   aws cognito-idp admin-create-user --user-pool-id <UserPoolId> --username you@example.com --user-attributes Name=email,Value=you@example.com Name=email_verified,Value=true --message-action SUPPRESS --profile thoughtreps-prod-legacy
-   aws cognito-idp admin-set-user-password --user-pool-id <UserPoolId> --username you@example.com --password '<password>' --permanent --profile thoughtreps-prod-legacy
-   ```
-
-6. Send a test mail to hello@thoughtreps.com; confirm it lands in the mail bucket and forwards.
-
-Then update INTEGRATIONS.md with the new status and output values.
-
-To add a mailbox, edit `mailboxAddresses`/`forwardTo` in `infra/lib/env-config.ts`, redeploy Mail, and rerun `deploy-mail-web.sh` (it reads the `MailboxAddresses` output, so there is no separate `VITE_` edit).
+Mailboxes, the Cognito user and everything else about the stacks are in the thoughtreps-aws README ("Prod mail and DNS"). After adding a mailbox there, rerun `deploy-mail-web.sh`: it reads the `MailboxAddresses` output, so there is no separate `VITE_` edit.

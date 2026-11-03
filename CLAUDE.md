@@ -1,6 +1,6 @@
 # Thought Reps
 
-Local-first iPhone and iPad app: write a Markdown thought, and it resurfaces on the timeline after an interval (7 days by default). Specs, plans and mockups live in `designs/` (new specs go there too); `landing/` is static landing-page prototypes (not shipped; `site-landing/` is the real landing site, a port of `landing/7-ink.html`, plus the prerendered help center at /help, the blog at /blog, and the privacy policy at /privacy and the support page at /support). `infra/` is the CDK app (landing hosting, DNS, email at hello@thoughtreps.com), `infra/mail-web/` the inbox UI, and `transfer-web/` the one-time export download page; see `infra/CLAUDE.md`. `content-pipeline/` holds unpublished blog and free-tool (printables) ideas and drafts (workflow in its `README.md`). `app-store-assets/` holds App Store product page and search creative, one folder per slot (regeneration steps in each slot's `README.md`). What's deployed in AWS is recorded in `INTEGRATIONS.md`. The sync server lives in the separate `~/dev/thoughtreps-aws` repo. Setup and commands are in README.md and DEVELOPMENT.md.
+Local-first iPhone and iPad app: write a Markdown thought, and it resurfaces on the timeline after an interval (7 days by default). Specs, plans and mockups live in `designs/` (new specs go there too); `landing/` is static landing-page prototypes (not shipped; `site-landing/` is the real landing site, a port of `landing/7-ink.html`, plus the prerendered help center at /help, the blog at /blog, and the privacy policy at /privacy and the support page at /support). `infra/mail-web/` is the inbox UI and `transfer-web/` the one-time export download page; `infra/` otherwise holds only two files copied from `~/dev/thoughtreps-aws` (see `infra/CLAUDE.md`). `content-pipeline/` holds unpublished blog and free-tool (printables) ideas and drafts (workflow in its `README.md`). `app-store-assets/` holds App Store product page and search creative, one folder per slot (regeneration steps in each slot's `README.md`). All AWS infrastructure (sync server, DNS, landing hosting, mail, export links) lives in the separate `~/dev/thoughtreps-aws` repo; `INTEGRATIONS.md` points there. Setup and commands are in README.md and DEVELOPMENT.md.
 
 ## Stack
 
@@ -8,7 +8,7 @@ Swift, SwiftUI, SwiftData, iOS 18+, Swift Testing. Two third-party dependencies,
 
 ## Workflow
 
-- Web/infra deploys are manual `cdk deploy` with `--profile thoughtreps-prod-legacy` (no CI), into an AWS account shared with strands prod. Read `infra/CLAUDE.md` first, and update `INTEGRATIONS.md` when a deploy changes a stack's status, outputs or ids (content-only deploys need no entry).
+- AWS infrastructure changes go in `~/dev/thoughtreps-aws`, never here. This repo only deploys site content with `scripts/deploy-*.sh` (`AWS_PROFILE` defaults to `thoughtreps-prod`).
 
 - `project.yml` is the source of truth. `ThoughtReps.xcodeproj` is generated and gitignored: edit `project.yml`, run `xcodegen`, never hand-edit the project. Re-run after adding or removing files.
 - Signing lives in `Config/Local.xcconfig` (gitignored, copy from the `.example`).

@@ -14,34 +14,13 @@
     }
   },
   "scripts": {
-    "build": "tsc",
-    "watch": "tsc -w",
-    "test": "jest",
-    "typecheck": "tsc --noEmit",
-    "cdk": "cdk"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@aws-sdk/client-dynamodb": "^3.1125.0",
-    "@aws-sdk/client-s3": "^3.1125.0",
-    "@aws-sdk/client-ses": "^3.1125.0",
-    "@aws-sdk/client-sesv2": "^3.1125.0",
-    "@aws-sdk/lib-dynamodb": "^3.1125.0",
-    "@aws-sdk/s3-presigned-post": "^3.1125.0",
-    "@aws-sdk/s3-request-presigner": "^3.1125.0",
-    "aws-cdk-lib": "^2.265.0",
-    "constructs": "^10.5.0",
-    "postal-mime": "^3.0.0",
     "zod": "^4.6.5"
   },
   "devDependencies": {
-    "@swc/core": "^1.15.0",
-    "@swc/jest": "^0.2.39",
-    "@types/jest": "^30",
     "@types/node": "^24.10.1",
-    "aws-cdk": "2.1138.0",
-    "esbuild": "^0.28.2",
-    "jest": "^30",
-    "tsx": "^4.23.0",
     "typescript": "~7.0.2"
   }
 }

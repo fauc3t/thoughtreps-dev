@@ -9,7 +9,7 @@ set -euo pipefail
 STACK_NAME="ThoughtReps-prod-Landing"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST="$REPO_ROOT/site-landing/dist"
-AWS_ARGS=(--profile "${AWS_PROFILE:-thoughtreps-prod-legacy}" --region us-east-1)
+AWS_ARGS=(--profile "${AWS_PROFILE:-thoughtreps-prod}" --region us-east-1)
 
 get_output() {
   aws cloudformation describe-stacks \
@@ -27,8 +27,8 @@ LANDING_DISTRIBUTION_ID=$(get_output LandingDistributionId)
 # doesn't catch a set-but-empty variable — without these guards a missing
 # output would only surface after the sync, as an AWS CLI parameter error
 # naming neither the stack nor the output.
-: "${LANDING_BUCKET:?LandingBucketName not found on $STACK_NAME — deploy infra first}"
-: "${LANDING_DISTRIBUTION_ID:?LandingDistributionId not found on $STACK_NAME — deploy infra first}"
+: "${LANDING_BUCKET:?LandingBucketName not found on $STACK_NAME — deploy it from thoughtreps-aws first}"
+: "${LANDING_DISTRIBUTION_ID:?LandingDistributionId not found on $STACK_NAME — deploy it from thoughtreps-aws first}"
 
 echo "==> Building @thoughtreps/site-landing"
 pnpm -C "$REPO_ROOT" --filter @thoughtreps/site-landing build
